@@ -1,0 +1,33 @@
+@use 'app/sass/helpers' as *;
+
+* {
+  box-sizing: border-box;
+  @include color(typography);
+  font-family: 'Courier New', Courier, monospace;
+}
+
+html,
+body {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  margin: 0;
+  padding: 0;
+
+  h1 {
+    @include typography(h1);
+  }
+
+  em {
+    font-weight: bold;
+  }
+
+  button {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: transparent;
+    cursor: pointer;
+    border: none;
+    outline: none;
+  }
+}

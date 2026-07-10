@@ -1,0 +1,52 @@
+@use '../../../sass/helpers' as *;
+
+:host {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  border-bottom: 1px solid getColor(outline);
+
+  img {
+    width: 100%;
+    max-width: 800px;
+    height: auto;
+    cursor: pointer;
+  }
+
+  ul {
+    position: fixed;
+    top: 80px;
+    bottom: 0;
+    list-style: none;
+    width: 100%;
+    margin: 0;
+    padding: 20px;
+    z-index: z-index(base);
+    background: getColor(background);
+    overflow: auto;
+
+    li {
+      span {
+        &.photo-meta-value {
+          font-weight: 600;
+        }
+      }
+    }
+  }
+
+  .close-meta {
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    @include color(typography, button-primary);
+    z-index: z-index(base);
+    font-weight: 600;
+    width: 100%;
+    height: 40px;
+    padding: 0px 20px;
+    background-color: getColor(background);
+    border-top: 1px solid getColor(outline);
+    justify-content: flex-start;
+  }
+}

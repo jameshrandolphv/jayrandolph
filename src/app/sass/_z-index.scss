@@ -1,0 +1,17 @@
+@use 'sass:map';
+
+$z-indices: (
+  modal: 4,
+  globalNav: 3,
+  pageNav: 2,
+  base: 1,
+  none: 0
+);
+
+@function z-index($size: base) {
+  @if map.has-key($z-indices, $size) {
+    @return map.get($z-indices, $size);
+  } @else {
+    @warn "Invalid z-index `#{$size}`";
+  }
+}

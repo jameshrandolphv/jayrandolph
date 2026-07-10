@@ -1,0 +1,21 @@
+@if (photo()) {
+  @if (showMetadata()) {
+    <ul>
+      @for (meta of metadata(); track $index) {
+        <li>
+          <span class="photo-meta-label">{{ meta.label }}: </span><span class="photo-meta-value">{{ meta.value }}</span>
+        </li>
+      }
+    </ul>
+
+    <button class="close-meta" (click)="toggleMetadata()">Close</button>
+  }
+
+  <img
+    [ngSrc]="photo().src"
+    [width]="photo().width"
+    [height]="photo().height"
+    sizes="100vw"
+    priority
+    (click)="toggleMetadata()" />
+}

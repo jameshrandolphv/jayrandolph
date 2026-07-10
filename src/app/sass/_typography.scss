@@ -1,0 +1,45 @@
+@use 'sass:map';
+
+$typography: (
+  h1: (
+    font: Roboto,
+    line-height: 28px,
+    size: 18px,
+    letter-spacing: 0.4px,
+    weight: 400
+  ),
+  navbar: (
+    font: Roboto,
+    line-height: 28px,
+    size: 18px,
+    letter-spacing: 0.4px,
+    weight: 400
+  )
+);
+
+@function getTypography($name, $field) {
+  @if map.has-key($typography, $name) {
+    $fieldMap: map.get($typography, $name);
+    @if map.has-key($fieldMap, $field) {
+      @return map.get($fieldMap, $field);
+    }
+  }
+  @error "Invalid typography: `#{$name}` > `#{$field}`.";
+  @return '';
+}
+
+@mixin typography($name, $important: false) {
+  @if ($important) {
+    font-family: getTypography($name, font) !important;
+    line-height: getTypography($name, line-height) !important;
+    font-size: getTypography($name, size) !important;
+    letter-spacing: getTypography($name, letter-spacing) !important;
+    font-weight: getTypography($name, weight) !important;
+  } @else {
+    font-family: getTypography($name, font);
+    line-height: getTypography($name, line-height);
+    font-size: getTypography($name, size);
+    letter-spacing: getTypography($name, letter-spacing);
+    font-weight: getTypography($name, weight);
+  }
+}

@@ -1,0 +1,15 @@
+<div class="photo-selection">
+  <select [ngModel]="photogroup()" (ngModelChange)="loadPhotoGroup($event)">
+    @for (group of photogroups(); track group.id) {
+      <option [value]="group">{{ group.name }}</option>
+    }
+  </select>
+</div>
+
+@if (photogroup()?.photos) {
+  @for (photo of photogroup()?.photos; track photo.id) {
+    <app-photo-card [photo]="photo"></app-photo-card>
+  }
+} @else {
+  <p>No photos selected</p>
+}
