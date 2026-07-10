@@ -20,4 +20,14 @@ body {
   em {
     font-weight: bold;
   }
+
+  button {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: transparent;
+    cursor: pointer;
+    border: none;
+    outline: none;
+  }
 }

@@ -7,7 +7,7 @@ export class PhotographyService {
     return Promise.resolve([
       {
         id: 1,
-        name: 'Ilford HP5+ 400 2026-07-03',
+        name: '[2026-07-03] Ilford HP5+ 400',
         photos: null
       }
     ] as PhotoGroup[]);
@@ -18,6 +18,8 @@ export class PhotographyService {
       Array.from(Array(36)).map((_, i) => ({
         id: i + 1,
         src: `../../assets/images/film_scans/scan (${i + 1}).jpg`,
+        width: 3300,
+        height: 3300,
         metadata: {
           title: '',
           type: 'film_bw',

@@ -16,6 +16,7 @@
     height: 40px;
     background-color: getColor(background);
     border-bottom: 1px solid getColor(outline);
+    z-index: z-index(pageNav);
 
     select {
       margin: 0px;
@@ -24,7 +25,7 @@
     }
   }
 
-  app-photo {
-    width: 100%;
+  app-photo-card {
+    width: 100vw;
   }
 }

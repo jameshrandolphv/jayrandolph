@@ -7,6 +7,8 @@ export interface PhotoGroup {
 export interface Photo {
   id: number;
   src: string;
+  width: number;
+  height: number;
   metadata: PhotoMetadata;
 }
 
