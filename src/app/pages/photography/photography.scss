@@ -1,0 +1,30 @@
+@use '../../sass/helpers' as *;
+
+:host {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+
+  .photo-selection {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    padding: 10px;
+    position: sticky;
+    top: 40px;
+    height: 40px;
+    background-color: getColor(background);
+    border-bottom: 1px solid getColor(outline);
+
+    select {
+      margin: 0px;
+      width: 100%;
+      max-width: 500px;
+    }
+  }
+
+  app-photo {
+    width: 100%;
+  }
+}

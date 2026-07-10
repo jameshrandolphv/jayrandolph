@@ -1,0 +1,38 @@
+@use '../../sass/helpers' as *;
+
+:host {
+  width: 100%;
+  height: 100%;
+
+  nav {
+    width: 100%;
+    height: 100%;
+
+    & > ol {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+
+      list-style: none;
+
+      li {
+        flex: 0 0 auto;
+
+        padding: 0;
+
+        a {
+          @include color(typography, navbar);
+          //   @include typography(navbar);
+
+          text-decoration: none;
+          cursor: pointer;
+        }
+      }
+    }
+  }
+}

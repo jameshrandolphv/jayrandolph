@@ -1,0 +1,34 @@
+@use 'sass:map';
+
+$colors: (
+  typography: (
+    base: #242424,
+    header: #242424,
+    navbar: #242424
+  ),
+  background: (
+    base: #ffffff
+  ),
+  outline: (
+    base: #c4c4c4
+  )
+);
+
+@function getColor($name, $type: base) {
+  @if map.has-key($colors, $name) {
+    $typeMap: map.get($colors, $name);
+    @if map.has-key($typeMap, $type) {
+      @return map.get($typeMap, $type);
+    }
+  }
+  @error "Invalid color: `#{$name}` > `#{$type}`.";
+  @return '';
+}
+
+@mixin color($name, $type: base, $important: true) {
+  @if ($important) {
+    color: getColor($name, $type) !important;
+  } @else {
+    color: getColor($name, $type);
+  }
+}
