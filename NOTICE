@@ -1,0 +1,9 @@
+Jay Randolph (including the Develop Film app)
+Licensed under the GNU General Public License v3 (see LICENSE).
+
+Third-party material:
+- spektrafilm (https://github.com/andreavolpato/spektrafilm), Andrea Volpato.
+  Code: GPLv3. Film profile JSON data: CC BY-SA 4.0. Film models and profile data
+  used by this project are derived from it and distributed under the same terms.
+- LibRaw (https://www.libraw.org) via libraw-wasm (ISC). LibRaw is dual-licensed
+  LGPL 2.1 / CDDL 1.0.

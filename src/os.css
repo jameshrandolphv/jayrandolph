@@ -1,0 +1,565 @@
+/* Desktop shell: wallpaper, menu bar, dock, icons, Finder and photo viewer. */
+
+.icon-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+/* Hosts that only wrap a .window so it can be a direct flex child of the workspace. */
+app-fs-page,
+app-finder,
+app-develop-film,
+app-not-found {
+  display: contents;
+}
+
+/* Wallpaper */
+
+.wallpaper {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: linear-gradient(#1569cf 0%, #4aa4ee 34%, #98d6fb 60%, #e2f6ff 80%);
+}
+
+.sun {
+  position: absolute;
+  top: 6%;
+  right: 8%;
+  width: 52vmin;
+  height: 52vmin;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff 0 7%, rgb(255 255 235 / 0.55) 20%, rgb(255 255 255 / 0) 66%);
+}
+
+.aurora {
+  position: absolute;
+  left: -20%;
+  width: 140%;
+  height: 34%;
+  filter: blur(30px);
+  mix-blend-mode: screen;
+}
+
+.aurora-a {
+  top: 14%;
+  opacity: 0.6;
+  transform: rotate(-9deg);
+  background: linear-gradient(90deg, transparent, rgb(120 255 220 / 0.85), rgb(90 190 255 / 0.7), transparent);
+}
+
+.aurora-b {
+  top: 30%;
+  opacity: 0.45;
+  transform: rotate(6deg);
+  background: linear-gradient(90deg, transparent, rgb(200 255 150 / 0.8), rgb(120 230 255 / 0.7), transparent);
+}
+
+.hill {
+  position: absolute;
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+}
+
+.hill-back {
+  left: -10%;
+  bottom: -16%;
+  width: 120%;
+  height: 40%;
+  background: linear-gradient(#a2e46a, #3f9f2b);
+  box-shadow: inset 0 10px 24px rgb(235 255 190 / 0.55);
+}
+
+.hill-front {
+  left: -40%;
+  bottom: -26%;
+  width: 150%;
+  height: 38%;
+  background: linear-gradient(#7fd847, #2a851b);
+  box-shadow: inset 0 14px 30px rgb(225 255 170 / 0.6);
+}
+
+.bubble {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--s);
+  height: var(--s);
+  border-radius: 50%;
+  border: 1px solid rgb(255 255 255 / 0.55);
+  background: radial-gradient(
+    circle at 30% 28%,
+    rgb(255 255 255 / 0.95) 0 5%,
+    rgb(255 255 255 / 0.28) 14%,
+    rgb(255 255 255 / 0.04) 60%,
+    rgb(255 255 255 / 0.35) 100%
+  );
+  box-shadow: inset 0 -8px 16px rgb(120 210 255 / 0.35), 0 0 12px rgb(255 255 255 / 0.35);
+  animation: bubble-float 14s ease-in-out infinite;
+  animation-delay: var(--d);
+}
+
+@keyframes bubble-float {
+  50% {
+    transform: translate(8px, -22px);
+  }
+}
+
+/* Menu bar */
+
+.menubar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 24px;
+  padding: 0 12px;
+  background: linear-gradient(rgb(255 255 255 / 0.95), rgb(214 224 238 / 0.88));
+  border-bottom: 1px solid rgb(0 40 90 / 0.45);
+  box-shadow: 0 1px 6px rgb(0 40 90 / 0.3);
+  backdrop-filter: blur(10px) saturate(1.4);
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.7);
+}
+
+.mb-logo {
+  display: flex;
+}
+
+.orb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid #1b4f9c;
+  background: radial-gradient(circle at 35% 30%, #fff 0 12%, #7cc2ff 35%, #1f6fd6 100%);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
+}
+
+.mb-clock {
+  font-size: 12px;
+}
+
+/* Workspace */
+
+.workspace {
+  position: fixed;
+  inset: 24px 0 0;
+  z-index: 10;
+  display: flex;
+  padding: 16px 16px 96px;
+}
+
+.window.compact {
+  width: min(100%, 1000px);
+  height: min(100%, 720px);
+  margin: auto;
+}
+
+/* Dock */
+
+.dock {
+  position: fixed;
+  left: 50%;
+  bottom: 8px;
+  z-index: 30;
+  transform: translateX(-50%);
+  padding: 6px 12px 8px;
+  border: 1px solid rgb(255 255 255 / 0.75);
+  border-radius: 18px;
+  background: linear-gradient(rgb(255 255 255 / 0.6), rgb(255 255 255 / 0.22));
+  box-shadow: 0 8px 24px rgb(0 30 80 / 0.35), inset 0 1px 0 #fff;
+  backdrop-filter: blur(12px) saturate(1.5);
+}
+
+.dock ul {
+  display: flex;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dock a {
+  position: relative;
+  display: block;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  transition: transform 0.15s;
+}
+
+.dock a:hover,
+.dock a:focus-visible {
+  transform: translateY(-6px) scale(1.16);
+}
+
+.dock a:focus-visible {
+  outline: 3px solid rgb(90 160 255 / 0.8);
+  outline-offset: 2px;
+}
+
+.dock a::after {
+  content: attr(data-label);
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  padding: 2px 10px;
+  font-size: 12px;
+  color: #fff;
+  white-space: nowrap;
+  background: rgb(10 30 60 / 0.78);
+  border: 1px solid rgb(255 255 255 / 0.4);
+  border-radius: 9px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%);
+  transition: opacity 0.12s;
+}
+
+.dock a:hover::after,
+.dock a:focus-visible::after {
+  opacity: 1;
+}
+
+.dock a.active::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff, #2f7fe6);
+  box-shadow: 0 0 4px #5fb0ff;
+}
+
+/* Icons (Desktop and Finder) */
+
+.icons {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.desktop {
+  flex: 1;
+  min-width: 0;
+}
+
+.desktop-icons {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: wrap;
+  align-content: flex-end;
+  gap: 12px 8px;
+  height: 100%;
+}
+
+.fs-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 96px;
+  padding: 6px 4px;
+  border-radius: 6px;
+  color: #000;
+  text-decoration: none;
+}
+
+.fs-item:focus-visible {
+  outline: 3px solid rgb(90 160 255 / 0.8);
+  outline-offset: 1px;
+}
+
+.fs-glyph {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+}
+
+.fs-label {
+  display: -webkit-box;
+  margin-top: 4px;
+  padding: 0 6px;
+  font-size: 12px;
+  line-height: 1.3;
+  text-align: center;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.desktop .fs-label {
+  color: #fff;
+  text-shadow: 0 1px 2px rgb(0 20 60 / 0.9);
+}
+
+.fs-item.selected .fs-glyph {
+  background: rgb(255 255 255 / 0.3);
+}
+
+.fs-item.selected .fs-label {
+  color: #fff;
+  text-shadow: none;
+  background: linear-gradient(#5aa2f0, #1f6fd6);
+  border-radius: 9px;
+}
+
+/* Finder */
+
+.finder-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: linear-gradient(#fff, #eef4fb);
+  box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.35);
+}
+
+.finder-body .icons {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  padding: 16px;
+}
+
+.finder-body .fs-item {
+  width: 100%;
+}
+
+.finder-body .fs-item:hover {
+  background: rgb(31 111 214 / 0.1);
+}
+
+.fs-item.photo .fs-glyph {
+  width: 100%;
+  height: 112px;
+}
+
+.fs-item.photo img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid #b5b5b5;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.35);
+}
+
+.empty {
+  margin: 0;
+  padding: 28px 12px 0;
+  text-align: center;
+  color: #555;
+}
+
+a.btn {
+  display: inline-flex;
+  align-items: center;
+  color: #000;
+  text-decoration: none;
+}
+
+.path {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  background: rgb(255 255 255 / 0.65);
+  border: 1px solid #7f7f7f;
+  border-radius: 999px;
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.25);
+}
+
+.path ol {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.path li + li::before {
+  content: '\203A';
+  margin: 0 7px;
+  color: #666;
+}
+
+.path a {
+  color: #0b3d91;
+  text-decoration: none;
+}
+
+.path a:hover {
+  text-decoration: underline;
+}
+
+/* Photo viewer */
+
+.viewer-overlay {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: #fff;
+  grid-template-rows: auto 1fr;
+  background: radial-gradient(ellipse at 50% 40%, rgb(22 52 94 / 0.94), rgb(3 10 22 / 0.97));
+  backdrop-filter: blur(14px);
+  animation: vo-in 0.18s ease-out;
+}
+
+.viewer-overlay[open] {
+  display: grid;
+}
+
+.viewer-overlay::backdrop {
+  background: transparent;
+}
+
+@keyframes vo-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.vo-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 14px;
+  color: #fff;
+  text-shadow: 0 1px 2px #000;
+  background: linear-gradient(rgb(255 255 255 / 0.28), rgb(255 255 255 / 0.06));
+  border-bottom: 1px solid rgb(255 255 255 / 0.25);
+}
+
+.vo-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: bold;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.vo-count {
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.vo-stage {
+  position: relative;
+  min-height: 0;
+}
+
+.vo-img {
+  position: absolute;
+  inset: 12px;
+  width: calc(100% - 24px);
+  height: calc(100% - 24px);
+  object-fit: contain;
+}
+
+.vo-placeholder {
+  filter: blur(10px);
+  opacity: 0.8;
+}
+
+.vo-img:not(.vo-placeholder) {
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+
+.vo-img.loaded {
+  opacity: 1;
+}
+
+.vo-nav {
+  position: absolute;
+  top: 50%;
+  width: 52px;
+  height: 52px;
+  padding: 0 0 4px;
+  font: 34px/1 var(--font);
+  color: #fff;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 0.7);
+  background: linear-gradient(rgb(255 255 255 / 0.5), rgb(255 255 255 / 0.12));
+  border: 1px solid rgb(255 255 255 / 0.7);
+  border-radius: 50%;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.8);
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+
+.vo-nav:hover {
+  background: linear-gradient(rgb(255 255 255 / 0.7), rgb(255 255 255 / 0.25));
+}
+
+.vo-nav:focus-visible {
+  outline: 3px solid rgb(90 160 255 / 0.8);
+  outline-offset: 2px;
+}
+
+.vo-prev {
+  left: 14px;
+}
+
+.vo-next {
+  right: 14px;
+}
+
+@media (max-width: 760px) {
+  .workspace {
+    padding: 0 0 68px;
+  }
+
+  .window.compact {
+    width: 100%;
+    height: 100%;
+  }
+
+  .desktop-icons {
+    align-content: flex-start;
+    padding: 12px;
+  }
+
+  .dock {
+    padding: 4px 8px 6px;
+  }
+
+  .dock a {
+    width: 44px;
+    height: 44px;
+  }
+
+  .vo-nav {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bubble,
+  .viewer-overlay {
+    animation: none;
+  }
+
+  .dock a,
+  .vo-img:not(.vo-placeholder) {
+    transition: none;
+  }
+}

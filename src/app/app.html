@@ -1,0 +1,43 @@
+<app-icon-defs />
+
+<div class="wallpaper" aria-hidden="true">
+  <span class="sun"></span>
+  <span class="aurora aurora-a"></span>
+  <span class="aurora aurora-b"></span>
+  <span class="hill hill-back"></span>
+  <span class="hill hill-front"></span>
+  <span class="bubble" style="--x: 8%; --y: 62%; --s: 120px; --d: 0s"></span>
+  <span class="bubble" style="--x: 22%; --y: 30%; --s: 54px; --d: -3s"></span>
+  <span class="bubble" style="--x: 41%; --y: 70%; --s: 84px; --d: -6s"></span>
+  <span class="bubble" style="--x: 63%; --y: 24%; --s: 150px; --d: -2s"></span>
+  <span class="bubble" style="--x: 78%; --y: 58%; --s: 64px; --d: -8s"></span>
+  <span class="bubble" style="--x: 90%; --y: 36%; --s: 96px; --d: -5s"></span>
+</div>
+
+<header class="menubar">
+  <a class="mb-logo" routerLink="/" aria-label="Jay Randolph home"><span class="orb"></span></a>
+  <strong class="mb-app">{{ activeName() }}</strong>
+  <span class="spacer"></span>
+  <time class="mb-clock" [attr.datetime]="now().toISOString()">{{ now() | date: 'EEE h:mm a' }}</time>
+</header>
+
+<main class="workspace">
+  <router-outlet />
+</main>
+
+<nav class="dock" aria-label="Dock">
+  <ul>
+    @for (item of dockItems(); track item.id) {
+      <li>
+        <a
+          [routerLink]="'/' + item.path"
+          [class.active]="activeRoot() === item.path"
+          [attr.data-label]="item.name"
+          [attr.aria-label]="item.name"
+        >
+          <app-node-icon [icon]="item.icon" />
+        </a>
+      </li>
+    }
+  </ul>
+</nav>

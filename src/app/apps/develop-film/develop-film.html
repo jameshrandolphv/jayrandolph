@@ -1,0 +1,224 @@
+<app-window-frame title="Develop Film" closeLink="/">
+  <div class="toolbar" role="toolbar" aria-label="Main">
+    <button type="button" class="btn" (click)="pickFile()">Open…</button>
+    <input
+      #fileInput
+      type="file"
+      accept=".dng,image/x-adobe-dng"
+      class="sr-only"
+      (change)="onFileChosen($event)"
+    />
+    <label class="check">
+      <input type="checkbox" [checked]="session.split()" (change)="onSplit($event)" />
+      <span>Split view</span>
+    </label>
+    <label class="check">
+      <input
+        type="checkbox"
+        [checked]="session.showOriginal()"
+        [disabled]="session.split()"
+        (change)="onShowOriginal($event)"
+      />
+      <span>Show original</span>
+    </label>
+    <span class="spacer"></span>
+    <span class="segmented" role="group" aria-label="Zoom">
+      <button
+        type="button"
+        class="btn"
+        [attr.aria-pressed]="session.zoom() === 'fit'"
+        [disabled]="!session.dimensions()"
+        (click)="session.setZoom('fit')"
+      >
+        Fit
+      </button>
+      <button
+        type="button"
+        class="btn"
+        [attr.aria-pressed]="session.zoom() === 'actual'"
+        [disabled]="!session.dimensions()"
+        (click)="session.setZoom('actual')"
+      >
+        100%
+      </button>
+    </span>
+    <button type="button" class="btn default" [disabled]="!session.dimensions()" (click)="showExport()">
+      Export…
+    </button>
+    <button type="button" class="btn" (click)="showCredits()">Credits</button>
+  </div>
+
+  <div class="body">
+    <aside class="sidebar">
+      <fieldset class="groupbox">
+        <legend>Film Stock</legend>
+        @for (f of films; track f.id) {
+          <label class="radio">
+            <input
+              type="radio"
+              name="film"
+              [value]="f.id"
+              [checked]="session.film() === f.id"
+              (change)="selectFilm(f.id)"
+            />
+            <span>
+              <strong>{{ f.name }}</strong>&ngsp;<small>({{ f.kind }})</small>
+              <br /><small>{{ f.blurb }}</small>
+            </span>
+          </label>
+        }
+      </fieldset>
+
+      <fieldset class="groupbox">
+        <legend>Exposure</legend>
+        <label class="field">
+          <span>Compensation: <output>{{ evLabel() }}</output></span>
+          <input
+            type="range"
+            min="-3"
+            max="3"
+            step="0.1"
+            [value]="session.ev()"
+            (input)="onEv($event)"
+          />
+        </label>
+        @if (isNegative()) {
+          <label class="field">
+            <span>Contrast: <output>{{ session.contrast().toFixed(2) }}</output></span>
+            <input
+              type="range"
+              min="0.6"
+              max="1.8"
+              step="0.05"
+              [value]="session.contrast()"
+              (input)="onContrast($event)"
+            />
+          </label>
+        }
+        <label class="check">
+          <input
+            type="checkbox"
+            [checked]="session.halation()"
+            (change)="onHalation($event)"
+          />
+          <span>Halation &amp; scatter</span>
+        </label>
+      </fieldset>
+
+      <fieldset class="groupbox">
+        <legend>Grain</legend>
+        <label class="check">
+          <input type="checkbox" [checked]="session.grain()" (change)="onGrain($event)" />
+          <span>Film grain</span>
+        </label>
+        <label class="field">
+          <span>Amount: <output>{{ session.grainAmount().toFixed(2) }}</output></span>
+          <input
+            type="range"
+            min="0"
+            max="1.5"
+            step="0.05"
+            [value]="session.grainAmount()"
+            [disabled]="!session.grain()"
+            (input)="onGrainAmount($event)"
+          />
+        </label>
+        <label class="field">
+          <span>Size: <output>{{ session.grainSize().toFixed(2) }}&times;</output></span>
+          <input
+            type="range"
+            min="0.5"
+            max="2"
+            step="0.05"
+            [value]="session.grainSize()"
+            [disabled]="!session.grain()"
+            (input)="onGrainSize($event)"
+          />
+        </label>
+        <p class="hint">Grain is simulated grain-by-grain, so it appears at 100% zoom and in exports.</p>
+      </fieldset>
+    </aside>
+
+    <main
+      class="stage"
+      [class.dragging]="dragging()"
+      (dragover)="onDragOver($event)"
+      (dragleave)="dragging.set(false)"
+      (drop)="onDrop($event)"
+    >
+      <app-viewer />
+    </main>
+  </div>
+
+  <footer class="statusbar" role="status">
+    @if (session.state() === 'decoding' || session.processing()) {
+      <span class="barber" aria-hidden="true"></span>
+    }
+    <span [class.error]="session.state() === 'error'">{{ session.message() }}</span>
+  </footer>
+</app-window-frame>
+
+<dialog #exporter class="sheet" aria-labelledby="export-title" (cancel)="onExportCancel()">
+  <h2 id="export-title">Export</h2>
+  @if (session.dimensions(); as d) {
+    <p>
+      Renders the full {{ d.width }}&times;{{ d.height }} image
+      {{ session.grain() ? 'with' : 'without' }} grain.
+    </p>
+  }
+  <fieldset class="groupbox" [disabled]="exporting()">
+    <legend>Format</legend>
+    @for (f of exportFormats; track f.id) {
+      <label class="radio">
+        <input
+          type="radio"
+          name="export-format"
+          [value]="f.id"
+          [checked]="exportFormat() === f.id"
+          (change)="exportFormat.set(f.id)"
+        />
+        <span>{{ f.label }}</span>
+      </label>
+    }
+    @if (exportFormat() === 'jpeg') {
+      <label class="field">
+        <span>Quality: <output>{{ jpegQuality() }}</output></span>
+        <input
+          type="range"
+          min="60"
+          max="100"
+          step="1"
+          [value]="jpegQuality()"
+          (input)="onJpegQuality($event)"
+        />
+      </label>
+    }
+  </fieldset>
+  @if (exporting()) {
+    <p class="hint">{{ session.exportStage() }}…</p>
+    <progress max="1" [value]="session.exportProgress()"></progress>
+  }
+  @if (exportError()) {
+    <p class="hint error" role="alert">{{ exportError() }}</p>
+  }
+  <div class="sheet-actions">
+    <button type="button" class="btn" (click)="closeExport()">Cancel</button>
+    <button type="button" class="btn default" [disabled]="exporting()" (click)="runExport()">
+      Export
+    </button>
+  </div>
+</dialog>
+
+<dialog #credits class="sheet" aria-labelledby="credits-title">
+  <h2 id="credits-title">Credits &amp; Licences</h2>
+  <p>
+    Film models are derived from
+    <a href="https://github.com/andreavolpato/spektrafilm" target="_blank" rel="noopener">spektrafilm</a>
+    by Andrea Volpato (code GPLv3; film profile data CC BY-SA 4.0), built from published Kodak
+    datasheets. RAW decoding uses LibRaw via libraw-wasm.
+  </p>
+  <p>This application is free software licensed under the GNU GPL v3.</p>
+  <div class="sheet-actions">
+    <button type="button" class="btn default" (click)="closeCredits()">OK</button>
+  </div>
+</dialog>
