@@ -20,7 +20,8 @@ const folder = (path: string, name: string, children: FsNode[]): FolderNode => (
 });
 
 export function buildTree(manifest: PhotoManifest, apps: readonly AppDef[]): FolderNode {
-  const albums = manifest.albums.map((album) => {
+  const sorted = [...manifest.albums].sort((a, b) => a.title.localeCompare(b.title, 'en', { numeric: true }));
+  const albums = sorted.map((album) => {
     const path = `photography/${album.id}`;
     return folder(
       path,

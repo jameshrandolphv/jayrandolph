@@ -42,6 +42,18 @@ describe('filesystem', () => {
     expect(resolvePath(root, [])).toBe(root);
   });
 
+  it('lists albums alphabetically regardless of manifest order', () => {
+    const album = (title: string) => ({ id: title.toLowerCase(), title, images: [] });
+    const tree = buildTree({ albums: [album('Zurich'), album('2026-09-09 Acros'), album('Iceland'), album('2026-09-01 Portra')] }, apps);
+    const photography = resolvePath(tree, ['photography']);
+    expect(photography?.kind === 'folder' && photography.children.map((c) => c.name)).toEqual([
+      '2026-09-01 Portra',
+      '2026-09-09 Acros',
+      'Iceland',
+      'Zurich',
+    ]);
+  });
+
   it('returns null for unknown paths and for descending into leaves', () => {
     expect(resolvePath(root, ['nope'])).toBeNull();
     expect(resolvePath(root, ['photography', 'iceland', 'a', 'x'])).toBeNull();
