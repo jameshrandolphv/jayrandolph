@@ -10,6 +10,8 @@ export const FIELD_H = ROWS * TILE;
 
 export const PLAYER_SIZE = 32;
 export const PLAYER_SPEED = 3.5;
+/** Half-size of the part of the player that enemies can hurt; smaller than the drawn square so near misses are forgiven. */
+export const PLAYER_HURT_HALF = 12;
 export const ENEMY_R = 10;
 export const COIN_R = 9;
 export const MAX_ENEMY_SPEED = 4.8;

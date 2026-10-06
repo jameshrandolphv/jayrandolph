@@ -190,3 +190,60 @@ export const isSolvable = (level: LevelDef): boolean => {
   }
   return true;
 };
+
+export interface OpenArea {
+  /** Cells in the patch. */
+  size: number;
+  /** Bounds of the patch's cell centres, in pixels. */
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/** Connected patches of chamber floor, over `minCells` big, that no enemy ever comes near; biggest first. */
+export const openAreas = (level: LevelDef, minCells: number): OpenArea[] => {
+  const layers = level.period / STEP;
+  const walk = walkableCells(level);
+  const haz = hazardLayers(level, layers);
+  const open = new Uint8Array(N);
+  for (let j = 0; j < GH; j++) {
+    for (let i = 0; i < GW; i++) {
+      const cell = j * GW + i;
+      if (!walk[cell] || level.tiles[Math.floor(centre(j) / TILE) * COLS + Math.floor(centre(i) / TILE)] !== TILE_FLOOR) continue;
+      let hit = false;
+      for (let t = 0; t < layers && !hit; t++) hit = haz[t * N + cell] === 1;
+      open[cell] = +!hit;
+    }
+  }
+
+  const out: OpenArea[] = [];
+  const seen = new Uint8Array(N);
+  for (let start = 0; start < N; start++) {
+    if (!open[start] || seen[start]) continue;
+    const stack = [start];
+    seen[start] = 1;
+    let size = 0;
+    let i0 = GW;
+    let i1 = 0;
+    let j0 = GH;
+    let j1 = 0;
+    while (stack.length) {
+      const at = stack.pop()!;
+      const i = at % GW;
+      const j = Math.floor(at / GW);
+      size++;
+      i0 = Math.min(i0, i);
+      i1 = Math.max(i1, i);
+      j0 = Math.min(j0, j);
+      j1 = Math.max(j1, j);
+      for (const next of [at + 1, at - 1, at + GW, at - GW]) {
+        if (next < 0 || next >= N || Math.abs((next % GW) - i) > 1 || !open[next] || seen[next]) continue;
+        seen[next] = 1;
+        stack.push(next);
+      }
+    }
+    if (size > minCells) out.push({ size, x0: centre(i0), y0: centre(j0), x1: centre(i1), y1: centre(j1) });
+  }
+  return out.sort((a, b) => b.size - a.size);
+};

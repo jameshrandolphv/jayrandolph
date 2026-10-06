@@ -3,12 +3,13 @@ import {
   DEATH_TICKS,
   ENEMY_R,
   INTRO_TICKS,
+  PLAYER_HURT_HALF,
   PLAYER_SIZE,
   PLAYER_SPEED,
   TILE_VOID,
   circleHitsSquare,
 } from './constants';
-import { enemyPositionAt, insideZone, tileAt, zoneCentre, type LevelDef } from './level';
+import { enemyPositionAt, tileAt, touchesZone, zoneCentre, type LevelDef } from './level';
 
 export type Phase = 'title' | 'instructions' | 'intro' | 'playing' | 'dying';
 export type SimEvent = 'death' | 'coin' | 'checkpoint' | 'clear' | 'click';
@@ -166,7 +167,7 @@ export class LongestSim {
     const def = this.def!;
     for (const enemy of def.enemies) {
       const p = enemyPositionAt(enemy, this.tick);
-      if (circleHitsSquare(p.x, p.y, ENEMY_R, this.x, this.y, HALF)) {
+      if (circleHitsSquare(p.x, p.y, ENEMY_R, this.x, this.y, PLAYER_HURT_HALF)) {
         this.deaths++;
         this.phase = 'dying';
         this.timer = DEATH_TICKS;
@@ -184,7 +185,7 @@ export class LongestSim {
 
     const next = this.checkpoint + 1;
     const zone = def.zones[next];
-    if (!zone || !insideZone(zone, this.x, this.y)) return;
+    if (!zone || !touchesZone(zone, this.x, this.y, HALF)) return;
     // A beacon only counts once every coin in the stretch before it has been collected.
     if (def.coins.some((coin, i) => coin.segment < next && !this.collected[i])) return;
     if (next === def.zones.length - 1) {

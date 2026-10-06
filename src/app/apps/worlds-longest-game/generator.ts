@@ -12,9 +12,9 @@ import {
   TILE_VOID,
 } from './constants';
 import { difficultyFor, type Difficulty, type PatternKind } from './difficulty';
-import type { Coin, Enemy, LevelDef, Point, TileRect } from './level';
+import { enemyPositionAt, tileAt, type Coin, type Enemy, type LevelDef, type Point, type TileRect } from './level';
 import { createRandom, hashSeed, type Random } from './rng';
-import { isSolvable } from './solver';
+import { isSolvable, openAreas, type OpenArea } from './solver';
 
 type Kind = 'safe' | 'chamber';
 interface Room extends TileRect {
@@ -103,27 +103,40 @@ const FALLBACK: readonly Room[] = [
   { c: 16, r: 5, w: 3, h: 3, kind: 'safe' },
 ];
 
+/**
+ * Lane positions across a sweep, on tile centres. Each lane holds a single dot, so dots in opposite
+ * phase sit on neighbouring tiles instead of crossing within one. Lanes come in pairs on adjacent
+ * tiles, with a free tile between pairs so the player has somewhere to stand.
+ */
+const laneCentres = (lo: number, hi: number, wanted: number): number[] => {
+  const first = Math.ceil(lo / TILE - 0.5);
+  const tiles = Math.floor(hi / TILE - 0.5) - first + 1;
+  if (tiles < 2) return [(first + 0.5) * TILE];
+  const pairs = Math.max(1, Math.min(Math.ceil(wanted / 2), Math.floor((tiles + 1) / 3)));
+  const out: number[] = [];
+  const slack = tiles - (3 * pairs - 1);
+  for (let p = 0; p < pairs; p++) {
+    const start = first + 3 * p + Math.round((slack * (p + 0.5)) / pairs);
+    out.push((start + 0.5) * TILE, (start + 1.5) * TILE);
+  }
+  return out.slice(0, Math.max(wanted, 2));
+};
+
 const sweeps = (rand: Random, box: Box, d: Difficulty, vertical: boolean): Enemy[] => {
   const inner = { x0: box.x0 + INSET, y0: box.y0 + INSET, x1: box.x1 - INSET, y1: box.y1 - INSET };
   const [lo, hi, from, to] = vertical ? [inner.x0, inner.x1, inner.y0, inner.y1] : [inner.y0, inner.y1, inner.x0, inner.x1];
-  const spacing = 2 * ENEMY_R + PLAYER_SIZE + d.lane;
-  const lanes = Math.max(1, Math.min(d.columns, Math.floor((hi - lo) / spacing)));
-  const perLane = Math.max(1, Math.min(d.perColumn, Math.floor((to - from) / (2 * (PLAYER_SIZE + 2 * ENEMY_R)))));
+  const perColumn = Math.max(1, Math.min(d.perColumn, Math.floor((to - from) / (2 * (PLAYER_SIZE + 2 * ENEMY_R)))));
+  const centres = laneCentres(lo, hi, d.columns * perColumn);
+  const pairs = Math.ceil(centres.length / 2);
   const period = pickPeriod(2 * (to - from), d.speed * rand.range(0.85, 1.15));
   const base = rand.int(0, period - 1);
-  const out: Enemy[] = [];
-  for (let i = 0; i < lanes; i++) {
-    const across = lo + ((i + 0.5) * (hi - lo)) / lanes;
-    for (let j = 0; j < perLane; j++) {
-      const phase = Math.round(base + (i % 2 ? period / 2 : 0) + (j * period) / perLane);
-      out.push(
-        vertical
-          ? { kind: 'sweep', ax: across, ay: from, bx: across, by: to, period, phase }
-          : { kind: 'sweep', ax: from, ay: across, bx: to, by: across, period, phase },
-      );
-    }
-  }
-  return out;
+  return centres.map((across, i): Enemy => {
+    // The two lanes of a pair run half a cycle apart; successive pairs are staggered between them.
+    const phase = Math.round(base + (i % 2 ? period / 2 : 0) + (Math.floor(i / 2) * period) / (2 * pairs));
+    return vertical
+      ? { kind: 'sweep', ax: across, ay: from, bx: across, by: to, period, phase }
+      : { kind: 'sweep', ax: from, ay: across, bx: to, by: across, period, phase };
+  });
 };
 
 /**
@@ -181,6 +194,47 @@ const loops = (rand: Random, box: Box, d: Difficulty): Enemy[] => {
   }));
 };
 
+/** Dots this far apart touch, so a line of them is a solid bar. */
+const BAR_STEP = 2 * ENEMY_R;
+
+/** A bar pivoting about the middle of the box, with one or two arms. */
+const spinners = (rand: Random, box: Box, d: Difficulty): Enemy[] => {
+  const cx = (box.x0 + box.x1) / 2;
+  const cy = (box.y0 + box.y1) / 2;
+  const reach = Math.min(box.x1 - box.x0, box.y1 - box.y0) / 2 - INSET;
+  if (reach < 3 * BAR_STEP) return [];
+  const period = pickPeriod(2 * Math.PI * reach, d.speed * 0.7);
+  const base = rand.int(0, period - 1);
+  const dir: 1 | -1 = rand.chance(0.5) ? 1 : -1;
+  const arms = rand.int(1, 2);
+  const out: Enemy[] = [{ kind: 'orbit', cx, cy, radius: 0, period, phase: base, dir }];
+  for (let arm = 0; arm < arms; arm++) {
+    const phase = Math.round(base + (arm * period) / arms);
+    for (let radius = BAR_STEP; radius <= reach; radius += BAR_STEP) out.push({ kind: 'orbit', cx, cy, radius, period, phase, dir });
+  }
+  return out;
+};
+
+/** A bar hanging from one wall of the box and swinging back and forth like a pendulum. */
+const swings = (rand: Random, box: Box, d: Difficulty): Enemy[] => {
+  const side = rand.pick(['top', 'bottom', 'left', 'right'] as const);
+  const vertical = side === 'top' || side === 'bottom';
+  const cx = side === 'left' ? box.x0 + INSET : side === 'right' ? box.x1 - INSET : (box.x0 + box.x1) / 2;
+  const cy = side === 'top' ? box.y0 + INSET : side === 'bottom' ? box.y1 - INSET : (box.y0 + box.y1) / 2;
+  const heading = { top: Math.PI / 2, bottom: -Math.PI / 2, left: 0, right: Math.PI }[side];
+  const depth = (vertical ? box.y1 - box.y0 : box.x1 - box.x0) - 2 * INSET;
+  const across = (vertical ? box.x1 - box.x0 : box.y1 - box.y0) / 2 - INSET;
+  const amp = rand.range(0.9, 1.3);
+  const length = Math.min(depth, across / Math.sin(amp));
+  if (length < 3 * BAR_STEP) return [];
+  // The peak speed is at the bottom of the swing: 2π · amp · length per period.
+  const period = pickPeriod(2 * Math.PI * amp * length, d.speed * 1.1);
+  const phase = rand.int(0, period - 1);
+  const out: Enemy[] = [];
+  for (let radius = 0; radius <= length; radius += BAR_STEP) out.push({ kind: 'swing', cx, cy, radius, heading, amp, period, phase });
+  return out;
+};
+
 /** Free strip left between patterns that share a chamber, wide enough for the player to wait in. */
 const REST = 72;
 const MIN_PART = 3 * TILE;
@@ -209,6 +263,10 @@ const populate = (rand: Random, kind: PatternKind, box: Box, d: Difficulty): Ene
       return orbits(rand, box, d);
     case 'loop':
       return loops(rand, box, d);
+    case 'spinner':
+      return spinners(rand, box, d);
+    case 'swing':
+      return swings(rand, box, d);
   }
 };
 
@@ -225,6 +283,53 @@ const placeCoins = (rand: Random, chambers: readonly Room[], count: number): Coi
     coins.push({ ...spot, segment });
   }
   return coins;
+};
+
+/** A clear patch bigger than this many solver cells (a bit over two tiles square) counts as an open area. */
+const MAX_OPEN_CELLS = 40;
+const MAX_FILLS = 10;
+
+const onFloor = (level: LevelDef, p: Point): boolean =>
+  [[0, 0], [ENEMY_R, 0], [-ENEMY_R, 0], [0, ENEMY_R], [0, -ENEMY_R]].every(([dx, dy]) => tileAt(level, p.x + dx!, p.y + dy!) === TILE_FLOOR);
+
+const stays = (level: LevelDef, enemy: Enemy): boolean => {
+  for (let tick = 0; tick < level.period; tick += 6) if (!onFloor(level, enemyPositionAt(enemy, tick))) return false;
+  return true;
+};
+
+/** Something to patrol an open area: a spinner when it is roomy, otherwise a sweep along its long side. */
+const fillerFor = (rand: Random, level: LevelDef, area: OpenArea, d: Difficulty): Enemy[] => {
+  const box: Box = { x0: area.x0, y0: area.y0, x1: area.x1, y1: area.y1 };
+  const attempts: Enemy[][] = [];
+  if (Math.min(area.x1 - area.x0, area.y1 - area.y0) >= 2 * (INSET + 3 * 2 * ENEMY_R)) attempts.push(spinners(rand, box, d));
+  const wide = area.x1 - area.x0 >= area.y1 - area.y0;
+  for (const horizontal of [wide, !wide]) {
+    for (const across of [0.5, 0.3, 0.7, 0.1, 0.9]) {
+      const [a0, a1, c0, c1] = horizontal ? [area.x0, area.x1, area.y0, area.y1] : [area.y0, area.y1, area.x0, area.x1];
+      const line = c0 + (c1 - c0) * across;
+      const period = pickPeriod(2 * (a1 - a0), d.speed * rand.range(0.9, 1.2));
+      const phase = rand.int(0, period - 1);
+      attempts.push([
+        horizontal
+          ? { kind: 'sweep', ax: a0, ay: line, bx: a1, by: line, period, phase }
+          : { kind: 'sweep', ax: line, ay: a0, bx: line, by: a1, period, phase },
+      ]);
+    }
+  }
+  return attempts.find((made) => made.length > 0 && made.every((e) => stays(level, e))) ?? [];
+};
+
+/** Adds enemies until no big stretch of chamber is free of them, so the player is never just walking. */
+const fillOpenAreas = (rand: Random, level: LevelDef, d: Difficulty): LevelDef => {
+  let current = level;
+  for (let i = 0; i < MAX_FILLS; i++) {
+    const [area] = openAreas(current, MAX_OPEN_CELLS);
+    if (!area) break;
+    const made = fillerFor(rand, current, area, d);
+    if (!made.length) break;
+    current = { ...current, enemies: [...current.enemies, ...made] };
+  }
+  return current;
 };
 
 export const buildLevel = (seed: number, number: number, d: Difficulty): LevelDef => {
@@ -260,7 +365,7 @@ export const buildLevel = (seed: number, number: number, d: Difficulty): LevelDe
     if (!placed) enemies.push(...sweeps(rand, boxOf(chamber), d, true));
   }
 
-  return {
+  const level: LevelDef = {
     version: 1,
     number,
     seed,
@@ -272,6 +377,7 @@ export const buildLevel = (seed: number, number: number, d: Difficulty): LevelDe
     coins: segments > 0 ? placeCoins(rand, chambers, d.coins) : [],
     enemies,
   };
+  return fillOpenAreas(rand, level, d);
 };
 
 const EASED_AFTER = 24;
@@ -284,7 +390,8 @@ export const generateLevel = (number: number, runSeed: number): LevelDef => {
     // Rarely a hard draw has no solution; later attempts step the difficulty down a little.
     const eased = attempt < EASED_AFTER ? number : Math.max(1, Math.floor(number * (1 - (attempt - EASED_AFTER + 1) * 0.06)));
     last = buildLevel(hashSeed(runSeed, number, attempt), number, difficultyFor(eased));
-    if (isSolvable(last)) return last;
+    // Fill-ins can rarely leave a pocket; prefer a draw without one, but take a solvable one after a while.
+    if (isSolvable(last) && (attempt >= EASED_AFTER / 2 || openAreas(last, MAX_OPEN_CELLS).length === 0)) return last;
   }
   return last!;
 };

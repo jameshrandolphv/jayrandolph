@@ -17,6 +17,7 @@ export interface TileRect {
 export type Enemy =
   | { kind: 'sweep'; ax: number; ay: number; bx: number; by: number; period: number; phase: number }
   | { kind: 'orbit'; cx: number; cy: number; radius: number; period: number; phase: number; dir: 1 | -1 }
+  | { kind: 'swing'; cx: number; cy: number; radius: number; heading: number; amp: number; period: number; phase: number }
   | { kind: 'loop'; x: number; y: number; w: number; h: number; period: number; phase: number; dir: 1 | -1 };
 
 export interface Coin extends Point {
@@ -49,6 +50,10 @@ export const zoneCentre = (zone: TileRect): Point => ({
 export const insideZone = (zone: TileRect, x: number, y: number): boolean =>
   x >= zone.c * TILE && x < (zone.c + zone.w) * TILE && y >= zone.r * TILE && y < (zone.r + zone.h) * TILE;
 
+/** Whether any part of a square, given by its centre and half-size, overlaps the zone. */
+export const touchesZone = (zone: TileRect, x: number, y: number, half: number): boolean =>
+  x + half > zone.c * TILE && x - half < (zone.c + zone.w) * TILE && y + half > zone.r * TILE && y - half < (zone.r + zone.h) * TILE;
+
 export const tileAt = (level: LevelDef, x: number, y: number): number => {
   const c = Math.floor(x / TILE);
   const r = Math.floor(y / TILE);
@@ -64,6 +69,10 @@ export const enemyPositionAt = (e: Enemy, tick: number): Point => {
     }
     case 'orbit': {
       const a = e.dir * u * Math.PI * 2;
+      return { x: e.cx + Math.cos(a) * e.radius, y: e.cy + Math.sin(a) * e.radius };
+    }
+    case 'swing': {
+      const a = e.heading + e.amp * Math.sin(u * Math.PI * 2);
       return { x: e.cx + Math.cos(a) * e.radius, y: e.cy + Math.sin(a) * e.radius };
     }
     case 'loop': {

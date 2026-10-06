@@ -3,7 +3,7 @@ import { COLS, ENEMY_R, MAX_ENEMY_SPEED, ROWS, TILE, TILE_SAFE, TILE_VOID } from
 import { difficultyFor } from './difficulty';
 import { generateLevel } from './generator';
 import { enemyPositionAt, insideZone, tileAt, type LevelDef } from './level';
-import { isSolvable } from './solver';
+import { isSolvable, openAreas } from './solver';
 
 const SEEDS = [1, 7, 12345];
 
@@ -32,9 +32,11 @@ describe('generateLevel', () => {
     expect(difficultyFor(1).segments).toBe(1);
     expect(difficultyFor(2).segments).toBe(1);
     expect(difficultyFor(3).segments).toBe(2);
-    expect(difficultyFor(5).patterns).not.toContain('orbit');
-    expect(difficultyFor(6).patterns).toContain('orbit');
-    expect(difficultyFor(12).patterns).toContain('loop');
+    expect(difficultyFor(1).patterns).toContain('orbit');
+    expect(difficultyFor(1).patterns).not.toContain('swing');
+    expect(difficultyFor(3).patterns).toContain('swing');
+    expect(difficultyFor(5).patterns).not.toContain('loop');
+    expect(difficultyFor(6).patterns).toContain('loop');
   });
 
   it('never makes the main parameters easier as levels rise', () => {
@@ -80,6 +82,12 @@ describe('generateLevel', () => {
         }
       }
     }
+  });
+});
+
+describe('open areas', () => {
+  it.each([1, 2, 5, 10, 20])('level %i has no big stretch of chamber free of enemies', (n) => {
+    for (const seed of SEEDS) expect(openAreas(generateLevel(n, seed), 40)).toEqual([]);
   });
 });
 

@@ -1,4 +1,4 @@
-export type PatternKind = 'sweepV' | 'sweepH' | 'orbit' | 'loop';
+export type PatternKind = 'sweepV' | 'sweepH' | 'orbit' | 'loop' | 'spinner' | 'swing';
 
 export interface Difficulty {
   segments: number;
@@ -35,19 +35,21 @@ export const difficultyFor = (number: number): Difficulty => {
   const t = level - 1;
   const segments = level < 5 ? 1 : level < 10 ? 2 : level < 18 ? 3 : 4;
   const patterns: PatternKind[] = ['sweepV', 'sweepH'];
-  if (level >= 8) patterns.push('orbit');
-  if (level >= 14) patterns.push('loop');
+  if (level >= 3) patterns.push('orbit');
+  if (level >= 4) patterns.push('spinner');
+  if (level >= 5) patterns.push('swing');
+  if (level >= 8) patterns.push('loop');
   return {
     segments,
     chamber: CHAMBERS[segments - 1]!,
     connector: level < 10 ? 3 : level < 25 ? 2 : 1,
     coins: level < 3 ? 0 : Math.min(10, 1 + Math.floor((level - 3) / 3)),
     patterns,
-    patternsPerChamber: level < 12 ? 1 : level < 28 ? 2 : 3,
-    speed: Math.min(4, 1.8 + 0.06 * t),
+    patternsPerChamber: level < 8 ? 1 : level < 20 ? 2 : 3,
+    speed: Math.min(4, 2.2 + 0.06 * t),
     lane: Math.max(12, 40 - t),
-    columns: Math.min(8, 2 + Math.floor(t / 5)),
-    perColumn: level < 13 ? 2 : level < 31 ? 3 : 4,
+    columns: Math.min(8, 4 + Math.floor(t / 5)),
+    perColumn: level < 6 ? 2 : level < 14 ? 3 : 4,
     orbitDots: Math.min(8, 3 + Math.floor(t / 8)),
     rings: level < 20 ? 1 : 2,
     loopDots: Math.min(6, 2 + Math.floor(t / 10)),

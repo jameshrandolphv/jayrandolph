@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.3.1
+- World's Longest Game difficulty and gameplay adjustments
+
 ## 1.3.0
 - Added World's Longest Game; Flappy Cat bug fixes
 

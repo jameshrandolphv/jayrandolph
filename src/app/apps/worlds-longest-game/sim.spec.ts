@@ -73,6 +73,26 @@ describe('LongestSim', () => {
     expect(sim.phase).toBe('playing');
   });
 
+  it('forgives an enemy that only grazes the drawn square', () => {
+    // Start centre is (1.5, 5.5) tiles; the drawn square reaches 16px right, the hurt box 12px.
+    const sim = started(corridor([still(1.5 * 48 + 16 + 10 - 2, 5.5 * 48)]));
+    sim.step();
+    expect(sim.phase).toBe('playing');
+    const hit = started(corridor([still(1.5 * 48 + 12 + 10 - 2, 5.5 * 48)]));
+    hit.step();
+    expect(hit.phase).toBe('dying');
+  });
+
+  it('reaches a checkpoint as soon as any part of the square touches it', () => {
+    const sim = started(corridor());
+    sim.collected = [true, true];
+    // Checkpoint 1 starts at x = 5 * 48; the square's right edge touches it 16px earlier.
+    sim.x = 5 * 48 - 16 + 1;
+    sim.y = 5.5 * 48;
+    sim.step();
+    expect(sim.checkpoint).toBe(1);
+  });
+
   it('lets the intro be skipped and holds still during it', () => {
     const sim = new LongestSim(() => corridor());
     sim.showInstructions();
