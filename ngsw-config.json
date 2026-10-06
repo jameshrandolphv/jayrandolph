@@ -1,0 +1,43 @@
+{
+  "$schema": "./node_modules/@angular/service-worker/config/schema.json",
+  "index": "/index.html",
+  "assetGroups": [
+    {
+      "name": "app",
+      "installMode": "prefetch",
+      "updateMode": "prefetch",
+      "resources": {
+        "files": [
+          "/favicon.ico",
+          "/index.html",
+          "/manifest.webmanifest",
+          "/*.css",
+          "/*.js",
+          "/icons/**",
+          "/wallpaper.jpg",
+          "/engine/**"
+        ]
+      }
+    },
+    {
+      "name": "on-demand",
+      "installMode": "lazy",
+      "updateMode": "lazy",
+      "resources": {
+        "files": ["/*.wasm", "/film/**"]
+      }
+    }
+  ],
+  "dataGroups": [
+    {
+      "name": "photo-list",
+      "urls": ["/photos/manifest.json"],
+      "cacheConfig": {
+        "strategy": "freshness",
+        "maxSize": 1,
+        "maxAge": "30d",
+        "timeout": "3s"
+      }
+    }
+  ]
+}
