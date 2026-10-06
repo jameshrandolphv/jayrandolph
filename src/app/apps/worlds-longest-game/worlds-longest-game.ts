@@ -1,16 +1,17 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, inject } from '@angular/core';
 import { GameCanvas, type GameSurface, type LogicalPoint } from '../../games/game-canvas';
+import { ProgressService } from '../../games/progress.service';
 import { ScoreService } from '../../games/score.service';
 import { Sfx } from '../../games/sfx';
 import { WindowFrame } from '../../ui/window-frame';
 import { HEIGHT, WIDTH } from './constants';
 import { LongestGame } from './game';
-import { DPad, type StickVector } from './dpad';
+import { ArrowKeys, type StickVector } from './arrow-keys';
 import { LongestView } from './view';
 
 @Component({
   selector: 'app-worlds-longest-game',
-  imports: [WindowFrame, GameCanvas, DPad],
+  imports: [WindowFrame, GameCanvas, ArrowKeys],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '(document:keydown)': 'onKeyDown($event)',
@@ -33,7 +34,7 @@ import { LongestView } from './view';
             (press)="onPress($event)"
           />
         </div>
-        <div class="pad"><app-dpad (moved)="onStick($event)" /></div>
+        <div class="pad"><app-arrow-keys (moved)="onStick($event)" /></div>
       </div>
     </app-window-frame>
   `,
@@ -55,19 +56,19 @@ import { LongestView } from './view';
       display: none;
     }
     @media (pointer: coarse), (max-width: 760px) {
-      /* Phones in landscape: a see-through d-pad over the bottom-left of the game. */
+      /* Phones in landscape: see-through arrow keys over the bottom-left of the game. */
       .pad {
         display: block;
         position: absolute;
         left: 16px;
         bottom: 16px;
-        width: 150px;
-        height: 150px;
+        width: 210px;
+        height: 140px;
         opacity: 0.5;
       }
     }
     @media (max-width: 760px) and (orientation: portrait) {
-      /* Phones in portrait: the 4:3 game on top, a solid d-pad in the space below. */
+      /* Phones in portrait: the 4:3 game on top, solid arrow keys filling the space below, for resting the phone on a desk. */
       .stage {
         flex-direction: column;
         background: #1c1c24;
@@ -95,13 +96,14 @@ export class WorldsLongestGame {
 
   protected game?: LongestGame;
   private readonly scores = inject(ScoreService);
+  private readonly progress = inject(ProgressService);
 
   constructor() {
     inject(DestroyRef).onDestroy(() => this.game?.dispose());
   }
 
   protected onReady({ app, root }: GameSurface): void {
-    const game = new LongestGame(this.scores, new Sfx());
+    const game = new LongestGame(this.scores, new Sfx(), this.progress);
     const view = new LongestView(root, game);
     this.game = game;
     app.ticker.add((ticker) => view.update(game.frame(ticker.deltaMS)));

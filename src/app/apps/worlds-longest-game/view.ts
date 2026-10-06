@@ -5,10 +5,12 @@ import {
   COIN_R,
   COLORS,
   COLS,
+  CONTINUE_BUTTON,
   ENEMY_R,
   FIELD_H,
   FIELD_W,
   HEIGHT,
+  NEW_BUTTON,
   PLAYER_SIZE,
   PLAY_BUTTON,
   ROWS,
@@ -112,18 +114,22 @@ export class LongestView {
   private readonly introLayer = new Container();
   private readonly playLayer = new Container();
   private readonly hud = new Container();
-  private readonly levelText = plain('', 30, '#ffffff', 0.5, BODY_FONT);
+  private readonly levelText = plain('', 30, '#ffffff', 0, BODY_FONT);
+  /** Drawn larger because the glyph is much shorter than the digits beside it. */
+  private readonly infinityText = plain('∞', 56, '#ffffff', 0, BODY_FONT);
   private readonly deathText = plain('', 30, '#ffffff', 1, BODY_FONT);
   private readonly bestText = plain('', 30, '#000000', 0.5, BODY_FONT);
   private readonly field = new Container();
   private readonly player = new Graphics();
   private coinViews: Graphics[] = [];
   private enemyViews: Graphics[] = [];
+  private titleButtons = new Container();
   private introLabel = new Container();
   private shown: LevelDef | null = null;
   private shownLevel = -1;
   private shownDeaths = -1;
   private shownBest = -1;
+  private shownResumable = -1;
 
   constructor(
     root: Container,
@@ -156,9 +162,9 @@ export class LongestView {
     const bars = new Graphics().rect(0, 0, WIDTH, BAR).rect(0, HEIGHT - BAR, WIDTH, BAR).fill(0x000000);
     const menu = plain('MENU', 30, '#ffffff', 0, BODY_FONT);
     menu.position.set(20, BAR / 2);
-    this.levelText.position.set(WIDTH / 2, BAR / 2);
+    this.levelText.y = this.infinityText.y = BAR / 2;
     this.deathText.position.set(WIDTH - 20, BAR / 2);
-    this.hud.addChild(menu, this.levelText, this.deathText);
+    this.hud.addChild(menu, this.levelText, this.infinityText, this.deathText);
 
     this.bestText.position.set(WIDTH / 2, 630);
     this.titleLayer.addChild(this.bestText);
@@ -178,12 +184,19 @@ export class LongestView {
     this.playLayer.visible = playing;
     this.hud.visible = phase === 'intro' || playing;
 
-    if (phase === 'title') this.updateBest();
+    if (phase === 'title') {
+      this.updateBest();
+      this.updateTitleButtons();
+    }
     if (sim.def && sim.def !== this.shown) this.loadLevel(sim.def);
 
     if (sim.level !== this.shownLevel) {
       this.shownLevel = sim.level;
-      this.levelText.text = `LEVEL ${sim.level}`;
+      // A thin space keeps the number from crowding the slash.
+      this.levelText.text = `${sim.level}\u2009/`;
+      const left = (WIDTH - this.levelText.width - this.infinityText.width) / 2;
+      this.levelText.x = left;
+      this.infinityText.x = left + this.levelText.width;
       this.showIntro(sim.level);
     }
     if (sim.deaths !== this.shownDeaths) {
@@ -211,6 +224,24 @@ export class LongestView {
     this.bestText.text = best > 0 ? `BEST: LEVEL ${best}` : '';
   }
 
+  private updateTitleButtons(): void {
+    const { resumable } = this.game;
+    if (resumable === this.shownResumable) return;
+    this.shownResumable = resumable;
+    this.titleButtons.destroy({ children: true });
+    this.titleButtons = new Container();
+    if (resumable) {
+      const label = ['CONTINUE', `LEVEL ${resumable}`];
+      this.titleButtons.addChild(
+        this.button({ ...CONTINUE_BUTTON, label }, 64, '#e81818'),
+        this.button(NEW_BUTTON, 64, '#c58af2'),
+      );
+    } else {
+      this.titleButtons.addChild(this.button(PLAY_BUTTON, 76, '#e81818'));
+    }
+    this.titleLayer.addChild(this.titleButtons);
+  }
+
   private buildTitle(): void {
     const layer = this.titleLayer;
     const sub = outlined("THE WORLD'S...", 48, '#000000', [solid('#ffffff', 10)]);
@@ -231,7 +262,7 @@ export class LongestView {
     title.position.set(WIDTH / 2, 270);
     const version = outlined('VERSION 1.0', 34, '#000000', [solid('#ffffff', 8)]);
     version.position.set(WIDTH - 190, 350);
-    layer.addChild(sub, title, version, this.button(PLAY_BUTTON, 76, '#e81818'));
+    layer.addChild(sub, title, version);
   }
 
   private buildInstructions(): void {

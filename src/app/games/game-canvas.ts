@@ -10,6 +10,7 @@ import {
   viewChild,
 } from '@angular/core';
 import type { Application, Container } from 'pixi.js';
+import { attachPerfOverlay } from './perf-overlay';
 
 export interface GameSurface {
   readonly app: Application;
@@ -69,6 +70,7 @@ export class GameCanvas {
   private root?: Container;
   private observer?: ResizeObserver;
   private destroyed = false;
+  private detachPerf?: () => void;
   private scale = 1;
   private offset: LogicalPoint = { x: 0, y: 0 };
 
@@ -77,6 +79,7 @@ export class GameCanvas {
     inject(DestroyRef).onDestroy(() => {
       this.destroyed = true;
       this.observer?.disconnect();
+      this.detachPerf?.();
       this.app?.destroy(true, { children: true, texture: true });
       this.app = undefined;
     });
@@ -118,6 +121,8 @@ export class GameCanvas {
     el.appendChild(app.canvas);
     this.app = app;
     this.root = root;
+
+    if (new URLSearchParams(location.search).has('perf')) this.detachPerf = attachPerfOverlay(app, el);
 
     this.layout();
     this.observer = new ResizeObserver(() => this.layout());

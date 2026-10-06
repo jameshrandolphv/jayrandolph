@@ -51,6 +51,11 @@ export interface Button extends Rect {
 }
 
 export const PLAY_BUTTON: Button = { x: 330, y: 385, w: 300, h: 190, label: ['PLAY', 'GAME'] };
+/** The title screen's pair of buttons when there is a saved game to resume. */
+export const CONTINUE_BUTTON: Omit<Button, 'label'> = { x: 60, y: 385, w: 400, h: 190 };
+export const NEW_BUTTON: Button = { x: 500, y: 385, w: 400, h: 190, label: ['NEW', 'GAME'] };
+/** The tappable MENU label in the top bar. */
+export const MENU_BUTTON: Rect = { x: 0, y: 0, w: 180, h: BAR };
 export const BACK_BUTTON: Button = { x: 200, y: 490, w: 260, h: 150, label: ['BACK TO', 'MENU'] };
 export const START_BUTTON: Button = { x: 500, y: 490, w: 260, h: 150, label: ['PLAY', 'GAME'] };
 

@@ -1,7 +1,8 @@
 import { FixedStep } from '../../games/fixed-step';
 import type { Sfx, SfxName } from '../../games/sfx';
+import type { ProgressStore } from '../../games/progress.service';
 import type { ScoreStore } from '../../games/score.service';
-import { BACK_BUTTON, PLAY_BUTTON, START_BUTTON, inRect } from './constants';
+import { BACK_BUTTON, CONTINUE_BUTTON, MENU_BUTTON, NEW_BUTTON, PLAY_BUTTON, START_BUTTON, inRect } from './constants';
 import { generateLevel } from './generator';
 import type { LevelDef } from './level';
 import { LongestSim, type SimEvent } from './sim';
@@ -43,15 +44,32 @@ export class LongestGame {
   private stickX = 0;
   private stickY = 0;
   private submitted = 0;
+  /** Level of the saved game on offer from the title screen; 0 if none. */
+  private resumeLevel = 0;
+  /** The level last written to storage, so it is only written when it changes. */
+  private savedLevel = 0;
+  /** Set once a run starts, so a slow load can't offer a save that has already been used or cleared. */
+  private started = false;
 
   constructor(
     private readonly scores: ScoreStore,
     private readonly sfx: Sfx,
+    private readonly progress: ProgressStore,
     seed = randomSeed(),
     generate: (level: number) => LevelDef = (level) => generateLevel(level, seed),
   ) {
     this.sim = new LongestSim(generate);
     void scores.getBest(GAME_ID).then((best) => (this.best = Math.max(this.best, best)));
+    void progress.load(GAME_ID).then((level) => {
+      if (this.started) return;
+      this.resumeLevel = level;
+      this.savedLevel = level;
+    });
+  }
+
+  /** The level the title screen offers to continue from; 0 when it should only offer a new game. */
+  get resumable(): number {
+    return this.sim.canReturn ? this.sim.level : this.resumeLevel;
   }
 
   frame(deltaMs: number): number {
@@ -59,6 +77,7 @@ export class LongestGame {
     this.step.advance(deltaMs, () => this.sim.step());
     for (const event of this.sim.drainEvents()) this.sfx.play(SOUNDS[event]);
     this.saveBest();
+    this.saveProgress();
     return this.step.alpha;
   }
 
@@ -110,17 +129,20 @@ export class LongestGame {
     this.sfx.unlock();
     switch (this.sim.phase) {
       case 'title':
-        if (inRect(PLAY_BUTTON, x, y)) this.sim.showInstructions();
+        if (this.resumable) {
+          if (inRect(CONTINUE_BUTTON, x, y)) this.resume();
+          else if (inRect(NEW_BUTTON, x, y)) this.sim.showInstructions();
+        } else if (inRect(PLAY_BUTTON, x, y)) this.sim.showInstructions();
         break;
       case 'instructions':
         if (inRect(BACK_BUTTON, x, y)) this.sim.back();
-        else if (inRect(START_BUTTON, x, y)) this.sim.begin();
+        else if (inRect(START_BUTTON, x, y)) this.startNew();
         break;
       case 'intro':
-        this.sim.skipIntro();
-        break;
       case 'playing':
       case 'dying':
+        if (inRect(MENU_BUTTON, x, y)) this.openMenu();
+        else this.sim.skipIntro();
         break;
     }
   }
@@ -133,10 +155,11 @@ export class LongestGame {
     this.sfx.unlock();
     switch (this.sim.phase) {
       case 'title':
-        this.sim.showInstructions();
+        if (this.resumable) this.resume();
+        else this.sim.showInstructions();
         break;
       case 'instructions':
-        this.sim.begin();
+        this.startNew();
         break;
       case 'intro':
         this.sim.skipIntro();
@@ -145,6 +168,31 @@ export class LongestGame {
       case 'dying':
         break;
     }
+  }
+
+  private openMenu(): void {
+    this.releaseAll();
+    this.sim.openMenu();
+  }
+
+  private resume(): void {
+    this.started = true;
+    if (this.sim.canReturn) this.sim.returnToRun();
+    else this.sim.begin(this.resumeLevel);
+  }
+
+  /** Drops any saved game and starts again from level 1. */
+  private startNew(): void {
+    this.started = true;
+    this.resumeLevel = 0;
+    this.sim.begin();
+  }
+
+  private saveProgress(): void {
+    const { level } = this.sim;
+    if (level === 0 || level === this.savedLevel) return;
+    this.savedLevel = level;
+    void this.progress.save(GAME_ID, level);
   }
 
   /** Held keys win over the stick; both give a direction of at most length 1. */

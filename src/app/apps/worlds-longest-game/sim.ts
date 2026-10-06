@@ -37,6 +37,8 @@ export class LongestSim {
   collected: boolean[] = [];
 
   private saved: boolean[] = [];
+  /** The phase to return to when the menu was opened mid-run; null otherwise. */
+  private menuFrom: Phase | null = null;
   private timer = 0;
   private moveX = 0;
   private moveY = 0;
@@ -69,12 +71,34 @@ export class LongestSim {
     this.events.push('click');
   }
 
-  /** Starts a run from level 1. */
-  begin(): void {
+  /** Starts a run, from level 1 unless resuming a saved one. */
+  begin(level = 1): void {
     if (this.phase !== 'instructions' && this.phase !== 'title') return;
     this.deaths = 0;
+    this.menuFrom = null;
     this.events.push('click');
-    this.startLevel(1);
+    this.startLevel(level);
+  }
+
+  /** Whether the title screen was opened from a run that can be picked up again. */
+  get canReturn(): boolean {
+    return this.menuFrom !== null;
+  }
+
+  /** Opens the title screen from a run, pausing it where it is. */
+  openMenu(): void {
+    if (this.phase !== 'intro' && this.phase !== 'playing' && this.phase !== 'dying') return;
+    this.menuFrom = this.phase;
+    this.phase = 'title';
+    this.events.push('click');
+  }
+
+  /** Returns to the run paused by openMenu. */
+  returnToRun(): void {
+    if (this.phase !== 'title' || this.menuFrom === null) return;
+    this.phase = this.menuFrom;
+    this.menuFrom = null;
+    this.events.push('click');
   }
 
   skipIntro(): void {
