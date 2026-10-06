@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>rAF tap test</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #123; color: #0f0; font: 12px/1.4 monospace; touch-action: none; user-select: none; -webkit-user-select: none; }
+      pre { margin: 0; padding: 8px; white-space: pre-wrap; }
+      canvas { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -1; }
+    </style>
+  </head>
+  <body>
+    <pre id="out"></pre>
+    <script>
+      // A page with nothing but a frame meter: if taps stall frames here too, it is iOS/Safari, not the site.
+      // Tap anywhere. ?gl adds a full-screen WebGL canvas redrawn every frame (like the game).
+      const out = document.getElementById('out');
+      const gl = new URLSearchParams(location.search).has('gl');
+      let ctx = null;
+      if (gl) {
+        const canvas = document.createElement('canvas');
+        canvas.width = innerWidth * devicePixelRatio;
+        canvas.height = innerHeight * devicePixelRatio;
+        document.body.appendChild(canvas);
+        ctx = canvas.getContext('webgl');
+      }
+      const deltas = [];
+      const taps = [];
+      let last = performance.now();
+      let n = 0;
+      let pending = null;
+      addEventListener('pointerdown', (e) => {
+        pending = { at: e.timeStamp, before: deltas[deltas.length - 1] || 0 };
+      });
+      const frame = (now) => {
+        const delta = now - last;
+        last = now;
+        n++;
+        deltas.push(delta);
+        if (deltas.length > 120) deltas.shift();
+        if (ctx) {
+          ctx.clearColor((n % 60) / 60, 0.3, 0.5, 1);
+          ctx.clear(ctx.COLOR_BUFFER_BIT);
+        }
+        if (pending) {
+          taps.push({ delay: performance.now() - pending.at, frames: [pending.before, delta], n });
+          if (taps.length > 8) taps.shift();
+          pending = null;
+        }
+        for (const t of taps) if (t.frames.length < 4 && n > t.n) t.frames.push(delta);
+        if (n % 15 === 0) {
+          const avg = deltas.reduce((a, b) => a + b, 0) / deltas.length;
+          out.textContent =
+            `${gl ? 'webgl' : 'plain'} avg ${avg.toFixed(1)}ms worst ${Math.max(...deltas).toFixed(0)}ms\n` +
+            taps.map((t) => `tap in ${t.delay.toFixed(0)}ms frames ${t.frames.map((f) => f.toFixed(0)).join(' ')}`).join('\n');
+        }
+        requestAnimationFrame(frame);
+      };
+      requestAnimationFrame(frame);
+    </script>
+  </body>
+</html>
