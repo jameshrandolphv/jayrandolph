@@ -1,7 +1,7 @@
 //! Film emulation pipeline: linear Rec.2020 in, display-encoded sRGB out.
 
 use crate::blur;
-use crate::film::Film;
+use crate::film::{Film, Print, Projection};
 
 /// Tunable parameters. `PARAM_COUNT` f32 values in this order cross the FFI boundary.
 #[derive(Clone, Debug)]
@@ -42,9 +42,27 @@ pub struct Params {
     /// Absolute pixel coordinates of the tile's top-left corner (halo included).
     pub grain_origin_x: f32,
     pub grain_origin_y: f32,
+    /// Negatives: enlarger + paper print. Slides: projection tone stage.
+    pub print_active: bool,
+    /// Print (or projector) exposure in stops.
+    pub print_ev: f32,
+    /// Inverted negatives without a print: lab-scanner style S-curve instead of a plain power law.
+    pub lab_scan: bool,
+    /// Display-referred S-curve strength about mid-gray (0 = off).
+    pub punch: f32,
+    /// Extra saturation applied after the S-curve (0 = off).
+    pub saturation: f32,
+    /// Tone sliders, each in -1..1 (0 = off).
+    pub whites: f32,
+    pub highlights: f32,
+    pub blacks: f32,
+    pub shadows: f32,
+    /// Colour sliders, each in -1..1; positive temperature is warmer, positive tint is magenta.
+    pub temperature: f32,
+    pub tint: f32,
 }
 
-pub const PARAM_COUNT: usize = 38;
+pub const PARAM_COUNT: usize = 49;
 
 impl Params {
     pub fn from_slice(v: &[f32]) -> Option<Params> {
@@ -81,6 +99,17 @@ impl Params {
             grain_seed: v[35],
             grain_origin_x: v[36],
             grain_origin_y: v[37],
+            print_active: v[38] != 0.0,
+            print_ev: v[39],
+            lab_scan: v[40] != 0.0,
+            punch: v[41],
+            saturation: v[42],
+            whites: v[43],
+            highlights: v[44],
+            blacks: v[45],
+            shadows: v[46],
+            temperature: v[47],
+            tint: v[48],
         })
     }
 }
@@ -268,7 +297,13 @@ fn dir_couplers(film: &Film, p: &Params, log_raw: &Planes, density: &mut Planes,
 
 #[inline]
 fn srgb_encode(v: f32) -> f32 {
-    let v = v.clamp(0.0, 1.0);
+    srgb_encode_open(v.clamp(0.0, 1.0))
+}
+
+/// sRGB transfer function without the upper clamp (values above 1 map above 1).
+#[inline]
+fn srgb_encode_open(v: f32) -> f32 {
+    let v = v.max(0.0);
     if v <= 0.003_130_8 {
         12.92 * v
     } else {
@@ -276,38 +311,91 @@ fn srgb_encode(v: f32) -> f32 {
     }
 }
 
+/// Trilinear lookup of a 3-D table indexed [a][b][c][ch] over the per-axis range `lo..hi`.
+#[inline]
+fn trilinear(lut: &[f32], sn: usize, lo: &[f32; 3], hi: &[f32; 3], d: [f32; 3]) -> [f32; 3] {
+    let last = (sn - 1) as f32;
+    let mut f = [0.0f32; 3];
+    let mut i0 = [0usize; 3];
+    for c in 0..3 {
+        let u = ((d[c] - lo[c]) * last / (hi[c] - lo[c])).clamp(0.0, last);
+        i0[c] = (u.floor() as usize).min(sn - 2);
+        f[c] = u - i0[c] as f32;
+    }
+    let mut o = [0.0f32; 3];
+    for corner in 0..8 {
+        let (da, db, dc) = (corner & 1, (corner >> 1) & 1, (corner >> 2) & 1);
+        let wgt = (if da == 1 { f[0] } else { 1.0 - f[0] })
+            * (if db == 1 { f[1] } else { 1.0 - f[1] })
+            * (if dc == 1 { f[2] } else { 1.0 - f[2] });
+        let base = (((i0[0] + da) * sn + i0[1] + db) * sn + i0[2] + dc) * 3;
+        for k in 0..3 {
+            o[k] += wgt * lut[base + k];
+        }
+    }
+    o
+}
+
 /// density (CMY) -> linear sRGB via the baked scanner LUT (trilinear in log-XYZ).
 fn scan_linear(film: &Film, density: &Planes, n: usize, out: &mut [f32]) {
-    let sn = film.scan_n;
-    let last = (sn - 1) as f32;
-    let at = |r: usize, g: usize, b: usize, c: usize| film.scan_lut[((r * sn + g) * sn + b) * 3 + c];
     let m = &film.xyz2rgb;
-    let mut inv = [0.0f32; 3];
-    for c in 0..3 {
-        inv[c] = last / (film.scan_max[c] - film.scan_min[c]);
-    }
     for i in 0..n {
-        let mut f = [0.0f32; 3];
-        let mut i0 = [0usize; 3];
-        for c in 0..3 {
-            let u = ((density[c][i] - film.scan_min[c]) * inv[c]).clamp(0.0, last);
-            i0[c] = (u.floor() as usize).min(sn - 2);
-            f[c] = u - i0[c] as f32;
-        }
-        let mut xyz = [0.0f32; 3];
-        for k in 0..3 {
-            let mut v = 0.0;
-            for corner in 0..8 {
-                let (dr, dg, db) = (corner & 1, (corner >> 1) & 1, (corner >> 2) & 1);
-                let wgt = (if dr == 1 { f[0] } else { 1.0 - f[0] })
-                    * (if dg == 1 { f[1] } else { 1.0 - f[1] })
-                    * (if db == 1 { f[2] } else { 1.0 - f[2] });
-                v += wgt * at(i0[0] + dr, i0[1] + dg, i0[2] + db, k);
-            }
-            xyz[k] = 10f32.powf(v);
-        }
+        let d = [density[0][i], density[1][i], density[2][i]];
+        let lx = trilinear(&film.scan_lut, film.scan_n, &film.scan_min, &film.scan_max, d);
+        let xyz = [10f32.powf(lx[0]), 10f32.powf(lx[1]), 10f32.powf(lx[2])];
         for c in 0..3 {
             out[3 * i + c] = m[3 * c] * xyz[0] + m[3 * c + 1] * xyz[1] + m[3 * c + 2] * xyz[2];
+        }
+    }
+}
+
+/// Negative density -> enlarger exposure -> paper curves -> paper scan, as display sRGB.
+fn print_stage(film: &Film, pr: &Print, p: &Params, density: &Planes, n: usize, out: &mut [f32]) {
+    // Positive print exposure brightens the result, so it removes light from the paper.
+    let shift = -p.print_ev * std::f32::consts::LOG10_2;
+    let m = &pr.xyz2rgb;
+    for i in 0..n {
+        let d = [density[0][i], density[1][i], density[2][i]];
+        let raw = trilinear(&pr.raw_lut, pr.n, &film.scan_min, &film.scan_max, d);
+        let mut paper = [0.0f32; 3];
+        for c in 0..3 {
+            paper[c] = interp(raw[c] + shift, &pr.log_exposure, &pr.curves, c);
+        }
+        let lx = trilinear(&pr.scan_lut, pr.n, &pr.scan_min, &pr.scan_max, paper);
+        let xyz = [10f32.powf(lx[0]), 10f32.powf(lx[1]), 10f32.powf(lx[2])];
+        for c in 0..3 {
+            let v = m[3 * c] * xyz[0] + m[3 * c + 1] * xyz[1] + m[3 * c + 2] * xyz[2];
+            out[3 * i + c] = srgb_encode(v);
+        }
+    }
+}
+
+#[inline]
+fn luminance(c: [f32; 3]) -> f32 {
+    0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+}
+
+/// Power-law gamma about mid-gray; stands in for the dark-room contrast of a projected slide.
+const SLIDE_CONTRAST: f32 = 1.25;
+
+/// Slide viewing: black/white anchored to the film's own Dmax/Dmin, then contrast about mid-gray.
+fn project(film: &Film, p: &Params, lin: &[f32], n: usize, out: &mut [f32]) {
+    let pj = &film.proj;
+    let span = (pj.white_y - luminance(pj.black)).max(1e-6);
+    let gain = p.print_ev.exp2();
+    for i in 0..n {
+        let mut c = [0.0f32; 3];
+        for k in 0..3 {
+            c[k] = ((lin[3 * i + k] - pj.black[k]) / span).max(0.0) * gain;
+        }
+        let y = luminance(c);
+        let s = if y > 1e-6 {
+            shoulder(pj.mid_y * (y / pj.pivot).powf(SLIDE_CONTRAST)) / y
+        } else {
+            0.0
+        };
+        for k in 0..3 {
+            out[3 * i + k] = srgb_encode(c[k] * s);
         }
     }
 }
@@ -317,9 +405,6 @@ const MID_GRAY: f32 = 0.184;
 /// Derives the negative-inversion anchors from the film's own response to neutral exposures,
 /// so a neutral mid-gray comes out neutral without analysing the image.
 pub fn calibrate(film: &mut Film) {
-    if film.positive {
-        return;
-    }
     let one = |film: &Film, scene: f32| -> [f32; 3] {
         let mut raw: Planes = [vec![0.0], vec![0.0], vec![0.0]];
         expose(film, &[scene, scene, scene], 1, 1.0, &mut raw);
@@ -335,6 +420,24 @@ pub fn calibrate(film: &mut Film) {
     let zero: Planes = [vec![0.0], vec![0.0], vec![0.0]];
     let mut base = [0.0f32; 3];
     scan_linear(film, &zero, 1, &mut base);
+    if film.positive {
+        let deepest: Planes = [
+            vec![film.density_max[0]],
+            vec![film.density_max[1]],
+            vec![film.density_max[2]],
+        ];
+        let mut black = [0.0f32; 3];
+        scan_linear(film, &deepest, 1, &mut black);
+        let (yw, yb) = (luminance(base), luminance(black));
+        let ym = luminance(one(film, MID_GRAY));
+        film.proj = Projection {
+            white_y: yw,
+            black,
+            pivot: ((ym - yb) / (yw - yb).max(1e-6)).max(1e-4),
+            mid_y: ym,
+        };
+        return;
+    }
     let dens = |lin: [f32; 3]| -> [f32; 3] {
         let mut d = [0.0; 3];
         for c in 0..3 {
@@ -363,15 +466,41 @@ fn finish(film: &Film, p: &Params, lin: &[f32], n: usize, out: &mut [f32]) {
         return;
     }
     let log_mid = MID_GRAY.log10();
+    let gain = if p.lab_scan { p.print_ev.exp2() } else { 1.0 };
     for i in 0..n {
         for c in 0..3 {
             let t = (lin[3 * i + c] / film.neg_base[c]).max(1e-6);
             let d = -t.log10();
-            let gamma = p.contrast / film.neg_slope[c];
-            let y = 10f32.powf(log_mid + gamma * (d - film.neg_d_mid[c]));
-            out[3 * i + c] = srgb_encode(shoulder(y));
+            if p.lab_scan {
+                let gamma = 1.0 / film.neg_slope[c];
+                let y = 10f32.powf(log_mid + gamma * (d - film.neg_d_mid[c])) * gain;
+                out[3 * i + c] = lab_curve(srgb_encode_open(y));
+            } else {
+                let gamma = p.contrast / film.neg_slope[c];
+                let y = 10f32.powf(log_mid + gamma * (d - film.neg_d_mid[c]));
+                out[3 * i + c] = srgb_encode(shoulder(y));
+            }
         }
     }
+}
+
+/// Mid-slope of the lab-scan curve.
+const LAB_GAIN: f32 = 1.1;
+/// Reach of the toe (below mid-gray) and shoulder (above) in display units; the toe's asymptote is a lifted black.
+const LAB_TOE: f32 = 0.62;
+const LAB_SHOULDER: f32 = 0.5;
+
+/// Soft S-curve about mid-gray on display-encoded values: lifted blacks, rolled-off highlights.
+#[inline]
+fn lab_curve(e: f32) -> f32 {
+    let pivot = srgb_encode(MID_GRAY);
+    let u = e - pivot;
+    let r = if u >= 0.0 {
+        LAB_SHOULDER * (LAB_GAIN * u / LAB_SHOULDER).tanh()
+    } else {
+        -LAB_TOE * (-LAB_GAIN * u / LAB_TOE).tanh()
+    };
+    (pivot + r).clamp(0.0, 1.0)
 }
 
 /// Soft highlight roll-off: identity below the knee, asymptotic to 1 above it.
@@ -385,9 +514,81 @@ fn shoulder(y: f32) -> f32 {
     }
 }
 
+/// Largest display-value shift a tone slider makes at +/-1.
+const TONE_RANGE: f32 = 0.18;
+/// Channel gain swing of the temperature and tint sliders at +/-1.
+const TEMP_RANGE: f32 = 0.12;
+const TINT_RANGE: f32 = 0.10;
+
+/// Raised-cosine bump of half-width `r` centred on `c`.
+#[inline]
+fn bump(x: f32, c: f32, r: f32) -> f32 {
+    let u = (x - c).abs() / r;
+    if u >= 1.0 {
+        0.0
+    } else {
+        let k = (u * std::f32::consts::FRAC_PI_2).cos();
+        k * k
+    }
+}
+
+/// Luminance remap from the whites/highlights/shadows/blacks sliders.
+#[inline]
+fn tone_shift(p: &Params, l: f32) -> f32 {
+    let d = p.whites * l.powi(3)
+        + p.highlights * bump(l, 0.75, 0.4)
+        + p.shadows * bump(l, 0.25, 0.4)
+        + p.blacks * (1.0 - l).powi(3);
+    TONE_RANGE * d
+}
+
+/// Film look (S-curve about display mid-gray, saturation) then the user tone and colour grade.
+fn apply_look(p: &Params, out: &mut [f32]) {
+    let tone = p.whites != 0.0 || p.highlights != 0.0 || p.shadows != 0.0 || p.blacks != 0.0;
+    let wb = p.temperature != 0.0 || p.tint != 0.0;
+    if p.punch == 0.0 && p.saturation == 0.0 && !tone && !wb {
+        return;
+    }
+    let gains = [
+        1.0 + TEMP_RANGE * p.temperature,
+        1.0 - TINT_RANGE * p.tint,
+        1.0 - TEMP_RANGE * p.temperature,
+    ];
+    let pivot = srgb_encode(MID_GRAY);
+    let g = 1.0 + p.punch;
+    let curve = |x: f32| {
+        let x = x.clamp(0.0, 1.0);
+        if x < pivot {
+            pivot * (x / pivot).powf(g)
+        } else {
+            1.0 - (1.0 - pivot) * ((1.0 - x) / (1.0 - pivot)).powf(g)
+        }
+    };
+    let k = 1.0 + p.saturation;
+    for px in out.chunks_exact_mut(3) {
+        let mut c = [curve(px[0]), curve(px[1]), curve(px[2])];
+        if tone {
+            let shift = tone_shift(p, luminance(c).clamp(0.0, 1.0));
+            for v in c.iter_mut() {
+                *v = (*v + shift).clamp(0.0, 1.0);
+            }
+        }
+        let l = luminance(c);
+        for i in 0..3 {
+            let v = l + (c[i] - l) * k;
+            px[i] = (if wb { v * gains[i] } else { v }).clamp(0.0, 1.0);
+        }
+    }
+}
+
 /// Process one tile. `input` is interleaved linear Rec.2020 (w*h*3); `output` receives
 /// interleaved display-encoded sRGB in [0,1].
 pub fn process_tile(film: &Film, p: &Params, input: &[f32], output: &mut [f32], w: usize, h: usize) {
+    render_tile(film, p, input, output, w, h);
+    apply_look(p, output);
+}
+
+fn render_tile(film: &Film, p: &Params, input: &[f32], output: &mut [f32], w: usize, h: usize) {
     let n = w * h;
     let mut raw: Planes = [vec![0.0; n], vec![0.0; n], vec![0.0; n]];
     expose(film, input, n, p.ev.exp2(), &mut raw);
@@ -407,7 +608,17 @@ pub fn process_tile(film: &Film, p: &Params, input: &[f32], output: &mut [f32], 
         crate::grain::apply(film, p, &mut density, w, h);
     }
     let mut lin = vec![0.0f32; n * 3];
+    if p.print_active {
+        if let Some(print) = film.print.as_ref() {
+            print_stage(film, print, p, &density, n, output);
+            return;
+        }
+    }
     scan_linear(film, &density, n, &mut lin);
+    if p.print_active && film.positive {
+        project(film, p, &lin, n, output);
+        return;
+    }
     finish(film, p, &lin, n, output);
 }
 
@@ -447,6 +658,116 @@ mod tests {
         }
         for i in 1..levels.len() {
             assert!(out[3 * i + 1] > out[3 * (i - 1) + 1], "not monotonic at {i}");
+        }
+    }
+
+    #[test]
+    fn grade_sliders_move_in_the_expected_direction() {
+        let film = portra();
+        let input = [0.05f32, 0.05, 0.05, 0.184, 0.184, 0.184, 0.7, 0.7, 0.7];
+        let run = |set: &dyn Fn(&mut Params)| {
+            let mut p = params();
+            set(&mut p);
+            let mut out = vec![0.0; 9];
+            process_tile(&film, &p, &input, &mut out, 3, 1);
+            out
+        };
+        let base = run(&|_| {});
+        let shadows = run(&|p| p.shadows = 1.0);
+        assert!(shadows[0] > base[0] + 0.02);
+        let highlights = run(&|p| p.highlights = -1.0);
+        assert!(highlights[6] < base[6] - 0.02);
+        let warm = run(&|p| p.temperature = 1.0);
+        assert!(warm[3] > base[3] && warm[5] < base[5]);
+        let magenta = run(&|p| p.tint = 1.0);
+        assert!(magenta[4] < base[4]);
+        let mono = run(&|p| p.saturation = -1.0);
+        assert!((mono[3] - mono[4]).abs() < 1e-4 && (mono[4] - mono[5]).abs() < 1e-4);
+    }
+
+    const RAMP: [f32; 8] = [0.01, 0.03, 0.08, 0.184, 0.4, 0.7, 1.0, 1.5];
+
+    /// Neutral-ramp green channel through `process_tile`.
+    fn ramp(film: &Film, print: bool, print_ev: f32) -> Vec<[f32; 3]> {
+        let mut p = params();
+        p.print_active = print;
+        p.print_ev = print_ev;
+        let input: Vec<f32> = RAMP.iter().flat_map(|&l| [l, l, l]).collect();
+        let mut out = vec![0.0; input.len()];
+        process_tile(film, &p, &input, &mut out, RAMP.len(), 1);
+        out.chunks(3).map(|c| [c[0], c[1], c[2]]).collect()
+    }
+
+    fn load(stock: &str) -> Film {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../public/film/{stock}.fsp"));
+        Film::parse(&std::fs::read(p).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn print_deepens_tone_scale_and_keeps_mid_gray() {
+        let film = portra();
+        let flat = ramp(&film, false, 0.0);
+        let printed = ramp(&film, true, 0.0);
+        println!("flat    {flat:?}\nprinted {printed:?}");
+        let mid = srgb_encode(MID_GRAY);
+        assert!((printed[3][1] - mid).abs() < 0.03, "mid {}", printed[3][1]);
+        for i in 1..RAMP.len() {
+            assert!(printed[i][1] >= printed[i - 1][1], "not monotonic at {i}");
+        }
+        // Deeper shadows and a steeper midtone than the plain inversion.
+        assert!(printed[0][1] < flat[0][1]);
+        let slope = |r: &[[f32; 3]]| (r[4][1] - r[2][1]) / (RAMP[4] / RAMP[2]).log2();
+        assert!(slope(&printed) > slope(&flat) * 0.9);
+    }
+
+    #[test]
+    fn lab_scan_is_softer_than_print_and_keeps_mid_gray() {
+        for stock in ["kodak_portra_400", "kodak_tri_x_400"] {
+            let film = load(stock);
+            let mut p = params();
+            p.lab_scan = true;
+            let input: Vec<f32> = RAMP.iter().flat_map(|&l| [l, l, l]).collect();
+            let mut out = vec![0.0; input.len()];
+            process_tile(&film, &p, &input, &mut out, RAMP.len(), 1);
+            let lab: Vec<[f32; 3]> = out.chunks(3).map(|c| [c[0], c[1], c[2]]).collect();
+            let printed = ramp(&film, true, 0.0);
+            println!("{stock} lab {lab:?}\nprinted {printed:?}");
+            let mid = srgb_encode(MID_GRAY);
+            assert!((lab[3][1] - mid).abs() < 0.03, "{stock} mid {}", lab[3][1]);
+            let spread = lab[3].iter().cloned().fold(0.0f32, f32::max) - lab[3].iter().cloned().fold(1.0f32, f32::min);
+            assert!(spread < 0.03, "{stock} mid-gray tinted: {:?}", lab[3]);
+            for i in 1..RAMP.len() {
+                assert!(lab[i][1] >= lab[i - 1][1], "{stock} not monotonic at {i}");
+            }
+            // Lifted black, rolled-off white, and a gentler midtone than the print.
+            assert!(lab[0][1] > printed[0][1] + 0.02, "{stock} toe");
+            assert!(lab[6][1] < 0.97, "{stock} shoulder {}", lab[6][1]);
+            let slope = |r: &[[f32; 3]]| (r[4][1] - r[2][1]) / (RAMP[4] / RAMP[2]).log2();
+            assert!(slope(&lab) < slope(&printed), "{stock} midtone slope");
+        }
+    }
+
+    #[test]
+    fn print_exposure_lightens_and_darkens() {
+        let film = portra();
+        let dark = ramp(&film, true, -1.0);
+        let light = ramp(&film, true, 1.0);
+        println!("dark {:?}\nlight {:?}", dark, light);
+        assert!(light[3][1] > dark[3][1] + 0.1);
+    }
+
+    #[test]
+    fn slide_projection_deepens_ends_and_keeps_pivot() {
+        let film = load("kodak_kodachrome_64");
+        let scan = ramp(&film, false, 0.0);
+        let proj = ramp(&film, true, 0.0);
+        println!("scan {scan:?}\nproj {proj:?}");
+        assert!((proj[3][1] - scan[3][1]).abs() < 0.03, "pivot moved");
+        assert!(proj[0][1] < scan[0][1]);
+        assert!(proj[6][1] > scan[6][1]);
+        assert!(proj[7][1] <= 1.0);
+        for i in 1..RAMP.len() {
+            assert!(proj[i][1] >= proj[i - 1][1], "not monotonic at {i}");
         }
     }
 }

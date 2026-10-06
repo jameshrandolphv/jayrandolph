@@ -64,7 +64,7 @@ function draw(el: HTMLCanvasElement, img: PreviewImage): void {
       </div>
     }
     @if (!session.before()) {
-      <p class="viewer-empty">Drop a .dng file here</p>
+      <p class="viewer-empty">Drop an image here</p>
     }
   `,
   host: {

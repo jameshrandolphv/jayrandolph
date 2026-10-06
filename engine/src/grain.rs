@@ -153,7 +153,9 @@ pub fn apply(film: &Film, p: &Params, density: &mut [Vec<f32>; 3], w: usize, h: 
     let origin_y = p.grain_origin_y as i64;
     let seed = (p.grain_seed as u32 as u64).wrapping_mul(0xD1B5_4A32_D192_ED03);
 
-    for ch in 0..3 {
+    // A mono stock has one emulsion: simulate channel 0 and share it.
+    let channels = if film.mono { 1 } else { 3 };
+    for ch in 0..channels {
         let layer_total: f32 = (0..3).map(|sl| g.layer_max[sl * 3 + ch]).sum();
         let dmax_total = film.density_max[ch].max(1e-6);
         let u = g.uniformity[ch].clamp(0.0, 0.999);
@@ -223,9 +225,14 @@ pub fn apply(film: &Film, p: &Params, density: &mut [Vec<f32>; 3], w: usize, h: 
     let sigma = blur_sigma(p);
     if sigma > 0.0 {
         let mut scratch = Vec::new();
-        for c in 0..3 {
+        for c in 0..channels {
             blur::gaussian(&mut out[c], w, h, sigma, &mut scratch);
         }
+    }
+    if film.mono {
+        let (head, tail) = out.split_at_mut(1);
+        tail[0].copy_from_slice(&head[0]);
+        tail[1].copy_from_slice(&head[0]);
     }
     let amount = p.grain_amount;
     for c in 0..3 {

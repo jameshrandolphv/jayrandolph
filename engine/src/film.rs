@@ -2,8 +2,38 @@
 
 use crate::grain::GrainFilm;
 
+/// Enlarger + colour paper, baked from the reference pipeline (negatives only).
+pub struct Print {
+    pub n: usize,
+    /// Film CMY density (axes: the film's `scan_min..scan_max`) -> log10 paper exposure.
+    pub raw_lut: Vec<f32>,
+    pub log_exposure: Vec<f32>,
+    /// Paper density curves, K x 3.
+    pub curves: Vec<f32>,
+    pub scan_min: [f32; 3],
+    pub scan_max: [f32; 3],
+    pub xyz2rgb: [f32; 9],
+    /// Paper CMY density -> log10 XYZ.
+    pub scan_lut: Vec<f32>,
+}
+
+/// Slide projection anchors (filled by `pipeline::calibrate`).
+#[derive(Clone, Copy, Default)]
+pub struct Projection {
+    /// Luminance of the clear film base.
+    pub white_y: f32,
+    /// Linear sRGB of the densest film.
+    pub black: [f32; 3],
+    /// Normalised luminance a neutral mid-gray scene lands on.
+    pub pivot: f32,
+    /// Linear luminance of that mid-gray in the plain scan, which the stage keeps fixed.
+    pub mid_y: f32,
+}
+
 pub struct Film {
     pub positive: bool,
+    /// Black-and-white stock: one emulsion, so grain is one field shared by all channels.
+    pub mono: bool,
     pub tc_n: usize,
     pub rgb2xyz: [f32; 9],
     pub xyz2rgb: [f32; 9],
@@ -18,6 +48,8 @@ pub struct Film {
     pub scan_max: [f32; 3],
     pub scan_lut: Vec<f32>,
     pub grain: GrainFilm,
+    pub print: Option<Print>,
+    pub proj: Projection,
     /// Negative inversion calibration (filled by `pipeline::calibrate`).
     pub neg_base: [f32; 3],
     pub neg_d_mid: [f32; 3],
@@ -58,10 +90,13 @@ impl Film {
         if r.u32()? != MAGIC {
             return Err("bad magic");
         }
-        if r.u32()? != 2 {
+        let version = r.u32()?;
+        if version != 2 && version != 3 {
             return Err("unsupported version");
         }
-        let positive = r.u32()? != 0;
+        let flags = r.u32()?;
+        let positive = flags & 1 != 0;
+        let mono = flags & 2 != 0;
         let tc_n = r.u32()? as usize;
         let k = r.u32()? as usize;
         let scan_n = r.u32()? as usize;
@@ -97,11 +132,31 @@ impl Film {
             lut_n,
             layer_lut,
         };
+        let print = if version >= 3 && r.u32()? != 0 {
+            let n = r.u32()? as usize;
+            let k = r.u32()? as usize;
+            if n < 2 || k < 2 {
+                return Err("bad print dimensions");
+            }
+            Some(Print {
+                n,
+                raw_lut: r.f32s(n * n * n * 3)?,
+                log_exposure: r.f32s(k)?,
+                curves: r.f32s(k * 3)?,
+                scan_min: r.arr()?,
+                scan_max: r.arr()?,
+                xyz2rgb: r.arr()?,
+                scan_lut: r.f32s(n * n * n * 3)?,
+            })
+        } else {
+            None
+        };
         let mut film = Film {
             neg_base: [1.0; 3],
             neg_d_mid: [0.0; 3],
             neg_slope: [1.0; 3],
             positive,
+            mono,
             tc_n,
             rgb2xyz,
             xyz2rgb,
@@ -116,6 +171,8 @@ impl Film {
             scan_max,
             scan_lut,
             grain,
+            print,
+            proj: Projection::default(),
         };
         crate::pipeline::calibrate(&mut film);
         Ok(film)

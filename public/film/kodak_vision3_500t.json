@@ -1,0 +1,102 @@
+{
+ "stock": "kodak_vision3_500t",
+ "name": "Kodak Vision3 500T",
+ "type": "negative",
+ "format_mm": 35.0,
+ "halation": {
+  "active": true,
+  "scatter_amount": 1.0,
+  "scatter_spatial_scale": 1.0,
+  "halation_amount": 1.0,
+  "halation_spatial_scale": 1.0,
+  "scatter_core_um": [
+   2.2,
+   2.0,
+   1.6
+  ],
+  "scatter_tail_um": [
+   9.3,
+   9.7,
+   9.1
+  ],
+  "scatter_tail_weight": [
+   0.78,
+   0.65,
+   0.67
+  ],
+  "boost_ev": 0.0,
+  "boost_range": 0.3,
+  "protect_ev": 4.0,
+  "halation_strength": [
+   0.015,
+   0.005,
+   0.0
+  ],
+  "halation_first_sigma_um": [
+   50.0,
+   50.0,
+   50.0
+  ],
+  "halation_n_bounces": 3,
+  "halation_bounce_decay": 0.5,
+  "halation_renormalize": true
+ },
+ "dir": {
+  "active": true,
+  "amount": 1.0,
+  "inhibition_samelayer": 1.0,
+  "inhibition_interlayer": 1.0,
+  "gamma_samelayer_rgb": [
+   0.336,
+   0.319,
+   0.273
+  ],
+  "gamma_interlayer_r_to_gb": [
+   0.353,
+   0.302
+  ],
+  "gamma_interlayer_g_to_rb": [
+   0.154,
+   0.353
+  ],
+  "gamma_interlayer_b_to_rg": [
+   0.168,
+   0.226
+  ],
+  "diffusion_size_um": 20.0,
+  "diffusion_tail_um": 200.0,
+  "diffusion_tail_weight": 0.06
+ },
+ "grain": {
+  "active": true,
+  "sublayers_active": true,
+  "particle_area_um2": 0.2,
+  "particle_scale": [
+   1.6,
+   1.6,
+   3.2
+  ],
+  "particle_scale_layers": [
+   2.0,
+   1.0,
+   0.5
+  ],
+  "density_min": [
+   0.03,
+   0.03,
+   0.03
+  ],
+  "uniformity": [
+   0.97,
+   0.99,
+   0.97
+  ],
+  "blur": 0.65,
+  "blur_dye_clouds_um": 1.0,
+  "micro_structure": [
+   0.2,
+   30
+  ],
+  "n_sub_layers": 1
+ }
+}

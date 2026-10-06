@@ -164,6 +164,37 @@ fn deterministic_and_tile_independent() {
     assert_eq!(whole, again);
 }
 
+/// A black-and-white stock has one emulsion: grain is one shared field, so a neutral
+/// input stays neutral, and its noise matches the reference model for channel 0.
+#[test]
+fn mono_stock_shares_one_grain_field() {
+    let (w, h) = (160usize, 160usize);
+    for stock in ["kodak_tri_x_400", "kodak_t_max_100", "ilford_hp5_plus"] {
+        let film = load(stock);
+        assert!(film.mono, "{stock} should be flagged mono");
+        let p = params(6.0, 0.65);
+        let img: Vec<f32> = (0..w * h).flat_map(|_| [0.18f32, 0.18, 0.18]).collect();
+        let mut out = vec![0.0f32; w * h * 3];
+        process_tile(&film, &p, &img, &mut out, w, h);
+        for px in out.chunks(3) {
+            assert!((px[0] - px[1]).abs() < 1e-4 && (px[1] - px[2]).abs() < 1e-4, "{stock} channels differ: {px:?}");
+        }
+        let g: Vec<f32> = out.chunks(3).map(|c| c[1]).collect();
+        let (_, std) = stats(&g, 4, w, h);
+        assert!(std > 1e-3, "{stock} should be grainy, std {std}");
+
+        let flat = 0.5 * film.density_max[0];
+        let mut dens = [vec![flat; w * h], vec![flat; w * h], vec![flat; w * h]];
+        grain::apply(&film, &params(6.0, 0.0), &mut dens, w, h);
+        let (mean, std) = stats(&dens[0], 4, w, h);
+        let (rmean, rstd) = reference_stats(&film, 0, flat, 6.0);
+        assert!((mean - rmean).abs() < 0.03 * film.density_max[0], "{stock} mean {mean} vs {rmean}");
+        assert!((std / rstd - 1.0).abs() < 0.25, "{stock} std {std} vs {rstd}");
+        assert_eq!(dens[0], dens[1]);
+        assert_eq!(dens[0], dens[2]);
+    }
+}
+
 /// Run with `cargo test --release --test grain -- --ignored --nocapture`.
 #[test]
 #[ignore]

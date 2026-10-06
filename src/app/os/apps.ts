@@ -10,9 +10,9 @@ export interface AppDef {
 
 export const APPS: readonly AppDef[] = [
   {
-    id: 'develop-film',
-    name: 'Develop Film',
+    id: 'film-sim',
+    name: 'Film Sim',
     icon: 'film',
-    load: () => import('../apps/develop-film/develop-film').then((m) => m.DevelopFilm),
+    load: () => import('../apps/film-sim/film-sim').then((m) => m.FilmSim),
   },
 ];

@@ -1,4 +1,4 @@
-Jay Randolph (including the Develop Film app)
+Jay Randolph (including the Film Sim app)
 Licensed under the GNU General Public License v3 (see LICENSE).
 
 Third-party material:
@@ -7,3 +7,6 @@ Third-party material:
   used by this project are derived from it and distributed under the same terms.
 - LibRaw (https://www.libraw.org) via libraw-wasm (ISC). LibRaw is dual-licensed
   LGPL 2.1 / CDDL 1.0.
+- geotiff.js (https://github.com/geotiffjs/geotiff.js) (MIT), used to decode TIFF input.
+- heic2any (https://github.com/alexcorvi/heic2any) (MIT), bundling libheif (LGPL 3.0), used to
+  decode HEIF input in browsers without native support.

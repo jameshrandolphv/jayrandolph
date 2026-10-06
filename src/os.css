@@ -10,7 +10,7 @@
 /* Hosts that only wrap a .window so it can be a direct flex child of the workspace. */
 app-fs-page,
 app-finder,
-app-develop-film,
+app-film-sim,
 app-not-found {
   display: contents;
 }
@@ -170,7 +170,7 @@ app-not-found {
   display: flex;
   flex-direction: column;
   flex-wrap: wrap;
-  align-content: flex-end;
+  align-content: flex-start;
   gap: 12px 8px;
   height: 100%;
 }
@@ -259,6 +259,7 @@ app-not-found {
 }
 
 .fs-item.photo .fs-glyph {
+  grid-template: 100% / 100%;
   width: 100%;
   height: 112px;
 }
@@ -452,7 +453,6 @@ a.btn {
   }
 
   .desktop-icons {
-    align-content: flex-start;
     padding: 12px;
   }
 

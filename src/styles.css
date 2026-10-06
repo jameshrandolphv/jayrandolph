@@ -106,6 +106,26 @@ a.l-close:focus-visible {
   flex: 1;
 }
 
+.toolbar {
+  position: relative;
+}
+
+.toolbar-menu {
+  display: contents;
+}
+
+.menu-toggle {
+  display: none;
+}
+
+.toolbar-export {
+  order: 1;
+}
+
+.menu-credits {
+  order: 2;
+}
+
 .btn {
   min-height: 24px;
   padding: 2px 16px;
@@ -173,13 +193,204 @@ a.l-close:focus-visible {
 
 .radio {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: flex-start;
   padding: 4px 0;
   cursor: pointer;
 }
 
 .radio small {
+  color: #444;
+}
+
+.film-select {
+  width: 100%;
+}
+
+/* Aqua form controls (Tiger-era): glossy gel pills, grooved sliders, glass progress bar. */
+select,
+input[type='checkbox'],
+input[type='radio'],
+input[type='range'],
+progress {
+  -webkit-appearance: none;
+  appearance: none;
+  font: inherit;
+}
+
+select {
+  min-height: 22px;
+  max-width: 100%;
+  padding: 1px 28px 1px 12px;
+  color: #000;
+  border: 1px solid #6b6b6b;
+  border-radius: 999px;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Cpath d='M10 4 13.5 8.5H6.5zM10 16 6.5 11.5H13.5z' fill='%23fff' stroke='%23123c7a' stroke-opacity='.35' stroke-width='.6'/%3E%3C/svg%3E")
+      right 1px center / 20px 20px no-repeat,
+    linear-gradient(#a9d0fa 0%, #5aa6f2 49%, #1a65c8 50%, #4a9df2 100%) right / 24px 100% no-repeat,
+    linear-gradient(#fdfdfd 0%, #eef0f3 49%, #d3d8df 50%, #eef1f5 100%);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.3), inset 0 1px 0 #fff;
+  cursor: pointer;
+}
+
+select:active {
+  filter: brightness(0.92);
+}
+
+select:disabled {
+  color: #888;
+  filter: saturate(0.3);
+  cursor: default;
+}
+
+select option,
+select optgroup {
+  color: #000;
+  background: #fff;
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border: 1px solid #5f6670;
+  background: linear-gradient(#fff 0%, #eceef2 49%, #d5d9e0 50%, #f3f5f8 100%);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.3), inset 0 1px 0 #fff;
+  cursor: pointer;
+}
+
+input[type='checkbox'] {
+  border-radius: 3px;
+}
+
+input[type='radio'] {
+  border-radius: 50%;
+}
+
+input[type='checkbox']:checked {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M3 7.2 5.8 10.2 11 3.2' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+      center / 100% 100% no-repeat,
+    linear-gradient(#fff 0%, #eceef2 49%, #d5d9e0 50%, #f3f5f8 100%);
+}
+
+input[type='radio']:checked {
+  background:
+    radial-gradient(circle at 50% 50%, #000 0 2.5px, transparent 3px),
+    linear-gradient(#fff 0%, #eceef2 49%, #d5d9e0 50%, #f3f5f8 100%);
+}
+
+input[type='checkbox']:active,
+input[type='radio']:active {
+  border-color: #1b4f9c;
+  background-color: #7db4f5;
+  filter: brightness(0.9) saturate(1.6);
+}
+
+input[type='checkbox']:disabled,
+input[type='radio']:disabled,
+input[type='range']:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+input[type='range'] {
+  height: 18px;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 5px;
+  border: 1px solid #7a828e;
+  border-radius: 3px;
+  background: var(--track, linear-gradient(#b9bfc8, #e4e7ec));
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.35), 0 1px 0 rgb(255 255 255 / 0.8);
+}
+
+input[type='range']::-moz-range-track {
+  height: 3px;
+  border: 1px solid #7a828e;
+  border-radius: 3px;
+  background: var(--track, linear-gradient(#b9bfc8, #e4e7ec));
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.35), 0 1px 0 rgb(255 255 255 / 0.8);
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border: 1px solid #5f6670;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 25%, #fff 0 30%, #e9ecf1 60%, #c2c8d1 100%);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.45), inset 0 1px 0 #fff;
+}
+
+input[type='range']::-moz-range-thumb {
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  border: 1px solid #5f6670;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 25%, #fff 0 30%, #e9ecf1 60%, #c2c8d1 100%);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.45), inset 0 1px 0 #fff;
+}
+
+input[type='range']:active::-webkit-slider-thumb {
+  background: radial-gradient(circle at 50% 25%, #d6e9fd 0 30%, #7db4f5 65%, #2a72d8 100%);
+}
+
+input[type='range']:active::-moz-range-thumb {
+  background: radial-gradient(circle at 50% 25%, #d6e9fd 0 30%, #7db4f5 65%, #2a72d8 100%);
+}
+
+input[type='range'][data-track='temperature'] {
+  --track: linear-gradient(to right, #2f7be0, #dfe3ea, #f2c230);
+}
+
+input[type='range'][data-track='tint'] {
+  --track: linear-gradient(to right, #3fae5a, #dfe3ea, #e0529f);
+}
+
+select:focus-visible,
+input[type='checkbox']:focus-visible,
+input[type='radio']:focus-visible,
+input[type='range']:focus-visible {
+  outline: 3px solid rgb(90 160 255 / 0.7);
+  outline-offset: 1px;
+}
+
+progress {
+  overflow: hidden;
+  border: 1px solid #5f6670;
+  border-radius: 999px;
+  background: linear-gradient(#c9ced6, #f4f6f9);
+  box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.4), 0 1px 0 rgb(255 255 255 / 0.7);
+}
+
+progress::-webkit-progress-bar {
+  background: transparent;
+}
+
+progress::-webkit-progress-value {
+  border-radius: 999px;
+  background: linear-gradient(#a9d0fa 0%, #5aa6f2 49%, #1a65c8 50%, #4a9df2 100%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.7);
+}
+
+progress::-moz-progress-bar {
+  border-radius: 999px;
+  background: linear-gradient(#a9d0fa 0%, #5aa6f2 49%, #1a65c8 50%, #4a9df2 100%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.7);
+}
+
+.film-blurb {
+  margin: 6px 0 0;
   color: #444;
 }
 
@@ -223,6 +434,12 @@ a.l-close:focus-visible {
   box-shadow: 0 2px 10px rgb(0 0 0 / 0.6);
 }
 
+
+.field select {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+}
 .layer {
   position: absolute;
   inset: 0;
@@ -318,6 +535,13 @@ a.l-close:focus-visible {
   color: #a10000;
 }
 
+.status-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .barber {
   width: 80px;
   height: 10px;
@@ -360,6 +584,53 @@ a.l-close:focus-visible {
 @media (max-width: 760px) {
   .window {
     border-radius: 0;
+  }
+
+  .menu-toggle {
+    display: inline-block;
+    order: 2;
+  }
+
+  .toolbar-export {
+    margin-left: auto;
+  }
+
+  .toolbar-menu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    right: 6px;
+    z-index: 20;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    min-width: 180px;
+    max-width: calc(100% - 12px);
+    padding: 8px 10px;
+    border: 1px solid #5d6877;
+    border-radius: 0 0 8px 8px;
+    background: linear-gradient(#f8fafc, #e0e6ee);
+    box-shadow: 0 6px 16px rgb(0 20 60 / 0.45);
+  }
+
+  .toolbar-menu.open {
+    display: flex;
+  }
+
+  .toolbar-menu .spacer {
+    display: none;
+  }
+
+  .toolbar-menu .segmented {
+    display: flex;
+  }
+
+  .toolbar-menu .segmented .btn {
+    flex: 1;
+  }
+
+  .toolbar .btn {
+    padding-inline: 12px;
   }
 
   .body {
@@ -432,7 +703,7 @@ a.l-close:focus-visible {
 }
 
 .hint.error {
-  color: #a10000;
+  color: #a20000;
 }
 
 .sheet progress {

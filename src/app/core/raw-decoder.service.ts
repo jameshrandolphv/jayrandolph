@@ -12,6 +12,8 @@ export interface DecodedRaw {
   readonly image: LinearImage;
   readonly camera: string;
   readonly iso: number;
+  /** DNG BaselineExposure in stops (0 when absent or not a DNG). */
+  readonly baselineEv: number;
 }
 
 // outputColor 8 = Rec.2020; gamma 1/1 keeps the output linear for the spectral engine.
@@ -33,7 +35,7 @@ export class RawDecoderService {
     const raw = new LibRaw();
     try {
       await raw.open(new Uint8Array(await file.arrayBuffer()), LINEAR_SETTINGS);
-      const meta = await raw.metadata();
+      const meta = await raw.metadata(true);
       const img = await raw.imageData();
       if (!img || img.colors !== 3 || img.bits !== 16) {
         throw new Error('Unsupported RAW output (expected 16-bit RGB).');
@@ -46,6 +48,7 @@ export class RawDecoderService {
         image: { width: img.width, height: img.height, data },
         camera: [meta?.camera_make, meta?.camera_model].filter(Boolean).join(' '),
         iso: meta?.iso_speed ?? 0,
+        baselineEv: meta?.color_data?.dng_levels?.baseline_exposure ?? 0,
       };
     } finally {
       raw.dispose();

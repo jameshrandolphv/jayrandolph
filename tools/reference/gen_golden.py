@@ -42,3 +42,12 @@ for stock, kind in (('kodak_kodachrome_64', 'positive'), ('kodak_portra_400', 'n
     (OUT / f'{stock}.txt').write_text('\n'.join(
         ' '.join(f'{v:.9g}' for v in (*i, *e)) for i, e in zip(patches[0], exp)) + '\n')
     print(stock, kind, np.asarray(out).shape, np.asarray(out)[0, :3])
+
+    if kind == 'negative':
+        # Enlarger + paper print, scanned as the finished photograph.
+        p.io.scan_film = False
+        out = np.asarray(simulate(patches.copy(), digest_params(p)))
+        np.save(OUT / f'{stock}_print_srgb.npy', out)
+        (OUT / f'{stock}_print.txt').write_text('\n'.join(
+            ' '.join(f'{v:.9g}' for v in (*i, *e)) for i, e in zip(patches[0], out[0])) + '\n')
+        print(stock, 'print', out.shape, out[0, :3])

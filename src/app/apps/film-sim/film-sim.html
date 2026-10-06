@@ -1,72 +1,87 @@
-<app-window-frame title="Develop Film" closeLink="/">
+<app-window-frame title="Film Sim" closeLink="/">
   <div class="toolbar" role="toolbar" aria-label="Main">
     <button type="button" class="btn" (click)="pickFile()">Open…</button>
     <input
       #fileInput
       type="file"
-      accept=".dng,image/x-adobe-dng"
+      accept=".dng,.tif,.tiff,.jpg,.jpeg,.png,.webp,.heic,.heif,image/x-adobe-dng,image/tiff,image/jpeg,image/png,image/webp,image/heic,image/heif"
       class="sr-only"
       (change)="onFileChosen($event)"
     />
-    <label class="check">
-      <input type="checkbox" [checked]="session.split()" (change)="onSplit($event)" />
-      <span>Split view</span>
-    </label>
-    <label class="check">
-      <input
-        type="checkbox"
-        [checked]="session.showOriginal()"
-        [disabled]="session.split()"
-        (change)="onShowOriginal($event)"
-      />
-      <span>Show original</span>
-    </label>
-    <span class="spacer"></span>
-    <span class="segmented" role="group" aria-label="Zoom">
-      <button
-        type="button"
-        class="btn"
-        [attr.aria-pressed]="session.zoom() === 'fit'"
-        [disabled]="!session.dimensions()"
-        (click)="session.setZoom('fit')"
-      >
-        Fit
+    <button
+      type="button"
+      class="btn menu-toggle"
+      aria-controls="toolbar-menu"
+      [attr.aria-expanded]="menuOpen()"
+      (click)="menuOpen.set(!menuOpen())"
+    >
+      Menu
+    </button>
+    <div id="toolbar-menu" class="toolbar-menu" [class.open]="menuOpen()">
+      <label class="check">
+        <input type="checkbox" [checked]="session.split()" (change)="onSplit($event)" />
+        <span>Split view</span>
+      </label>
+      <label class="check">
+        <input
+          type="checkbox"
+          [checked]="session.showOriginal()"
+          [disabled]="session.split()"
+          (change)="onShowOriginal($event)"
+        />
+        <span>Show original</span>
+      </label>
+      <span class="spacer"></span>
+      <span class="segmented" role="group" aria-label="Zoom">
+        <button
+          type="button"
+          class="btn"
+          [attr.aria-pressed]="session.zoom() === 'fit'"
+          [disabled]="!session.dimensions()"
+          (click)="session.setZoom('fit')"
+        >
+          Fit
+        </button>
+        <button
+          type="button"
+          class="btn"
+          [attr.aria-pressed]="session.zoom() === 'actual'"
+          [disabled]="!session.dimensions()"
+          (click)="session.setZoom('actual')"
+        >
+          100%
+        </button>
+      </span>
+      <button type="button" class="btn menu-credits" (click)="menuOpen.set(false); showCredits()">
+        Credits
       </button>
-      <button
-        type="button"
-        class="btn"
-        [attr.aria-pressed]="session.zoom() === 'actual'"
-        [disabled]="!session.dimensions()"
-        (click)="session.setZoom('actual')"
-      >
-        100%
-      </button>
-    </span>
-    <button type="button" class="btn default" [disabled]="!session.dimensions()" (click)="showExport()">
+    </div>
+    <button
+      type="button"
+      class="btn default toolbar-export"
+      [disabled]="!session.dimensions()"
+      (click)="showExport()"
+    >
       Export…
     </button>
-    <button type="button" class="btn" (click)="showCredits()">Credits</button>
   </div>
 
   <div class="body">
     <aside class="sidebar">
       <fieldset class="groupbox">
         <legend>Film Stock</legend>
-        @for (f of films; track f.id) {
-          <label class="radio">
-            <input
-              type="radio"
-              name="film"
-              [value]="f.id"
-              [checked]="session.film() === f.id"
-              (change)="selectFilm(f.id)"
-            />
-            <span>
-              <strong>{{ f.name }}</strong>&ngsp;<small>({{ f.kind }})</small>
-              <br /><small>{{ f.blurb }}</small>
-            </span>
-          </label>
-        }
+        <select class="film-select" aria-label="Film stock" (change)="onFilm($event)">
+          @for (g of filmGroups; track g.brand) {
+            <optgroup [label]="g.brand">
+              @for (f of g.films; track f.id) {
+                <option [value]="f.id" [selected]="session.film() === f.id">
+                  {{ f.name }} ({{ f.kind }})
+                </option>
+              }
+            </optgroup>
+          }
+        </select>
+        <p class="film-blurb"><small>{{ filmInfo().blurb }}</small></p>
       </fieldset>
 
       <fieldset class="groupbox">
@@ -84,17 +99,30 @@
         </label>
         @if (isNegative()) {
           <label class="field">
-            <span>Contrast: <output>{{ session.contrast().toFixed(2) }}</output></span>
-            <input
-              type="range"
-              min="0.6"
-              max="1.8"
-              step="0.05"
-              [value]="session.contrast()"
-              (input)="onContrast($event)"
-            />
+            <span>Output</span>
+            <select aria-label="Output" (change)="onOutput($event)">
+              <option value="lab" [selected]="session.negativeOutput() === 'lab'">Lab scan</option>
+              <option value="print" [selected]="session.negativeOutput() === 'print'">RA4 print</option>
+            </select>
+          </label>
+        } @else {
+          <label class="check">
+            <input type="checkbox" [checked]="session.print()" (change)="onPrint($event)" />
+            <span>Projection</span>
           </label>
         }
+        <label class="field">
+          <span>{{ exposureLabel() }} exposure: <output>{{ printEvLabel() }}</output></span>
+          <input
+            type="range"
+            min="-2"
+            max="2"
+            step="0.1"
+            [value]="session.printEv()"
+            [disabled]="!isNegative() && !session.print()"
+            (input)="onPrintEv($event)"
+          />
+        </label>
         <label class="check">
           <input
             type="checkbox"
@@ -137,6 +165,43 @@
         </label>
         <p class="hint">Grain is simulated grain-by-grain, so it appears at 100% zoom and in exports.</p>
       </fieldset>
+      <fieldset class="groupbox">
+        <legend>Tone</legend>
+        @for (c of toneControls; track c.key) {
+          <label class="field">
+            <span>{{ c.label }}: <output>{{ session.adjustments()[c.key] }}</output></span>
+            <input
+              type="range"
+              min="-100"
+              max="100"
+              step="1"
+              [value]="session.adjustments()[c.key]"
+              (input)="onAdjust(c.key, $event)"
+              (dblclick)="session.setAdjustment(c.key, 0)"
+            />
+          </label>
+        }
+      </fieldset>
+
+      <fieldset class="groupbox">
+        <legend>Color</legend>
+        @for (c of colorControls; track c.key) {
+          <label class="field">
+            <span>{{ c.label }}: <output>{{ session.adjustments()[c.key] }}</output></span>
+            <input
+              type="range"
+              [attr.data-track]="c.key"
+              min="-100"
+              max="100"
+              step="1"
+              [value]="session.adjustments()[c.key]"
+              (input)="onAdjust(c.key, $event)"
+              (dblclick)="session.setAdjustment(c.key, 0)"
+            />
+          </label>
+        }
+        <p class="hint">Double-click a slider to reset it.</p>
+      </fieldset>
     </aside>
 
     <main
@@ -154,7 +219,7 @@
     @if (session.state() === 'decoding' || session.processing()) {
       <span class="barber" aria-hidden="true"></span>
     }
-    <span [class.error]="session.state() === 'error'">{{ session.message() }}</span>
+    <span class="status-text" [class.error]="session.state() === 'error'">{{ session.message() }}</span>
   </footer>
 </app-window-frame>
 
@@ -215,7 +280,8 @@
     Film models are derived from
     <a href="https://github.com/andreavolpato/spektrafilm" target="_blank" rel="noopener">spektrafilm</a>
     by Andrea Volpato (code GPLv3; film profile data CC BY-SA 4.0), built from published Kodak
-    datasheets. RAW decoding uses LibRaw via libraw-wasm.
+    datasheets. RAW decoding uses LibRaw via libraw-wasm; TIFF decoding uses geotiff.js; HEIF
+    decoding outside Safari uses heic2any (libheif).
   </p>
   <p>This application is free software licensed under the GNU GPL v3.</p>
   <div class="sheet-actions">

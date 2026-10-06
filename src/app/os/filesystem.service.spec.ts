@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AppDef } from './apps';
 import { buildTree, resolvePath, type PhotoManifest } from './filesystem.service';
 
-const apps: AppDef[] = [{ id: 'develop-film', name: 'Develop Film', icon: 'film', load: () => Promise.reject() }];
+const apps: AppDef[] = [{ id: 'film-sim', name: 'Film Sim', icon: 'film', load: () => Promise.reject() }];
 
 const manifest: PhotoManifest = {
   albums: [
@@ -23,7 +23,7 @@ describe('filesystem', () => {
   it('puts Photography and apps on the desktop', () => {
     expect(root.children.map((c) => [c.kind, c.name])).toEqual([
       ['folder', 'Photography'],
-      ['app', 'Develop Film'],
+      ['app', 'Film Sim'],
     ]);
   });
 
@@ -57,6 +57,6 @@ describe('filesystem', () => {
   it('returns null for unknown paths and for descending into leaves', () => {
     expect(resolvePath(root, ['nope'])).toBeNull();
     expect(resolvePath(root, ['photography', 'iceland', 'a', 'x'])).toBeNull();
-    expect(resolvePath(root, ['develop-film', 'x'])).toBeNull();
+    expect(resolvePath(root, ['film-sim', 'x'])).toBeNull();
   });
 });

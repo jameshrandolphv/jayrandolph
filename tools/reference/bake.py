@@ -7,8 +7,13 @@ the browser only has to run cheap per-pixel table lookups.
 
 Usage: /tmp/spkenv/bin/python tools/reference/bake.py <out_dir> [stock ...]
 
+Black-and-white stocks (bw_profiles.STOCKS) are built from the digitised
+datasheet curves in tools/reference/bw first; they are flagged mono so the
+engine renders a single grain field for all channels.
+
 Binary layout (little-endian, all payload f32):
-  u32 magic 'FSP1', u32 version, u32 positive(0/1), u32 tcN, u32 curveK, u32 scanN
+  u32 magic 'FSP1', u32 version, u32 flags (bit0 positive, bit1 mono), u32 tcN,
+  u32 curveK, u32 scanN
   f32 rgb2xyz[9]   linear Rec.2020 -> XYZ (CAT16 adapted to film reference illuminant)
   f32 xyz2rgb[9]   scanner XYZ -> linear sRGB (viewing illuminant -> D65, Bradford)
   f32 tcLut[tcN*tcN*3]   index [x][y][ch], x,y in [0,1]
@@ -26,6 +31,15 @@ Binary layout (little-endian, all payload f32):
   f32 densityMaxLayers[9]   index [sublayer][ch], per-layer max of the layer curves
   f32 layerLut[3*grainN*3]  index [ch][i][sublayer]: per-sublayer density at total
                             normalised density D = i/(grainN-1)*densityMax[ch]
+  -- version 3 print block --
+  u32 hasPrint   (0 for slides; nothing follows)
+  u32 printN, u32 printK
+  f32 printRawLut[printN^3*3]  film CMY density (axes scanMin..scanMax) -> log10 paper
+                               exposure, index [r][g][b][ch]; enlarger balance included
+  f32 printLogExposure[K], printCurves[K*3]   paper density curves
+  f32 printScanMin[3], printScanMax[3]
+  f32 printXyz2rgb[9]          paper viewing illuminant XYZ -> linear sRGB
+  f32 printScanLut[printN^3*3] paper CMY density -> log10 XYZ
 """
 import json
 import struct
@@ -35,6 +49,7 @@ from pathlib import Path
 
 import colour
 import numpy as np
+import bw_profiles
 from spektrafilm import init_params, digest_params
 from spektrafilm.config import STANDARD_OBSERVER_CMFS
 from spektrafilm.model.couplers import (compute_dir_couplers_matrix,
@@ -47,13 +62,66 @@ from spektrafilm.utils.spectral_upsampling import (compute_hanatos2025_tc_lut,
                                                    _illuminant_to_xy)
 
 SCAN_N = 33
+PRINT_N = 25
 GRAIN_N = 256
 INPUT_SPACE = 'ITU-R BT.2020'
 
 
+def bake_print(stock: str, scan_min: np.ndarray, scan_max: np.ndarray) -> bytes:
+    """Enlarger + paper + paper scan, evaluated by the reference pipeline's own stages."""
+    from spektrafilm.runtime.pipeline import SimulationPipeline
+
+    p = init_params(film_profile=stock, print_profile='kodak_portra_endura')
+    p.io.input_color_space = INPUT_SPACE
+    p.io.input_cctf_decoding = False
+    p.io.scan_film = False
+    p.io.input_gamut_compress = replace(p.io.input_gamut_compress, active=False)
+    p.io.output_gamut_compress = replace(p.io.output_gamut_compress, algorithm='off')
+    p.debug.lut_mode = True
+    p.debug.deactivate_spatial_effects = True
+    p.debug.deactivate_stochastic_effects = True
+    p.camera.auto_exposure = False
+    d = digest_params(p)
+    if stock in bw_profiles.STOCKS:
+        bw_profiles.apply_bw_overrides(d, stock)
+    pipe = SimulationPipeline(d)
+    printing, scanning = pipe._printing_stage, pipe._scanning_stage
+    paper = d.print
+
+    axes = [np.linspace(scan_min[i], scan_max[i], PRINT_N) for i in range(3)]
+    grid = np.stack(np.meshgrid(*axes, indexing='ij'), axis=-1).reshape(PRINT_N ** 2, PRINT_N, 3)
+    raw_lut = np.asarray(printing.expose(grid)).reshape(PRINT_N, PRINT_N, PRINT_N, 3)
+
+    log_e = np.asarray(paper.data.log_exposure, dtype=np.float64)
+    ramp = np.repeat(log_e[:, None, None], 3, axis=2)
+    curves = np.nan_to_num(np.asarray(printing.develop(ramp))[:, 0, :])
+
+    raw = np.asarray(paper.data.density_curves, dtype=np.float64)
+    p_min = np.minimum(np.nanmin(raw, axis=0), curves.min(axis=0))
+    p_max = np.maximum(np.nanmax(raw, axis=0), curves.max(axis=0))
+    p_axes = [np.linspace(p_min[i], p_max[i], PRINT_N) for i in range(3)]
+    p_grid = np.stack(np.meshgrid(*p_axes, indexing='ij'), axis=-1).reshape(PRINT_N ** 2, PRINT_N, 3)
+    scan_lut = np.asarray(scanning.cmy_to_log_xyz(p_grid)).reshape(PRINT_N, PRINT_N, PRINT_N, 3)
+
+    illum = standard_illuminant(paper.info.viewing_illuminant)
+    norm = np.sum(illum * STANDARD_OBSERVER_CMFS[:, 1], axis=0)
+    illum_xyz = np.einsum('k,kl->l', illum, STANDARD_OBSERVER_CMFS[:]) / norm
+    xyz2rgb = colour.XYZ_to_RGB(np.eye(3), colourspace='sRGB', apply_cctf_encoding=False,
+                                illuminant=colour.XYZ_to_xy(illum_xyz)).T
+
+    f32 = lambda a: np.ascontiguousarray(a, dtype='<f4').tobytes()
+    blob = struct.pack('<3I', 1, PRINT_N, log_e.shape[0])
+    for a in (raw_lut, log_e, curves, p_min, p_max, xyz2rgb, scan_lut):
+        blob += f32(a)
+    return blob
+
+
 def bake(stock: str, out: Path) -> None:
+    mono = stock in bw_profiles.STOCKS
     p = init_params(film_profile=stock, print_profile='kodak_portra_endura')
     d = digest_params(p)
+    if mono:
+        bw_profiles.apply_bw_overrides(d, stock)
     film = d.film
     positive = film.info.type == 'positive'
 
@@ -118,7 +186,7 @@ def bake(stock: str, out: Path) -> None:
     assert grain_head.shape == (14,)
 
     f32 = lambda a: np.ascontiguousarray(a, dtype='<f4').tobytes()
-    blob = struct.pack('<6I', 0x31505346, 2, int(positive), tc_lut.shape[0],
+    blob = struct.pack('<6I', 0x31505346, 3, int(positive) | (int(mono) << 1), tc_lut.shape[0],
                        log_exp.shape[0], SCAN_N)
     for a in (rgb2xyz, xyz2rgb, tc_lut, log_exp, curves, curves0, dir_m, dmax,
               scan_min, scan_max, scan_lut):
@@ -126,6 +194,7 @@ def bake(stock: str, out: Path) -> None:
     blob += struct.pack('<I', GRAIN_N)
     for a in (grain_head, layer_max, layer_lut):
         blob += f32(a)
+    blob += struct.pack('<I', 0) if positive else bake_print(stock, scan_min, scan_max)
     (out / f'{stock}.fsp').write_bytes(blob)
 
     r = d.film_render
@@ -133,6 +202,7 @@ def bake(stock: str, out: Path) -> None:
         'stock': stock,
         'name': film.info.name,
         'type': film.info.type,
+        'mono': mono,
         'format_mm': d.camera.film_format_mm,
         'halation': {k: (list(v) if isinstance(v, tuple) else v)
                      for k, v in r.halation.__dict__.items()},
@@ -149,5 +219,7 @@ if __name__ == '__main__':
     out = Path(sys.argv[1])
     out.mkdir(parents=True, exist_ok=True)
     stocks = sys.argv[2:] or ['kodak_kodachrome_64', 'kodak_portra_400']
+    bw_filters = {s: bw_profiles.install(s) for s in stocks if s in bw_profiles.STOCKS}
+    bw_profiles.register_filters(bw_filters)
     for s in stocks:
         bake(s, out)

@@ -1,8 +1,9 @@
 import { Injectable, computed, effect, signal, untracked } from '@angular/core';
-import { RawDecoderService, type LinearImage } from './raw-decoder.service';
+import { ImageDecoderService } from './image-decoder.service';
+import type { LinearImage } from './raw-decoder.service';
 import { buildPreview, downscaleLinear, previewFromEncoded, type PreviewImage } from './preview';
 import { FilmEngineService, extractTile } from '../engine/film-engine.service';
-import { DEFAULT_SETTINGS, type RenderSettings } from '../engine/film-params';
+import { DEFAULT_SETTINGS, NO_ADJUSTMENTS, type Adjustments, type RenderSettings } from '../engine/film-params';
 import {
   EXPORT_FORMATS,
   encodeJpeg,
@@ -11,12 +12,31 @@ import {
   type ExportFormat,
 } from '../export/encoders';
 
-export type FilmId = 'kodachrome-64' | 'portra-400';
+export type FilmId =
+  | 'kodachrome-64'
+  | 'ektachrome-100'
+  | 'portra-160'
+  | 'portra-400'
+  | 'portra-800'
+  | 'gold-200'
+  | 'ektar-100'
+  | 'ultramax-400'
+  | 'vision3-50d'
+  | 'vision3-250d'
+  | 'vision3-500t'
+  | 'fuji-velvia-100'
+  | 'fuji-provia-100f'
+  | 'fuji-pro-400h'
+  | 'fuji-xtra-400'
+  | 'tri-x-400'
+  | 't-max-100'
+  | 'hp5-plus';
 
 export interface FilmInfo {
   readonly id: FilmId;
   /** Baked data set name under public/film. */
   readonly stock: string;
+  readonly brand: 'Kodak' | 'Fujifilm' | 'Ilford';
   readonly name: string;
   readonly kind: 'Slide' | 'Negative';
   readonly blurb: string;
@@ -26,16 +46,146 @@ export const FILMS: readonly FilmInfo[] = [
   {
     id: 'kodachrome-64',
     stock: 'kodak_kodachrome_64',
+    brand: 'Kodak',
     name: 'Kodachrome 64',
     kind: 'Slide',
-    blurb: 'K-14 reversal film. Rich reds, deep contrast.',
+    blurb: 'K-14 reversal film, projected. Rich reds, deep contrast.',
+  },
+  {
+    id: 'ektachrome-100',
+    stock: 'kodak_ektachrome_100',
+    brand: 'Kodak',
+    name: 'Ektachrome E100',
+    kind: 'Slide',
+    blurb: 'E-6 reversal film, projected. Clean, neutral colour.',
+  },
+  {
+    id: 'portra-160',
+    stock: 'kodak_portra_160',
+    brand: 'Kodak',
+    name: 'Portra 160',
+    kind: 'Negative',
+    blurb: 'C-41 portrait negative. Fine grain, muted natural tones.',
   },
   {
     id: 'portra-400',
     stock: 'kodak_portra_400',
+    brand: 'Kodak',
     name: 'Portra 400',
     kind: 'Negative',
-    blurb: 'C-41 colour negative. Soft contrast, wide latitude.',
+    blurb: 'C-41 colour negative, printed on RA4 paper. Wide latitude.',
+  },
+  {
+    id: 'portra-800',
+    stock: 'kodak_portra_800',
+    brand: 'Kodak',
+    name: 'Portra 800',
+    kind: 'Negative',
+    blurb: 'Fast C-41 portrait negative for low light.',
+  },
+  {
+    id: 'gold-200',
+    stock: 'kodak_gold_200',
+    brand: 'Kodak',
+    name: 'Gold 200',
+    kind: 'Negative',
+    blurb: 'Warm, everyday C-41 negative.',
+  },
+  {
+    id: 'ektar-100',
+    stock: 'kodak_ektar_100',
+    brand: 'Kodak',
+    name: 'Ektar 100',
+    kind: 'Negative',
+    blurb: 'Very fine grain, saturated C-41 negative.',
+  },
+  {
+    id: 'ultramax-400',
+    stock: 'kodak_ultramax_400',
+    brand: 'Kodak',
+    name: 'Ultramax 400',
+    kind: 'Negative',
+    blurb: 'Punchy consumer 400-speed C-41 negative.',
+  },
+  {
+    id: 'vision3-50d',
+    stock: 'kodak_vision3_50d',
+    brand: 'Kodak',
+    name: 'Vision3 50D',
+    kind: 'Negative',
+    blurb: 'Daylight-balanced ECN-2 cine negative, finest grain.',
+  },
+  {
+    id: 'vision3-250d',
+    stock: 'kodak_vision3_250d',
+    brand: 'Kodak',
+    name: 'Vision3 250D',
+    kind: 'Negative',
+    blurb: 'Daylight-balanced ECN-2 cine negative.',
+  },
+  {
+    id: 'vision3-500t',
+    stock: 'kodak_vision3_500t',
+    brand: 'Kodak',
+    name: 'Vision3 500T',
+    kind: 'Negative',
+    blurb: 'Tungsten-balanced ECN-2 cine negative.',
+  },
+  {
+    id: 'fuji-velvia-100',
+    stock: 'fujifilm_velvia_100',
+    brand: 'Fujifilm',
+    name: 'Velvia 100',
+    kind: 'Slide',
+    blurb: 'E-6 reversal film. Vivid, saturated colour.',
+  },
+  {
+    id: 'fuji-provia-100f',
+    stock: 'fujifilm_provia_100f',
+    brand: 'Fujifilm',
+    name: 'Provia 100F',
+    kind: 'Slide',
+    blurb: 'E-6 reversal film. Neutral, fine grain.',
+  },
+  {
+    id: 'fuji-pro-400h',
+    stock: 'fujifilm_pro_400h',
+    brand: 'Fujifilm',
+    name: 'Pro 400H',
+    kind: 'Negative',
+    blurb: 'C-41 negative. Soft, pastel skin tones.',
+  },
+  {
+    id: 'fuji-xtra-400',
+    stock: 'fujifilm_xtra_400',
+    brand: 'Fujifilm',
+    name: 'Superia X-TRA 400',
+    kind: 'Negative',
+    blurb: 'Consumer 400-speed C-41 negative. Green-leaning, punchy.',
+  },
+  {
+    id: 'tri-x-400',
+    stock: 'kodak_tri_x_400',
+    brand: 'Kodak',
+    name: 'Tri-X 400 (B&W)',
+    kind: 'Negative',
+    blurb: 'Black & white negative, printed. Contrasty, classic coarse grain.',
+  },
+  {
+    id: 't-max-100',
+    stock: 'kodak_t_max_100',
+    brand: 'Kodak',
+    name: 'T-Max 100 (B&W)',
+    kind: 'Negative',
+    blurb: 'Black & white negative, printed. Very fine grain, smooth tones.',
+  },
+  {
+    id: 'hp5-plus',
+    stock: 'ilford_hp5_plus',
+    brand: 'Ilford',
+    name: 'HP5 Plus 400 (B&W)',
+    kind: 'Negative',
+    blurb: 'Black & white negative, printed. Wide latitude, moderate grain.',
   },
 ];
 
@@ -57,11 +207,30 @@ interface Point {
 export class SessionService {
   readonly film = signal<FilmId>('kodachrome-64');
   readonly ev = signal(0);
+  private readonly baselineEv = signal(0);
   readonly halation = signal(true);
-  readonly contrast = signal(DEFAULT_SETTINGS.contrast);
+  readonly print = signal(DEFAULT_SETTINGS.print);
+  /** How negatives are rendered; slides use `print` (projection) instead. */
+  readonly negativeOutput = signal<'lab' | 'print'>('lab');
+  readonly printEv = signal(DEFAULT_SETTINGS.printEv);
   readonly grain = signal(true);
   readonly grainAmount = signal(DEFAULT_SETTINGS.grainAmount);
   readonly grainSize = signal(DEFAULT_SETTINGS.grainSize);
+  /** Post-film tone and colour sliders, each -100..100. */
+  readonly adjustments = signal<Adjustments>({ ...NO_ADJUSTMENTS });
+  private readonly grade = computed(() => {
+    const a = this.adjustments();
+    return {
+      whites: a.whites / 100,
+      highlights: a.highlights / 100,
+      blacks: a.blacks / 100,
+      shadows: a.shadows / 100,
+      temperature: a.temperature / 100,
+      tint: a.tint / 100,
+      // The slider scales the film look's own saturation; -100 is monochrome.
+      saturation: (1 + DEFAULT_SETTINGS.saturation) * (1 + a.saturation / 100) - 1,
+    };
+  });
   readonly showOriginal = signal(false);
   readonly zoom = signal<ZoomMode>('fit');
   /** Centre of the 100% view in full-resolution pixels (updated live while panning). */
@@ -70,7 +239,7 @@ export class SessionService {
   readonly viewport = signal({ w: 0, h: 0 });
 
   readonly state = signal<SessionState>('idle');
-  readonly message = signal('Open a Leica M10 .dng file to begin.');
+  readonly message = signal('Open a RAW, TIFF, JPEG, PNG, WebP or HEIF image to begin.');
   readonly fileName = signal<string | null>(null);
   readonly processing = signal(false);
   readonly dimensions = signal<{ width: number; height: number } | null>(null);
@@ -94,6 +263,13 @@ export class SessionService {
   readonly preview = computed(() => (this.showOriginal() ? this.before() : this.after()));
   readonly split = signal(false);
 
+  /** Whether the print/projection stage is on for the current film. */
+  private readonly effectivePrint = computed(() =>
+    FILMS.find((f) => f.id === this.film())?.kind === 'Negative'
+      ? this.negativeOutput() === 'print'
+      : this.print(),
+  );
+
   /** Export progress 0..1, or null when idle. */
   readonly exportProgress = signal<number | null>(null);
   readonly exportStage = signal('');
@@ -105,7 +281,7 @@ export class SessionService {
   private abort: AbortController | null = null;
 
   constructor(
-    private readonly decoder: RawDecoderService,
+    private readonly decoder: ImageDecoderService,
     private readonly engine: FilmEngineService,
   ) {
     effect((onCleanup) => {
@@ -116,12 +292,13 @@ export class SessionService {
     effect(() => {
       const source = this.source();
       const film = this.film();
-      const ev = this.ev();
+      const ev = this.ev() + this.baselineEv();
       const halation = this.halation();
-      const contrast = this.contrast();
+      const print = this.effectivePrint();
+      const printEv = this.printEv();
       const zoom = this.zoom();
       if (!source) return;
-      const base = { ev, halation, contrast };
+      const base = { ev, halation, print, printEv, ...this.grade() };
       if (zoom === 'fit') {
         untracked(() => void this.render(source, film, { ...DEFAULT_SETTINGS, ...base }));
         return;
@@ -139,6 +316,10 @@ export class SessionService {
     });
   }
 
+  setAdjustment(key: keyof Adjustments, value: number): void {
+    this.adjustments.update((a) => ({ ...a, [key]: value }));
+  }
+
   /** Renders the whole image at full resolution (grain included) and downloads it. */
   async exportImage(format: ExportFormat, jpegQuality: number): Promise<void> {
     const full = this.full;
@@ -154,9 +335,11 @@ export class SessionService {
         stock: info.stock,
         settings: {
           ...DEFAULT_SETTINGS,
-          ev: this.ev(),
+          ev: this.ev() + this.baselineEv(),
           halation: this.halation(),
-          contrast: this.contrast(),
+          print: this.effectivePrint(),
+          printEv: this.printEv(),
+          ...this.grade(),
           grain: this.grain(),
           grainAmount: this.grainAmount(),
           grainSize: this.grainSize(),
@@ -215,6 +398,7 @@ export class SessionService {
     try {
       const decoded = await this.decoder.decode(file);
       this.full = decoded.image;
+      this.baselineEv.set(decoded.baselineEv);
       this.dimensions.set({ width: decoded.image.width, height: decoded.image.height });
       const small = downscaleLinear(decoded.image, PREVIEW_MAX_DIM);
       this.original.set(buildPreview(small));
@@ -227,7 +411,8 @@ export class SessionService {
       this.source.set(small);
       this.state.set('ready');
       const mp = ((decoded.image.width * decoded.image.height) / 1e6).toFixed(1);
-      this.message.set(`${decoded.camera || 'Unknown camera'} · ${mp} MP · ISO ${decoded.iso}`);
+      const iso = decoded.iso > 0 ? ` · ISO ${decoded.iso}` : '';
+      this.message.set(`${decoded.camera || file.name} · ${mp} MP${iso}`);
     } catch (err) {
       this.state.set('error');
       this.message.set(err instanceof Error ? err.message : 'Could not decode this file.');
