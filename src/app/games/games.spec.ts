@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FixedStep } from './fixed-step';
+import { FramePacer } from './frame-pacer';
 import { renderText, textWidth } from './pixel-font';
 import { Pixels } from './pixels';
 
@@ -30,6 +31,33 @@ describe('FixedStep', () => {
     let ticks = 0;
     step.advance(10_000, () => ticks++);
     expect(ticks).toBe(5);
+  });
+});
+
+describe('FramePacer', () => {
+  const run = (pacer: FramePacer, deltas: number[]) => deltas.map((d) => pacer.pace(d));
+
+  it('passes steady frames through', () => {
+    const given = run(new FramePacer(), Array(40).fill(16.7));
+    for (const g of given.slice(10)) expect(g).toBeCloseTo(16.7, 5);
+  });
+
+  it('spreads a late frame and the burst after it over several frames', () => {
+    const steady = Array(30).fill(17);
+    const burst = [43, 1, 6, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17];
+    const given = run(new FramePacer(), [...steady, ...burst]).slice(30);
+    expect(Math.max(...given)).toBeLessThan(23);
+    expect(Math.min(...given)).toBeGreaterThan(13);
+    // Nothing is lost: the extra time handed out later matches what arrived.
+    const arrived = steady.concat(burst).slice(30).reduce((a, b) => a + b, 0);
+    expect(given.reduce((a, b) => a + b, 0)).toBeCloseTo(arrived, 0);
+  });
+
+  it('passes a long freeze through and starts over', () => {
+    const pacer = new FramePacer();
+    run(pacer, Array(30).fill(17));
+    expect(pacer.pace(5000)).toBe(5000);
+    expect(pacer.pace(17)).toBe(17);
   });
 });
 
