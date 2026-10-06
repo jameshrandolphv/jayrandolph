@@ -18,10 +18,11 @@ export class SoundSettings {
   }
 }
 
+/** Sound is off until the player turns it on. */
 const read = (): boolean => {
   try {
-    return localStorage.getItem(STORAGE_KEY) === '1';
+    return localStorage.getItem(STORAGE_KEY) !== '0';
   } catch {
-    return false;
+    return true;
   }
 };

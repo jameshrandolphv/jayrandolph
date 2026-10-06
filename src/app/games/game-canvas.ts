@@ -32,7 +32,7 @@ const preventDefault = (event: Event): void => {
   selector: 'app-game-canvas',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { role: 'application', '[attr.aria-label]': 'label()' },
-  template: `<div #host class="game-host" (pointerdown)="onPointerDown($event)"></div>`,
+  template: `<div #host class="game-host"></div>`,
   styles: `
     :host {
       display: flex;
@@ -87,18 +87,19 @@ export class GameCanvas {
       this.observer?.disconnect();
       this.detachPerf?.();
       this.touchTarget?.removeEventListener('touchend', preventDefault);
+      this.touchTarget?.removeEventListener('pointerdown', this.onPointerDown);
       this.app?.destroy(true, { children: true, texture: true });
       this.app = undefined;
     });
   }
 
-  protected onPointerDown(event: PointerEvent): void {
+  private readonly onPointerDown = (event: PointerEvent): void => {
     const rect = this.host().nativeElement.getBoundingClientRect();
     this.press.emit({
       x: (event.clientX - rect.left - this.offset.x) / this.scale,
       y: (event.clientY - rect.top - this.offset.y) / this.scale,
     });
-  }
+  };
 
   private async init(): Promise<void> {
     const { Application, Container, Graphics } = await import('pixi.js');
@@ -112,7 +113,7 @@ export class GameCanvas {
       background: this.background(),
       antialias: this.antialias(),
       autoDensity: true,
-      resolution: window.devicePixelRatio || 1,
+      resolution: Math.min(window.devicePixelRatio || 1, Number(new URLSearchParams(location.search).get('res')) || Infinity),
       roundPixels: !this.antialias(),
     });
     if (this.destroyed) {
@@ -129,6 +130,8 @@ export class GameCanvas {
     // iOS Safari can still zoom on a double tap despite touch-action; cancelling touchend stops that. It runs after the
     // press has been handled, so unlike a touchstart handler it can't hold up input.
     el.addEventListener('touchend', preventDefault, { passive: false });
+    // Added by hand rather than in the template: a template listener makes Angular run change detection after every tap.
+    el.addEventListener('pointerdown', this.onPointerDown);
     this.touchTarget = el;
     this.app = app;
     this.root = root;
@@ -147,7 +150,7 @@ export class GameCanvas {
     const el = this.host().nativeElement;
     const w = Math.max(el.clientWidth, 1);
     const h = Math.max(el.clientHeight, 1);
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = app.renderer.resolution;
     app.renderer.resize(w, h);
 
     const fit = Math.min(w / this.logicalWidth(), h / this.logicalHeight());
