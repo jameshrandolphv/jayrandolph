@@ -33,11 +33,11 @@ function draw(el: HTMLCanvasElement, img: PreviewImage): void {
         [style.width.px]="f.width"
         [style.height.px]="f.height"
       >
-        <canvas #after class="layer" [class.hidden]="!showAfter()"></canvas>
+        <canvas #after class="layer"></canvas>
         <canvas
           #before
           class="layer"
-          [class.hidden]="!showBefore()"
+          [class.hidden]="!session.split()"
           [style.clip-path]="beforeClip()"
         ></canvas>
       </div>
@@ -117,8 +117,6 @@ export class Viewer implements OnDestroy {
   });
 
   protected readonly splitPx = computed(() => this.splitFraction() * this.box().w);
-  protected readonly showBefore = computed(() => this.session.split() || this.session.showOriginal());
-  protected readonly showAfter = computed(() => this.session.split() || !this.session.showOriginal());
   protected readonly beforeClip = computed(() => {
     const f = this.frame();
     if (!f || !this.session.split()) return null;

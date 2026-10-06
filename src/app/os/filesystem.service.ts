@@ -42,7 +42,14 @@ export function buildTree(manifest: PhotoManifest, apps: readonly AppDef[]): Fol
 
   return folder('', 'Desktop', [
     folder('photography', 'Photography', albums),
-    ...apps.map((app) => ({ kind: 'app' as const, id: app.id, name: app.name, path: app.id, icon: app.icon })),
+    ...apps.map((app) => ({
+      kind: 'app' as const,
+      id: app.id,
+      name: app.name,
+      path: app.id,
+      icon: app.icon,
+      dock: app.dock,
+    })),
   ]);
 }
 

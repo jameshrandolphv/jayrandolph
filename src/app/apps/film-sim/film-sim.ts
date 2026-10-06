@@ -174,10 +174,6 @@ export class FilmSim {
     this.session.setAdjustment(key, Number((event.target as HTMLInputElement).value));
   }
 
-  protected onShowOriginal(event: Event): void {
-    this.session.showOriginal.set((event.target as HTMLInputElement).checked);
-  }
-
   protected onFilm(event: Event): void {
     this.session.film.set((event.target as HTMLSelectElement).value as FilmId);
   }

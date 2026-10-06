@@ -5,6 +5,8 @@ export interface AppDef {
   id: string;
   name: string;
   icon: string;
+  /** Set to false to keep the item on the desktop but out of the dock. */
+  dock?: boolean;
   load: () => Promise<Type<unknown>>;
 }
 
@@ -14,5 +16,18 @@ export const APPS: readonly AppDef[] = [
     name: 'Film Sim',
     icon: 'film',
     load: () => import('../apps/film-sim/film-sim').then((m) => m.FilmSim),
+  },
+  {
+    id: 'flappy-cat',
+    name: 'Flappy Cat',
+    icon: 'cat',
+    load: () => import('../apps/flappy-cat/flappy-cat').then((m) => m.FlappyCat),
+  },
+  {
+    id: 'do-not-open',
+    name: 'DO NOT OPEN.txt',
+    icon: 'text',
+    dock: false,
+    load: () => import('../apps/text-edit/text-edit').then((m) => m.TextEdit),
   },
 ];

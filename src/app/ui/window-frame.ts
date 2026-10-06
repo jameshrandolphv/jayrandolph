@@ -7,7 +7,7 @@ import { RouterLink } from '@angular/router';
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { style: 'display: contents' },
   template: `
-    <div class="window" [class.compact]="compact()">
+    <div class="window" [class.compact]="compact()" [class.portrait]="portrait()">
       <header class="titlebar">
         <span class="lights">
           <a class="l-close" [routerLink]="closeLink()" aria-label="Close window"></a>
@@ -28,4 +28,6 @@ export class WindowFrame {
   readonly closeLink = input<string>('/');
   /** Centred window with a maximum size instead of filling the workspace. */
   readonly compact = input(false, { transform: booleanAttribute });
+  /** Window sized to a 9:16 content area in whole multiples of 256 px, for pixel-art games. */
+  readonly portrait = input(false, { transform: booleanAttribute });
 }

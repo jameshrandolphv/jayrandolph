@@ -119,6 +119,27 @@ export class IconDefs {}
           <path d="M25 46h14l4 9H21z" fill="url(#ico-metal)" stroke="#555" stroke-width="0.8" />
           <rect x="14" y="54" width="36" height="4" rx="2" fill="url(#ico-metal)" stroke="#555" stroke-width="0.8" />
         }
+        @case ('text') {
+          <path d="M12 4h28l14 14v40a2 2 0 0 1-2 2H12a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" fill="url(#ico-paper)" stroke="#7b8695" />
+          <path d="M40 4v12a2 2 0 0 0 2 2h12z" fill="#c9d3df" stroke="#7b8695" stroke-linejoin="round" />
+          <g stroke="#8a96a6" stroke-width="2" stroke-linecap="round">
+            <path d="M17 28h30M17 35h30M17 42h30M17 49h18" />
+          </g>
+        }
+        @case ('cat') {
+          <!-- The in-game cat sprite (wings-up frame), one path per colour. -->
+          <svg x="4" y="4" width="56" height="56" viewBox="0 0 17 19" shape-rendering="crispEdges">
+            <path fill="#543847" d="M2 0h1v1h-1zM1 1h1v1h-1zM3 1h1v1h-1zM2 2h1v1h-1zM4 2h1v1h-1zM6 2h1v1h-1zM2 3h1v1h-1zM4 3h2v1h-2zM7 3h2v1h-2zM1 4h2v1h-2zM5 4h1v1h-1zM7 4h1v1h-1zM9 4h1v1h-1zM14 4h1v1h-1zM0 5h1v1h-1zM2 5h1v1h-1zM7 5h1v1h-1zM10 5h1v1h-1zM13 5h1v1h-1zM15 5h1v1h-1zM1 6h1v1h-1zM7 6h1v1h-1zM10 6h3v1h-3zM16 6h1v1h-1zM1 7h1v1h-1zM8 7h1v1h-1zM16 7h1v1h-1zM0 8h1v1h-1zM2 8h1v1h-1zM8 8h1v1h-1zM16 8h1v1h-1zM0 9h1v1h-1zM2 9h1v1h-1zM8 9h1v1h-1zM16 9h1v1h-1zM0 10h1v1h-1zM3 10h1v1h-1zM6 10h2v1h-2zM10 10h1v1h-1zM14 10h1v1h-1zM16 10h1v1h-1zM0 11h1v1h-1zM3 11h1v1h-1zM5 11h1v1h-1zM16 11h1v1h-1zM0 12h1v1h-1zM4 12h1v1h-1zM16 12h1v1h-1zM0 13h1v1h-1zM15 13h1v1h-1zM0 14h1v1h-1zM12 14h3v1h-3zM1 15h1v1h-1zM11 15h1v1h-1zM2 16h1v1h-1zM11 16h1v1h-1zM3 17h2v1h-2zM10 17h1v1h-1zM5 18h5v1h-5z" />
+            <path fill="#f7f8fc" d="M2 1h1v1h-1zM3 2h1v1h-1zM3 3h1v1h-1zM3 4h2v1h-2zM3 5h3v1h-3zM3 6h3v1h-3zM3 7h4v1h-4zM4 8h4v1h-4zM4 9h3v1h-3zM4 10h1v1h-1z" />
+            <path fill="#c3cbe0" d="M6 3h1v1h-1zM6 4h1v1h-1zM1 5h1v1h-1zM6 5h1v1h-1zM2 6h1v1h-1zM6 6h1v1h-1zM2 7h1v1h-1zM7 7h1v1h-1zM3 8h1v1h-1zM3 9h1v1h-1zM7 9h1v1h-1zM5 10h1v1h-1zM4 11h1v1h-1z" />
+            <path fill="#7b8aa6" d="M8 4h1v1h-1zM9 5h1v1h-1zM9 6h1v1h-1zM13 6h1v1h-1zM15 6h1v1h-1zM9 7h7v1h-7zM9 8h7v1h-7zM11 9h2v1h-2zM15 9h1v1h-1zM8 10h1v1h-1zM11 10h2v1h-2zM15 10h1v1h-1zM2 11h1v1h-1zM6 11h4v1h-4zM14 11h2v1h-2zM1 12h3v1h-3zM5 12h5v1h-5zM15 12h1v1h-1zM1 13h10v1h-10zM14 13h1v1h-1zM1 14h6v1h-6zM8 14h4v1h-4zM2 15h2v1h-2zM3 16h1v1h-1z" />
+            <path fill="#f08aa4" d="M8 5h1v1h-1zM14 5h1v1h-1zM8 6h1v1h-1zM14 6h1v1h-1zM11 12h2v1h-2z" />
+            <path fill="#5a6a89" d="M1 8h1v1h-1zM1 9h1v1h-1zM1 10h2v1h-2zM1 11h1v1h-1z" />
+            <path fill="#ffffff" d="M9 9h1v1h-1zM13 9h1v1h-1z" />
+            <path fill="#8be05a" d="M10 9h1v1h-1zM14 9h1v1h-1zM9 10h1v1h-1zM13 10h1v1h-1z" />
+            <path fill="#aab7cd" d="M10 11h4v1h-4zM10 12h1v1h-1zM13 12h2v1h-2zM11 13h3v1h-3zM7 14h1v1h-1zM4 15h7v1h-7zM4 16h7v1h-7zM5 17h5v1h-5z" />
+          </svg>
+        }
         @default {
           <rect x="4" y="4" width="56" height="56" rx="13" fill="url(#ico-app)" stroke="#12356e" />
           <g clip-path="url(#ico-app-clip)">

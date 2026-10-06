@@ -3,12 +3,13 @@ import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signa
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter, map } from 'rxjs';
+import { Desktop } from './os/desktop';
 import { FileSystemService } from './os/filesystem.service';
 import { IconDefs, NodeIcon } from './ui/node-icon';
 
 @Component({
   selector: 'app-root',
-  imports: [DatePipe, IconDefs, NodeIcon, RouterLink, RouterOutlet],
+  imports: [DatePipe, Desktop, IconDefs, NodeIcon, RouterLink, RouterOutlet],
   templateUrl: './app.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -41,7 +42,7 @@ export class App {
 
   protected readonly dockItems = computed(() => [
     { id: 'desktop', name: 'Desktop', path: '', icon: 'desktop' },
-    ...this.fs.root().children,
+    ...this.fs.root().children.filter((c) => c.kind !== 'app' || c.dock !== false),
   ]);
 
   constructor() {

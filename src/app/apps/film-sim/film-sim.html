@@ -22,15 +22,6 @@
         <input type="checkbox" [checked]="session.split()" (change)="onSplit($event)" />
         <span>Split view</span>
       </label>
-      <label class="check">
-        <input
-          type="checkbox"
-          [checked]="session.showOriginal()"
-          [disabled]="session.split()"
-          (change)="onShowOriginal($event)"
-        />
-        <span>Show original</span>
-      </label>
       <span class="spacer"></span>
       <span class="segmented" role="group" aria-label="Zoom">
         <button
@@ -202,6 +193,8 @@
         }
         <p class="hint">Double-click a slider to reset it.</p>
       </fieldset>
+
+      <button type="button" class="btn reset-all" (click)="session.resetAll()">Reset All</button>
     </aside>
 
     <main

@@ -1,10 +1,10 @@
 import type { Routes } from '@angular/router';
 import { APPS } from './os/apps';
-import { Desktop } from './os/desktop';
 import { FsPage, NotFound, fsNodeExists } from './os/fs-page';
 
 export const routes: Routes = [
-  { path: '', pathMatch: 'full', component: Desktop, title: 'Jay Randolph' },
+  // The desktop itself is always rendered by the shell, so this route has nothing to show.
+  { path: '', pathMatch: 'full', children: [], title: 'Jay Randolph' },
   ...APPS.map((app) => ({
     path: app.id,
     loadComponent: app.load,

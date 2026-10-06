@@ -14,6 +14,7 @@ export interface FolderNode extends NodeBase {
 
 export interface AppNode extends NodeBase {
   kind: 'app';
+  dock?: boolean;
 }
 
 export interface ImageNode extends NodeBase {

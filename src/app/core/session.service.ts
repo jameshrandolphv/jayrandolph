@@ -231,7 +231,6 @@ export class SessionService {
       saturation: (1 + DEFAULT_SETTINGS.saturation) * (1 + a.saturation / 100) - 1,
     };
   });
-  readonly showOriginal = signal(false);
   readonly zoom = signal<ZoomMode>('fit');
   /** Centre of the 100% view in full-resolution pixels (updated live while panning). */
   readonly center = signal<Point | null>(null);
@@ -259,8 +258,6 @@ export class SessionService {
     const actual = this.zoom() === 'actual' && this.cropOriginal();
     return (actual ? this.cropResult() : this.result()) ?? this.before();
   });
-  /** What the viewer shows when not in split view. */
-  readonly preview = computed(() => (this.showOriginal() ? this.before() : this.after()));
   readonly split = signal(false);
 
   /** Whether the print/projection stage is on for the current film. */
@@ -318,6 +315,19 @@ export class SessionService {
 
   setAdjustment(key: keyof Adjustments, value: number): void {
     this.adjustments.update((a) => ({ ...a, [key]: value }));
+  }
+
+  resetAll(): void {
+    this.film.set('kodachrome-64');
+    this.ev.set(0);
+    this.halation.set(true);
+    this.print.set(DEFAULT_SETTINGS.print);
+    this.negativeOutput.set('lab');
+    this.printEv.set(DEFAULT_SETTINGS.printEv);
+    this.grain.set(true);
+    this.grainAmount.set(DEFAULT_SETTINGS.grainAmount);
+    this.grainSize.set(DEFAULT_SETTINGS.grainSize);
+    this.adjustments.set({ ...NO_ADJUSTMENTS });
   }
 
   /** Renders the whole image at full resolution (grain included) and downloads it. */

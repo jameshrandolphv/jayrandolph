@@ -394,6 +394,12 @@ progress::-moz-progress-bar {
   color: #444;
 }
 
+.reset-all {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+}
+
 .stage {
   position: relative;
   flex: 1;

@@ -11,6 +11,8 @@
 app-fs-page,
 app-finder,
 app-film-sim,
+app-text-edit,
+app-flappy-cat,
 app-not-found {
   display: contents;
 }
@@ -55,11 +57,26 @@ app-not-found {
   z-index: 10;
   display: flex;
   padding: 16px 16px 96px;
+  container-type: size;
+  /* Lets clicks reach the desktop icons behind; routed content opts back in. */
+  pointer-events: none;
+}
+
+.workspace > :not(router-outlet) {
+  pointer-events: auto;
 }
 
 .window.compact {
   width: min(100%, 1000px);
   height: min(100%, 720px);
+  margin: auto;
+}
+
+/* 28px = titlebar (26) + window borders (2); 0.5625 = 9 / 16. Fits the largest 9:16 game area in the workspace. */
+.window.portrait {
+  --game-h: min(100cqh - 28px, (100cqw - 2px) / 0.5625);
+  width: calc(var(--game-h) * 0.5625 + 2px);
+  height: calc(var(--game-h) + 28px);
   margin: auto;
 }
 
@@ -162,8 +179,18 @@ app-not-found {
 }
 
 .desktop {
-  flex: 1;
-  min-width: 0;
+  position: fixed;
+  inset: 24px 0 0;
+  z-index: 5;
+  padding: 16px 16px 96px;
+  user-select: none;
+}
+
+.selection-band {
+  position: absolute;
+  pointer-events: none;
+  background: rgb(90 160 255 / 0.25);
+  border: 1px solid rgb(150 200 255 / 0.9);
 }
 
 .desktop-icons {
@@ -203,6 +230,8 @@ app-not-found {
   display: -webkit-box;
   margin-top: 4px;
   padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 9px;
   font-size: 12px;
   line-height: 1.3;
   text-align: center;
@@ -447,9 +476,14 @@ a.btn {
     padding: 0 0 68px;
   }
 
-  .window.compact {
+  .window.compact,
+  .window.portrait {
     width: 100%;
     height: 100%;
+  }
+
+  .desktop {
+    padding: 0 0 68px;
   }
 
   .desktop-icons {
@@ -481,3 +515,97 @@ a.btn {
     transition: none;
   }
 }
+
+/* TextEdit */
+
+.te-toolbar {
+  flex-wrap: wrap;
+}
+
+.te-seg .btn {
+  margin: 0;
+}
+
+.te-seg .btn:not(:first-child) {
+  margin-left: -1px;
+}
+
+.te-seg .btn:not(:first-child):not(:last-child) {
+  border-radius: 0;
+}
+
+.te-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  padding: 2px 8px;
+}
+
+.te-bold {
+  font-weight: bold;
+}
+
+.te-italic {
+  font-style: italic;
+}
+
+.te-underline {
+  text-decoration: underline;
+}
+
+.te-color {
+  width: 34px;
+  height: 24px;
+  padding: 2px;
+  background: linear-gradient(#fdfdfd, #d3d8df);
+  border: 1px solid #6b6b6b;
+  border-radius: 6px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.3), inset 0 1px 0 #fff;
+  cursor: pointer;
+}
+
+.te-ruler {
+  position: relative;
+  flex: none;
+  height: 20px;
+  overflow: hidden;
+  background:
+    repeating-linear-gradient(90deg, #444 0 1px, transparent 1px 72px) 6px 100% / 100% 8px no-repeat,
+    repeating-linear-gradient(90deg, #666 0 1px, transparent 1px 36px) 6px 100% / 100% 5px no-repeat,
+    repeating-linear-gradient(90deg, #888 0 1px, transparent 1px 18px) 6px 100% / 100% 3px no-repeat,
+    repeating-linear-gradient(0deg, #f4f4f4 0 2px, #ebebeb 2px 4px);
+  border-bottom: 1px solid #7f7f7f;
+}
+
+.te-ruler span {
+  position: absolute;
+  top: 1px;
+  padding-left: 3px;
+  font-size: 9px;
+  line-height: 1;
+  color: #333;
+}
+
+.te-page {
+  flex: 1;
+  min-height: 0;
+  padding: 6px;
+  overflow: auto;
+  font: 12px/1.25 Helvetica, Arial, sans-serif;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #000;
+  background: #fff;
+  outline: none;
+  user-select: text;
+  cursor: text;
+}
+
+.te-page font[size='1'] { font-size: 9px; }
+.te-page font[size='2'] { font-size: 10px; }
+.te-page font[size='3'] { font-size: 12px; }
+.te-page font[size='4'] { font-size: 14px; }
+.te-page font[size='5'] { font-size: 18px; }
+.te-page font[size='6'] { font-size: 24px; }
+.te-page font[size='7'] { font-size: 36px; }
