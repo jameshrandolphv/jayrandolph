@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, inject } from '@angular/core';
+import { SoundSettings } from '../../core/sound-settings';
 import { GameCanvas, type GameSurface, type LogicalPoint } from '../../games/game-canvas';
 import { ProgressService } from '../../games/progress.service';
 import { ScoreService } from '../../games/score.service';
@@ -63,8 +64,8 @@ import { LongestView } from './view';
         left: 50%;
         bottom: 16px;
         transform: translateX(-50%);
-        width: 270px;
-        height: 88px;
+        width: 210px;
+        height: 138px;
         opacity: 0.5;
       }
     }
@@ -99,13 +100,14 @@ export class WorldsLongestGame {
   protected game?: LongestGame;
   private readonly scores = inject(ScoreService);
   private readonly progress = inject(ProgressService);
+  private readonly sound = inject(SoundSettings);
 
   constructor() {
     inject(DestroyRef).onDestroy(() => this.game?.dispose());
   }
 
   protected onReady({ app, root }: GameSurface): void {
-    const game = new LongestGame(this.scores, new Sfx(), this.progress);
+    const game = new LongestGame(this.scores, new Sfx(this.sound), this.progress);
     const view = new LongestView(root, game);
     this.game = game;
     app.ticker.add((ticker) => view.update(game.frame(ticker.deltaMS)));

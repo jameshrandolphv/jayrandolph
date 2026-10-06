@@ -46,6 +46,28 @@ app-not-found {
   text-shadow: 0 1px 0 rgb(255 255 255 / 0.8);
 }
 
+.mb-volume {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 20px;
+  margin: 0 -6px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.mb-volume:hover {
+  background: rgb(0 30 80 / 0.12);
+}
+
+.mb-volume:focus-visible {
+  outline: 2px solid #2a6bd6;
+}
+
 .mb-clock {
   font-size: 12px;
 }

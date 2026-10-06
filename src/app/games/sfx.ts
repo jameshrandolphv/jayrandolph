@@ -1,3 +1,5 @@
+import type { SoundSettings } from '../core/sound-settings';
+
 export type SfxName = 'flap' | 'score' | 'hit' | 'fall' | 'click' | 'checkpoint' | 'clear';
 
 interface Tone {
@@ -56,9 +58,10 @@ const renderTones = (ctx: BaseAudioContext, tones: readonly Tone[]): void => {
  * playing one on a tap costs a single source node instead of building an oscillator graph mid-frame.
  */
 export class Sfx {
-  muted = false;
   private ctx: AudioContext | null = null;
   private readonly buffers = new Map<SfxName, AudioBuffer>();
+
+  constructor(private readonly settings: Pick<SoundSettings, 'muted'>) {}
 
   /** Browsers only allow audio after a user gesture, so call this from an input handler. */
   unlock(): void {
@@ -74,7 +77,7 @@ export class Sfx {
   play(name: SfxName): void {
     const ctx = this.ctx;
     const buffer = this.buffers.get(name);
-    if (!ctx || !buffer || this.muted || ctx.state !== 'running') return;
+    if (!ctx || !buffer || this.settings.muted() || ctx.state !== 'running') return;
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(ctx.destination);

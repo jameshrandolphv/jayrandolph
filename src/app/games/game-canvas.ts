@@ -23,6 +23,10 @@ export interface LogicalPoint {
   y: number;
 }
 
+const preventDefault = (event: Event): void => {
+  if (event.cancelable) event.preventDefault();
+};
+
 /** Fixed-resolution pixel-art canvas that scales by whole device pixels and centres itself. */
 @Component({
   selector: 'app-game-canvas',
@@ -71,6 +75,7 @@ export class GameCanvas {
   private root?: Container;
   private observer?: ResizeObserver;
   private destroyed = false;
+  private touchTarget?: HTMLElement;
   private detachPerf?: () => void;
   private scale = 1;
   private offset: LogicalPoint = { x: 0, y: 0 };
@@ -81,6 +86,7 @@ export class GameCanvas {
       this.destroyed = true;
       this.observer?.disconnect();
       this.detachPerf?.();
+      this.touchTarget?.removeEventListener('touchend', preventDefault);
       this.app?.destroy(true, { children: true, texture: true });
       this.app = undefined;
     });
@@ -120,6 +126,10 @@ export class GameCanvas {
     root.mask = clip;
     app.stage.addChild(root);
     el.appendChild(app.canvas);
+    // iOS Safari can still zoom on a double tap despite touch-action; cancelling touchend stops that. It runs after the
+    // press has been handled, so unlike a touchstart handler it can't hold up input.
+    el.addEventListener('touchend', preventDefault, { passive: false });
+    this.touchTarget = el;
     this.app = app;
     this.root = root;
 

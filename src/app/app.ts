@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signa
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter, map } from 'rxjs';
+import { SoundSettings } from './core/sound-settings';
 import { Desktop } from './os/desktop';
 import { FileSystemService } from './os/filesystem.service';
 import { IconDefs, NodeIcon } from './ui/node-icon';
@@ -16,6 +17,7 @@ import { IconDefs, NodeIcon } from './ui/node-icon';
 export class App {
   private readonly fs = inject(FileSystemService);
   private readonly router = inject(Router);
+  protected readonly sound = inject(SoundSettings);
 
   private readonly url = toSignal(
     this.router.events.pipe(

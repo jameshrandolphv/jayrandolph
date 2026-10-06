@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, inject } from '@angular/core';
+import { SoundSettings } from '../../core/sound-settings';
 import { GameCanvas, type GameSurface, type LogicalPoint } from '../../games/game-canvas';
 import { ScoreService } from '../../games/score.service';
 import { Sfx } from '../../games/sfx';
@@ -41,13 +42,14 @@ export class FlappyCat {
 
   protected game?: FlappyGame;
   private readonly scores = inject(ScoreService);
+  private readonly sound = inject(SoundSettings);
 
   constructor() {
     inject(DestroyRef).onDestroy(() => this.game?.dispose());
   }
 
   protected onReady({ app, root }: GameSurface): void {
-    const game = new FlappyGame(this.scores, new Sfx());
+    const game = new FlappyGame(this.scores, new Sfx(this.sound));
     const view = new FlappyView(root, game.sim);
     this.game = game;
     app.ticker.add((ticker) => {

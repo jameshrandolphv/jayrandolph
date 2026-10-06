@@ -29,8 +29,8 @@ export const keysVector = (held: ReadonlySet<ArrowKey>): StickVector => {
 };
 
 /**
- * A MacBook arrow cluster: three equal-width keys, with square left and right keys and half-height up and
- * down keys stacked between them. Each finger is tracked on its own, so two keys together make a diagonal and a finger can
+ * An inverted-T arrow cluster of four equal square keys: left, down and right along the bottom with up above
+ * down. Each finger is tracked on its own, so two keys together make a diagonal and a finger can
  * slide from one key to another.
  */
 @Component({
@@ -64,16 +64,16 @@ export const keysVector = (held: ReadonlySet<ArrowKey>): StickVector => {
       container-type: size;
     }
     .cluster {
-      /* Three keys of equal width; the full-height keys are square and the up and down keys split that height. */
+      /* Square keys in three columns and two rows; the width is capped so the two rows also fit the height. */
       --gap: 6px;
-      --width: min(100cqw, 3 * 100cqh + 2 * var(--gap), 480px);
+      --width: min(100cqw, (100cqh - var(--gap)) * 1.5 + 2 * var(--gap), 480px);
       display: grid;
       grid-template:
-        'left up right' 1fr
+        '. up .' 1fr
         'left down right' 1fr / 1fr 1fr 1fr;
       gap: var(--gap);
       width: var(--width);
-      height: calc((var(--width) - 2 * var(--gap)) / 3);
+      height: calc((var(--width) - 2 * var(--gap)) / 3 * 2 + var(--gap));
       touch-action: none;
       user-select: none;
       -webkit-user-select: none;
