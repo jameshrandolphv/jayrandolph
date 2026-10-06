@@ -86,7 +86,8 @@ export class FlappySim {
     if (this.phase === 'title') this.enter('ready');
   }
 
-  flap(): void {
+  /** `alpha` is how far the renderer is between the last two ticks, so a flap can start from what is on screen. */
+  flap(alpha = 0): void {
     if (this.paused) return;
     if (this.phase === 'ready') {
       this.pipes = [];
@@ -94,20 +95,22 @@ export class FlappySim {
       this.enter('playing');
     }
     if (this.phase === 'playing') {
-      this.catVy = FLAP_VY;
       this.events.push('flap');
-      this.redoCatTick();
+      this.startFlap(alpha);
     }
   }
 
   /**
-   * The renderer shows a blend of the last two ticks, so a flap that only takes effect on the *next* tick
-   * appears a frame or two late. Re-running the latest tick's cat movement with the flap velocity makes it
-   * visible on the very next frame; it is based on the pre-tick state, so repeated flaps don't compound.
+   * The renderer shows a blend of the last two ticks, so a flap that waited for the next tick would
+   * appear a frame or two late. Instead the pair is rewritten around the position currently on screen
+   * with the flap velocity: the cat starts rising on the very next frame without a jump. It derives
+   * from the visible position, so repeated flaps before the next tick don't compound.
    */
-  private redoCatTick(): void {
-    this.catY = this.prevCatY;
-    this.applyGravity();
+  private startFlap(alpha: number): void {
+    const shown = this.prevCatY + (this.catY - this.prevCatY) * alpha;
+    this.catVy = Math.min(FLAP_VY + GRAVITY, MAX_FALL_VY);
+    this.prevCatY = shown - this.catVy * alpha;
+    this.catY = shown + this.catVy * (1 - alpha);
     this.clampToCeiling();
     this.tickVy = this.catVy;
   }

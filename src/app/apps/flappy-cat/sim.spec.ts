@@ -50,18 +50,19 @@ describe('FlappySim', () => {
     expect(sim.catVy).toBeGreaterThan(0);
   });
 
-  it('shows a flap in the current tick instead of waiting for the next one', () => {
+  it('starts a flap from the position on screen and shows it before the next tick', () => {
     const sim = playing();
     ticks(sim, 20);
-    const before = sim.catY;
-    const prev = sim.prevCatY;
-    sim.flap();
-    expect(sim.catY).toBeLessThan(before);
-    expect(sim.tickVy).toBeLessThan(0);
-    const once = sim.catY;
-    sim.flap();
-    expect(sim.prevCatY).toBe(prev);
-    expect(sim.catY).toBeCloseTo(once);
+    for (const alpha of [0, 0.4, 0.9]) {
+      const shown = sim.prevCatY + (sim.catY - sim.prevCatY) * alpha;
+      sim.flap(alpha);
+      expect(sim.prevCatY + (sim.catY - sim.prevCatY) * alpha).toBeCloseTo(shown, 10);
+      expect(sim.catY).toBeLessThan(sim.prevCatY);
+      expect(sim.tickVy).toBeLessThan(0);
+      const once = sim.catY;
+      sim.flap(alpha);
+      expect(sim.catY).toBeCloseTo(once, 10);
+    }
   });
 
   it('emits a flap event per flap', () => {

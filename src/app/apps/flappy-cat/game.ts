@@ -46,12 +46,12 @@ export class FlappyGame {
         if (inRect(START_BUTTON, x, y)) this.startGame();
         break;
       case 'ready':
-        sim.flap();
+        sim.flap(this.step.alpha);
         break;
       case 'playing':
         if (sim.paused) sim.setPaused(false);
         else if (inRect(PAUSE_BUTTON, x, y)) sim.setPaused(true);
-        else sim.flap();
+        else sim.flap(this.step.alpha);
         break;
       case 'gameOver':
         if (inRect(OK_BUTTON, x, y)) this.dismiss();
@@ -70,11 +70,11 @@ export class FlappyGame {
         this.startGame();
         break;
       case 'ready':
-        sim.flap();
+        sim.flap(this.step.alpha);
         break;
       case 'playing':
         if (sim.paused) sim.setPaused(false);
-        else sim.flap();
+        else sim.flap(this.step.alpha);
         break;
       case 'gameOver':
         this.dismiss();

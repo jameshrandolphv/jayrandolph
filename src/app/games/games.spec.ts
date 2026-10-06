@@ -13,6 +13,18 @@ describe('FixedStep', () => {
     expect(ticks).toBe(3);
   });
 
+  it('snaps near-exact frame times so the leftover stays constant', () => {
+    const step = new FixedStep(16.667);
+    let ticks = 0;
+    step.advance(16.667, () => ticks++);
+    const alpha = step.alpha;
+    for (const frame of [15.9, 17.4, 16.2, 17.0]) {
+      step.advance(frame, () => ticks++);
+      expect(step.alpha).toBeCloseTo(alpha, 10);
+    }
+    expect(ticks).toBe(5);
+  });
+
   it('clamps long frames', () => {
     const step = new FixedStep(10, 50);
     let ticks = 0;

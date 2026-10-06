@@ -5,12 +5,12 @@ import { Sfx } from '../../games/sfx';
 import { WindowFrame } from '../../ui/window-frame';
 import { HEIGHT, WIDTH } from './constants';
 import { LongestGame } from './game';
-import { Joystick, type StickVector } from './joystick';
+import { DPad, type StickVector } from './dpad';
 import { LongestView } from './view';
 
 @Component({
   selector: 'app-worlds-longest-game',
-  imports: [WindowFrame, GameCanvas, Joystick],
+  imports: [WindowFrame, GameCanvas, DPad],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '(document:keydown)': 'onKeyDown($event)',
@@ -33,7 +33,7 @@ import { LongestView } from './view';
             (press)="onPress($event)"
           />
         </div>
-        <div class="pad"><app-joystick (moved)="onStick($event)" /></div>
+        <div class="pad"><app-dpad (moved)="onStick($event)" /></div>
       </div>
     </app-window-frame>
   `,
@@ -55,7 +55,7 @@ import { LongestView } from './view';
       display: none;
     }
     @media (pointer: coarse), (max-width: 760px) {
-      /* Phones in landscape: a see-through stick over the bottom-left of the game. */
+      /* Phones in landscape: a see-through d-pad over the bottom-left of the game. */
       .pad {
         display: block;
         position: absolute;
@@ -67,7 +67,7 @@ import { LongestView } from './view';
       }
     }
     @media (max-width: 760px) and (orientation: portrait) {
-      /* Phones in portrait: the 4:3 game on top, a solid stick in the space below. */
+      /* Phones in portrait: the 4:3 game on top, a solid d-pad in the space below. */
       .stage {
         flex-direction: column;
         background: #1c1c24;
