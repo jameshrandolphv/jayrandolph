@@ -47,6 +47,8 @@ import {
   smallScoreStyle,
 } from './sprites';
 
+/** How far above the playfield pipes are drawn, in logical px; matches the collision rectangles in the sim. */
+const SKY_EXTENT = 1000;
 const PANEL = { x: 13, y: 94, w: 118, h: 64 };
 const CAT_FLAP_FRAMES = [0, 1, 2, 1];
 
@@ -75,8 +77,11 @@ export class FlappyView {
   private readonly flash: Sprite;
   /** Sprites that span the whole screen, stretched whenever the visible width changes. */
   private readonly wide: (Sprite | TilingSprite)[] = [];
+  /** Sprites that also span the screen vertically. */
+  private readonly tall: Sprite[] = [];
   private shownLeft = 0;
   private shownRight = WIDTH;
+  private shownTop = 0;
 
   private readonly textCache = new Map<TextStyle, Map<string, Texture>>();
 
@@ -107,6 +112,7 @@ export class FlappyView {
   ) {
     const sky = new Sprite(Texture.WHITE);
     this.wide.push(sky);
+    this.tall.push(sky);
     sky.tint = COLORS.sky;
     sky.width = WIDTH;
     sky.height = HEIGHT;
@@ -125,6 +131,7 @@ export class FlappyView {
     this.flash.height = HEIGHT;
     this.flash.alpha = 0;
     this.wide.push(this.flash);
+    this.tall.push(this.flash);
 
     // Title screen
     this.addCentered(this.title, this.text('Flappy Cat', logoStyle), 52);
@@ -152,6 +159,7 @@ export class FlappyView {
     // Paused overlay
     const dim = new Sprite(Texture.WHITE);
     this.wide.push(dim);
+    this.tall.push(dim);
     dim.tint = 0x000000;
     dim.alpha = 0.35;
     dim.width = WIDTH;
@@ -192,9 +200,9 @@ export class FlappyView {
     );
   }
 
-  update(result: ScoreResult | null, alpha = 1, bounds: VisibleBounds = { left: 0, right: WIDTH }): void {
+  update(result: ScoreResult | null, alpha = 1, bounds: VisibleBounds = { left: 0, right: WIDTH, top: 0, bottom: HEIGHT }): void {
     const { sim } = this;
-    this.fitWidth(bounds);
+    this.fitScreen(bounds);
     const phase = sim.phase;
 
     const scrollX = lerp(sim.prevScrollX, sim.scrollX, alpha);
@@ -231,13 +239,19 @@ export class FlappyView {
     if (this.gameOver.visible) this.updateGameOver(result);
   }
 
-  private fitWidth({ left, right }: VisibleBounds): void {
-    if (left === this.shownLeft && right === this.shownRight) return;
+  private fitScreen({ left, right, top, bottom }: VisibleBounds): void {
+    if (left === this.shownLeft && right === this.shownRight && top === this.shownTop) return;
     this.shownLeft = left;
     this.shownRight = right;
+    this.shownTop = top;
     for (const sprite of this.wide) {
       sprite.x = left;
       sprite.width = right - left;
+    }
+    // Only the sky-coloured layers reach up; the scenery stays fixed to the ground.
+    for (const sprite of this.tall) {
+      sprite.y = top;
+      sprite.height = bottom - top;
     }
   }
 
@@ -295,8 +309,10 @@ export class FlappyView {
     const capInset = (PIPE_W - this.pipeBody.width) / 2;
 
     const topBody = new Sprite(this.pipeBody);
-    topBody.position.set(capInset, 0);
-    topBody.height = Math.max(0, gapTop - PIPE_CAP_H);
+    topBody.x = capInset;
+    // Starts far above the screen so it still reaches the top when the view is taller than the game.
+    topBody.y = -SKY_EXTENT;
+    topBody.height = Math.max(0, gapTop - PIPE_CAP_H) + SKY_EXTENT;
     const topCap = new Sprite(this.pipeCap);
     topCap.y = gapTop - PIPE_CAP_H;
 

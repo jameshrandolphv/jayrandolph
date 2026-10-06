@@ -12,10 +12,15 @@ import {
 import type { Application, Container, Graphics } from 'pixi.js';
 import { attachPerfOverlay } from './perf-overlay';
 
-/** The logical x range currently on screen; wider than 0 to the logical width when the canvas is extended. */
+/**
+ * The logical area currently on screen. Without `fill` this is just 0 to the logical size; with it, `left`,
+ * `right` and `top` reach past the edges (`top` is negative) while `bottom` stays at the logical height.
+ */
 export interface VisibleBounds {
   left: number;
   right: number;
+  top: number;
+  bottom: number;
 }
 
 export interface GameSurface {
@@ -74,10 +79,11 @@ export class GameCanvas {
   /** When false the art scales fractionally to fill the host instead of snapping to whole device pixels. */
   readonly integerScale = input(true);
   /**
-   * When the host is wider than the logical area, reveal the extra width on both sides instead of leaving bars,
-   * for games that draw their world across it (see `GameSurface.bounds`).
+   * Reveal the world past the logical edges instead of leaving bars, for games that draw across it (see
+   * `GameSurface.bounds`). Extra width appears on both sides; extra height appears above, with the bottom edge
+   * kept on the bottom of the host.
    */
-  readonly extendWidth = input(false);
+  readonly fill = input(false);
   /** Read once when the canvas is created. */
   readonly antialias = input(false);
   readonly ready = output<GameSurface>();
@@ -87,7 +93,7 @@ export class GameCanvas {
   private app?: Application;
   private root?: Container;
   private clip?: Graphics;
-  private readonly bounds: VisibleBounds = { left: 0, right: 0 };
+  private readonly bounds: VisibleBounds = { left: 0, right: 0, top: 0, bottom: 0 };
   private observer?: ResizeObserver;
   private destroyed = false;
   private touchTarget?: HTMLElement;
@@ -140,6 +146,7 @@ export class GameCanvas {
     const clip = new Graphics();
     this.clip = clip;
     this.bounds.right = this.logicalWidth();
+    this.bounds.bottom = this.logicalHeight();
     root.addChild(clip);
     root.mask = clip;
     app.stage.addChild(root);
@@ -175,18 +182,20 @@ export class GameCanvas {
     this.scale = !this.integerScale() || fit * dpr < 1 ? fit : Math.floor(fit * dpr) / dpr;
     this.offset = {
       x: Math.floor(((w - this.logicalWidth() * this.scale) / 2) * dpr) / dpr,
-      y: Math.floor(((h - this.logicalHeight() * this.scale) / 2) * dpr) / dpr,
+      // Filled canvases sit on the bottom edge so the extra height is all above the game.
+      y: Math.floor(((h - this.logicalHeight() * this.scale) / (this.fill() ? 1 : 2)) * dpr) / dpr,
     };
     root.scale.set(this.scale);
     root.position.set(this.offset.x, this.offset.y);
 
     // Whole logical pixels, so the clip edge never lands mid-pixel.
-    const extend = this.extendWidth();
-    this.bounds.left = extend ? Math.floor(-this.offset.x / this.scale) : 0;
-    this.bounds.right = extend ? Math.ceil((w - this.offset.x) / this.scale) : this.logicalWidth();
+    const fill = this.fill();
+    this.bounds.left = fill ? Math.floor(-this.offset.x / this.scale) : 0;
+    this.bounds.right = fill ? Math.ceil((w - this.offset.x) / this.scale) : this.logicalWidth();
+    this.bounds.top = fill ? Math.floor(-this.offset.y / this.scale) : 0;
     this.clip
       ?.clear()
-      .rect(this.bounds.left, 0, this.bounds.right - this.bounds.left, this.logicalHeight())
+      .rect(this.bounds.left, this.bounds.top, this.bounds.right - this.bounds.left, this.bounds.bottom - this.bounds.top)
       .fill(0xffffff);
   }
 }
