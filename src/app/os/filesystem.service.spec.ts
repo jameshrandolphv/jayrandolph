@@ -20,17 +20,17 @@ const manifest: PhotoManifest = {
 describe('filesystem', () => {
   const root = buildTree(manifest, apps);
 
-  it('puts Photography and apps on the desktop', () => {
+  it('puts Pictures and apps on the desktop', () => {
     expect(root.children.map((c) => [c.kind, c.name])).toEqual([
-      ['folder', 'Photography'],
+      ['folder', 'Pictures'],
       ['folder', 'Documents'],
       ['app', 'Film Sim'],
     ]);
   });
 
-  it('always has a Photography folder, even without albums', () => {
+  it('always has a Pictures folder, even without albums', () => {
     const empty = buildTree({ albums: [] }, apps);
-    expect(resolvePath(empty, ['photography'])).toMatchObject({ kind: 'folder', children: [] });
+    expect(resolvePath(empty, ['pictures'])).toMatchObject({ kind: 'folder', children: [] });
   });
 
   it('keeps documents in a top-level Documents folder and opens them by path', () => {
@@ -38,25 +38,25 @@ describe('filesystem', () => {
     expect(docs?.kind === 'folder' && docs.children.map((c) => c.name)).toEqual([
       'DO NOT OPEN.txt',
       'about.txt',
-      'changelog.txt',
+      'CHANGELOG.md',
     ]);
     expect(resolvePath(root, ['documents', 'do-not-open.txt'])).toMatchObject({
       kind: 'file',
-      content: 'Why would you do that..',
+      content: 'Why would you do that...',
     });
     expect(resolvePath(root, ['documents', 'about.txt'])).toMatchObject({
       kind: 'file',
-      content: 'I will eventually update this',
+      content: 'I should definitely update this',
     });
-    const changelog = resolvePath(root, ['documents', 'changelog.txt']);
-    expect(changelog?.kind === 'file' && changelog.content).toMatch(/1\.2\.1[\s\S]*1\.2\.0[\s\S]*1\.1\.0[\s\S]*1\.0\.0/);
+    const changelog = resolvePath(root, ['documents', 'CHANGELOG.md']);
+    expect(changelog?.kind === 'file' && changelog.content).toMatch(/1\.2\.0[\s\S]*1\.1\.0[\s\S]*1\.0\.0/);
   });
 
   it('resolves albums and images by path', () => {
-    expect(resolvePath(root, ['photography', 'iceland'])).toMatchObject({ kind: 'folder', name: 'Iceland' });
-    expect(resolvePath(root, ['photography', 'iceland', 'b'])).toMatchObject({
+    expect(resolvePath(root, ['pictures', 'iceland'])).toMatchObject({ kind: 'folder', name: 'Iceland' });
+    expect(resolvePath(root, ['pictures', 'iceland', 'b'])).toMatchObject({
       kind: 'image',
-      path: 'photography/iceland/b',
+      path: 'pictures/iceland/b',
       src: 'photos/iceland/display/b.webp',
     });
     expect(resolvePath(root, [])).toBe(root);
@@ -65,8 +65,8 @@ describe('filesystem', () => {
   it('lists albums alphabetically regardless of manifest order', () => {
     const album = (title: string) => ({ id: title.toLowerCase(), title, images: [] });
     const tree = buildTree({ albums: [album('Zurich'), album('2026-09-09 Acros'), album('Iceland'), album('2026-09-01 Portra')] }, apps);
-    const photography = resolvePath(tree, ['photography']);
-    expect(photography?.kind === 'folder' && photography.children.map((c) => c.name)).toEqual([
+    const pictures = resolvePath(tree, ['pictures']);
+    expect(pictures?.kind === 'folder' && pictures.children.map((c) => c.name)).toEqual([
       '2026-09-01 Portra',
       '2026-09-09 Acros',
       'Iceland',
@@ -76,7 +76,7 @@ describe('filesystem', () => {
 
   it('returns null for unknown paths and for descending into leaves', () => {
     expect(resolvePath(root, ['nope'])).toBeNull();
-    expect(resolvePath(root, ['photography', 'iceland', 'a', 'x'])).toBeNull();
+    expect(resolvePath(root, ['pictures', 'iceland', 'a', 'x'])).toBeNull();
     expect(resolvePath(root, ['film-sim', 'x'])).toBeNull();
   });
 });

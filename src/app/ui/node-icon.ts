@@ -150,6 +150,15 @@ export class IconDefs {}
             <path fill="#aab7cd" d="M10 11h4v1h-4zM10 12h1v1h-1zM13 12h2v1h-2zM11 13h3v1h-3zM7 14h1v1h-1zM4 15h7v1h-7zM4 16h7v1h-7zM5 17h5v1h-5z" />
           </svg>
         }
+        @case ('square') {
+          <rect x="4" y="4" width="56" height="56" rx="11" fill="#b3b3ff" stroke="#000" stroke-width="2" />
+          <g fill="#f6f6ff">
+            <rect x="8" y="8" width="16" height="16" /><rect x="40" y="8" width="16" height="16" />
+            <rect x="24" y="24" width="16" height="16" />
+            <rect x="8" y="40" width="16" height="16" /><rect x="40" y="40" width="16" height="16" />
+          </g>
+          <rect x="18" y="18" width="28" height="28" fill="#ff0000" stroke="#000" stroke-width="4" />
+        }
         @case ('write') {
           <rect x="6" y="14" width="34" height="44" rx="1.5" fill="url(#ico-note)" stroke="#a8923a" stroke-width="0.8" transform="rotate(-14 23 36)" />
           <g transform="rotate(-9 28 28)">

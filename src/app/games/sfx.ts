@@ -1,4 +1,4 @@
-export type SfxName = 'flap' | 'score' | 'hit' | 'fall' | 'click';
+export type SfxName = 'flap' | 'score' | 'hit' | 'fall' | 'click' | 'checkpoint' | 'clear';
 
 interface Tone {
   from: number;
@@ -18,6 +18,16 @@ const TONES: Readonly<Record<SfxName, readonly Tone[]>> = {
   hit: [{ from: 220, to: 50, seconds: 0.16, type: 'sawtooth', volume: 0.08 }],
   fall: [{ from: 420, to: 90, seconds: 0.4, type: 'triangle', volume: 0.08 }],
   click: [{ from: 700, to: 700, seconds: 0.05, type: 'square', volume: 0.04 }],
+  checkpoint: [
+    { from: 523, to: 523, seconds: 0.07, type: 'triangle', volume: 0.07 },
+    { from: 784, to: 784, seconds: 0.12, type: 'triangle', volume: 0.07, delay: 0.07 },
+  ],
+  clear: [
+    { from: 523, to: 523, seconds: 0.08, type: 'square', volume: 0.05 },
+    { from: 659, to: 659, seconds: 0.08, type: 'square', volume: 0.05, delay: 0.08 },
+    { from: 784, to: 784, seconds: 0.08, type: 'square', volume: 0.05, delay: 0.16 },
+    { from: 1047, to: 1047, seconds: 0.2, type: 'square', volume: 0.05, delay: 0.24 },
+  ],
 };
 
 /** Synthesised effects, so games need no audio assets. */

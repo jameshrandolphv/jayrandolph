@@ -23,7 +23,7 @@ const folder = (path: string, name: string, children: FsNode[]): FolderNode => (
 export function buildTree(manifest: PhotoManifest, apps: readonly AppDef[], documents: readonly DocumentDef[] = DOCUMENTS): FolderNode {
   const sorted = [...manifest.albums].sort((a, b) => a.title.localeCompare(b.title, 'en', { numeric: true }));
   const albums = sorted.map((album) => {
-    const path = `photography/${album.id}`;
+    const path = `pictures/${album.id}`;
     return folder(
       path,
       album.title,
@@ -52,7 +52,7 @@ export function buildTree(manifest: PhotoManifest, apps: readonly AppDef[], docu
   }));
 
   return folder('', 'Desktop', [
-    folder('photography', 'Photography', albums),
+    folder('pictures', 'Pictures', albums),
     folder(documentsPath, 'Documents', documentNodes),
     ...apps.map((app) => ({
       kind: 'app' as const,

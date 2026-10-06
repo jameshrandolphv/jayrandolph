@@ -27,7 +27,7 @@ export interface LogicalPoint {
   selector: 'app-game-canvas',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { role: 'application', '[attr.aria-label]': 'label()' },
-  template: `<div #host class="game-host" (pointerdown)="onPointerDown($event)"></div>`,
+  template: `<div #host class="game-host" (pointerdown)="onPointerDown($event)" (touchstart)="$event.preventDefault()"></div>`,
   styles: `
     :host {
       display: flex;
@@ -42,6 +42,7 @@ export interface LogicalPoint {
       touch-action: none;
       user-select: none;
       -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
       cursor: pointer;
     }
     .game-host canvas {
@@ -58,6 +59,8 @@ export class GameCanvas {
   readonly label = input('Game');
   /** When false the art scales fractionally to fill the host instead of snapping to whole device pixels. */
   readonly integerScale = input(true);
+  /** Read once when the canvas is created. */
+  readonly antialias = input(false);
   readonly ready = output<GameSurface>();
   readonly press = output<LogicalPoint>();
 
@@ -97,10 +100,10 @@ export class GameCanvas {
       width: Math.max(el.clientWidth, 1),
       height: Math.max(el.clientHeight, 1),
       background: this.background(),
-      antialias: false,
+      antialias: this.antialias(),
       autoDensity: true,
       resolution: window.devicePixelRatio || 1,
-      roundPixels: true,
+      roundPixels: !this.antialias(),
     });
     if (this.destroyed) {
       app.destroy(true, { children: true, texture: true });

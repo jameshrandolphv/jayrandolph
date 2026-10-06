@@ -198,7 +198,10 @@ export class FlappyView {
     const frame = alive ? CAT_FLAP_FRAMES[Math.floor(sim.clock / 4) % CAT_FLAP_FRAMES.length] : 1;
     this.cat.texture = this.catFrames[frame];
     this.cat.position.set(phase === 'title' ? WIDTH / 2 : 44, lerp(sim.prevCatY, sim.catY, alpha));
-    this.cat.rotation = phase === 'title' || phase === 'ready' ? 0 : Math.max(-0.45, Math.min(1.3, sim.catVy * 0.28));
+    this.cat.rotation =
+      phase === 'title' || phase === 'ready'
+        ? 0
+        : Math.max(-0.45, Math.min(1.3, lerp(sim.prevTickVy, sim.tickVy, alpha) * 0.28));
     this.cat.x = Math.round(this.cat.x);
 
     this.title.visible = phase === 'title';

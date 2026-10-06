@@ -13,6 +13,7 @@ app-finder,
 app-film-sim,
 app-text-edit,
 app-flappy-cat,
+app-worlds-longest-game,
 app-not-found {
   display: contents;
 }
@@ -77,6 +78,14 @@ app-not-found {
   --game-h: min(100cqh - 28px, (100cqw - 2px) / 0.5625);
   width: calc(var(--game-h) * 0.5625 + 2px);
   height: calc(var(--game-h) + 28px);
+  margin: auto;
+}
+
+/* Same 28px chrome as portrait; 0.75 = 3 / 4. */
+.window.landscape {
+  --game-w: min(100cqw - 2px, (100cqh - 28px) / 0.75);
+  width: calc(var(--game-w) + 2px);
+  height: calc(var(--game-w) * 0.75 + 28px);
   margin: auto;
 }
 
@@ -476,7 +485,8 @@ a.btn {
     padding: 0 0 68px;
   }
 
-  .window.compact {
+  .window.compact,
+  .window.landscape {
     width: 100%;
     height: 100%;
   }

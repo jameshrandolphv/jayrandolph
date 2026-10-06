@@ -4,7 +4,7 @@ Personal website styled as a Mac OS X Aqua / Frutiger Aero desktop. Built with A
 
 ## Structure
 
-- Desktop at `/` with a Photography folder and the Film Sim app.
+- Desktop at `/` with a Pictures folder and the Film Sim app.
 - Apps are registered in `src/app/os/apps.ts`; folders come from the filesystem service in `src/app/os/filesystem.service.ts`.
 - Film Sim (`/film-sim`) is a Rust/WebAssembly film simulator (see `engine/`).
 

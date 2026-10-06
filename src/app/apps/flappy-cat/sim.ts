@@ -56,6 +56,9 @@ export class FlappySim {
   catVy = 0;
   /** Positions before the latest tick, for render interpolation. */
   prevCatY = CAT_START_Y;
+  /** Velocity as of the last tick (a flap only shows here once the tick runs), for smooth rotation. */
+  tickVy = 0;
+  prevTickVy = 0;
   prevScrollX = 0;
   pipes: Pipe[] = [];
   /** Distance the ground has scrolled. */
@@ -108,12 +111,15 @@ export class FlappySim {
     this.catVy = 0;
     this.catY = CAT_START_Y;
     this.prevCatY = CAT_START_Y;
+    this.tickVy = 0;
+    this.prevTickVy = 0;
     this.enter('title');
     return true;
   }
 
   step(): void {
     this.prevCatY = this.catY;
+    this.prevTickVy = this.tickVy;
     this.prevScrollX = this.scrollX;
     for (const pipe of this.pipes) pipe.prevX = pipe.x;
     if (this.paused) return;
@@ -140,6 +146,7 @@ export class FlappySim {
       case 'gameOver':
         break;
     }
+    this.tickVy = this.catVy;
   }
 
   private stepPlaying(): void {

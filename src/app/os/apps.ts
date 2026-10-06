@@ -24,6 +24,12 @@ export const APPS: readonly AppDef[] = [
     load: () => import('../apps/flappy-cat/flappy-cat').then((m) => m.FlappyCat),
   },
   {
+    id: 'worlds-longest-game',
+    name: "World's Longest Game",
+    icon: 'square',
+    load: () => import('../apps/worlds-longest-game/worlds-longest-game').then((m) => m.WorldsLongestGame),
+  },
+  {
     id: 'write-stuff',
     name: 'Write Stuff',
     icon: 'write',

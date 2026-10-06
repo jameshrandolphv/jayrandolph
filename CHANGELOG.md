@@ -1,13 +1,16 @@
 # Changelog
 
+## 1.3.0
+- Added World's Longest Game; Flappy Cat bug fixes
+
 ## 1.2.1
-- Fixed some issues with flappy cat
+- Fixed some issues with Flappy Cat
 
 ## 1.2.0
-- Added flappy cat and text edit
+- Added Flappy Cat and Text Edit
 
 ## 1.1.0
-- Added film sim app and finder
+- Added Film Sim app and Finder
 
 ## 1.0.0
-- Initial site
+- Initial site layout
