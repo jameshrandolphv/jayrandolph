@@ -96,6 +96,26 @@ export class FlappySim {
     if (this.phase === 'playing') {
       this.catVy = FLAP_VY;
       this.events.push('flap');
+      this.redoCatTick();
+    }
+  }
+
+  /**
+   * The renderer shows a blend of the last two ticks, so a flap that only takes effect on the *next* tick
+   * appears a frame or two late. Re-running the latest tick's cat movement with the flap velocity makes it
+   * visible on the very next frame; it is based on the pre-tick state, so repeated flaps don't compound.
+   */
+  private redoCatTick(): void {
+    this.catY = this.prevCatY;
+    this.applyGravity();
+    this.clampToCeiling();
+    this.tickVy = this.catVy;
+  }
+
+  private clampToCeiling(): void {
+    if (this.catY < CAT_RADIUS) {
+      this.catY = CAT_RADIUS;
+      this.catVy = Math.max(this.catVy, 0);
     }
   }
 
@@ -156,10 +176,7 @@ export class FlappySim {
     this.spawnPipes();
     this.applyGravity();
 
-    if (this.catY < CAT_RADIUS) {
-      this.catY = CAT_RADIUS;
-      this.catVy = Math.max(this.catVy, 0);
-    }
+    this.clampToCeiling();
 
     for (const pipe of this.pipes) {
       if (!pipe.scored && pipe.x + PIPE_W / 2 < CAT_X) {

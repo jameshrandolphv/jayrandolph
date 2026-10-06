@@ -44,10 +44,24 @@ describe('FlappySim', () => {
     const sim = playing();
     const y = sim.catY;
     sim.step();
-    expect(sim.catVy).toBeCloseTo(-2.6 + GRAVITY);
+    expect(sim.catVy).toBeCloseTo(-2.6 + 2 * GRAVITY);
     expect(sim.catY).toBeLessThan(y);
     ticks(sim, 40);
     expect(sim.catVy).toBeGreaterThan(0);
+  });
+
+  it('shows a flap in the current tick instead of waiting for the next one', () => {
+    const sim = playing();
+    ticks(sim, 20);
+    const before = sim.catY;
+    const prev = sim.prevCatY;
+    sim.flap();
+    expect(sim.catY).toBeLessThan(before);
+    expect(sim.tickVy).toBeLessThan(0);
+    const once = sim.catY;
+    sim.flap();
+    expect(sim.prevCatY).toBe(prev);
+    expect(sim.catY).toBeCloseTo(once);
   });
 
   it('emits a flap event per flap', () => {
@@ -140,7 +154,7 @@ describe('FlappySim', () => {
     ticks(live, 10);
     expect(live.catY).toBe(y);
     live.flap();
-    expect(live.catVy).toBeCloseTo(-2.6);
+    expect(live.catVy).toBeCloseTo(-2.6 + GRAVITY);
     live.setPaused(false);
     live.step();
     expect(live.catY).not.toBe(y);

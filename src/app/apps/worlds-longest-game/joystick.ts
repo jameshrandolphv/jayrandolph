@@ -11,21 +11,42 @@ const DEAD_ZONE = 0.25;
 /** Fraction of the keyboard's speed; a thumb is less precise than a key. */
 export const STICK_SPEED = 0.85;
 
+const D = Math.SQRT1_2;
+/** Unit directions in 45 degree steps, starting right and turning clockwise on screen. */
+const DIRECTIONS: readonly StickVector[] = [
+  { x: 1, y: 0 },
+  { x: D, y: D },
+  { x: 0, y: 1 },
+  { x: -D, y: D },
+  { x: -1, y: 0 },
+  { x: -D, y: -D },
+  { x: 0, y: -1 },
+  { x: D, y: -D },
+];
+
+/** The nearest of the eight directions. */
+const snap = (dx: number, dy: number): StickVector => {
+  const step = Math.round(Math.atan2(dy, dx) / (Math.PI / 4));
+  return DIRECTIONS[((step % 8) + 8) % 8]!;
+};
+
 /**
- * Turns a drag from the base centre into a movement direction. Past the dead zone the result
- * has a fixed length of STICK_SPEED, however far the drag goes.
+ * Turns a drag from the base centre into one of eight movement directions, like a d-pad. Past the
+ * dead zone the result has a fixed length of STICK_SPEED, however far the drag goes.
  */
 export const stickVector = (dx: number, dy: number, reach: number): StickVector => {
   const length = Math.hypot(dx, dy);
   if (reach <= 0 || length / reach < DEAD_ZONE) return { x: 0, y: 0 };
-  return { x: (dx / length) * STICK_SPEED, y: (dy / length) * STICK_SPEED };
+  const dir = snap(dx, dy);
+  return { x: dir.x * STICK_SPEED, y: dir.y * STICK_SPEED };
 };
 
-/** Where the knob is drawn: the drag, held inside the travel circle. */
+/** Where the knob is drawn: the drag, snapped to the chosen direction and held inside the travel circle. */
 export const knobOffset = (dx: number, dy: number, reach: number): StickVector => {
-  const length = Math.hypot(dx, dy);
-  if (length <= reach || length === 0) return { x: dx, y: dy };
-  return { x: (dx / length) * reach, y: (dy / length) * reach };
+  const length = Math.min(Math.hypot(dx, dy), reach);
+  if (reach <= 0 || length / reach < DEAD_ZONE) return { x: 0, y: 0 };
+  const dir = snap(dx, dy);
+  return { x: dir.x * length, y: dir.y * length };
 };
 
 @Component({
