@@ -70,6 +70,10 @@ export class FlappySim {
   /** Remaining ticks of the impact flash. */
   flash = 0;
 
+  /** Logical x range on screen; pipes are kept alive and spawned across all of it. */
+  left = 0;
+  right = WIDTH;
+
   private events: SimEvent[] = [];
   private nextPipeId = 0;
   private lastGapY = (GAP_MIN + GAP_MAX) / 2;
@@ -175,7 +179,7 @@ export class FlappySim {
   private stepPlaying(): void {
     this.scrollX += SCROLL;
     for (const pipe of this.pipes) pipe.x -= SCROLL;
-    this.pipes = this.pipes.filter((p) => p.x + PIPE_W >= 0);
+    this.pipes = this.pipes.filter((p) => p.x + PIPE_W >= this.left);
     this.spawnPipes();
     this.applyGravity();
 
@@ -215,7 +219,7 @@ export class FlappySim {
     for (;;) {
       const last = this.pipes[this.pipes.length - 1];
       const x = last ? last.x + PIPE_SPACING : FIRST_PIPE_X;
-      if (x >= WIDTH + PIPE_W) return;
+      if (x >= this.right + PIPE_W) return;
       const shift = (this.rng() * 2 - 1) * PIPE_MAX_SHIFT;
       this.lastGapY = Math.min(GAP_MAX, Math.max(GAP_MIN, this.lastGapY + shift));
       this.pipes.push({ id: this.nextPipeId++, x, prevX: x, gapY: this.lastGapY, scored: false });

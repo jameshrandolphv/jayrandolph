@@ -111,6 +111,22 @@ app-not-found {
   margin: auto;
 }
 
+/* Maximised window: covers the menu bar and dock, leaving only its own title bar. */
+.window-maximized .workspace {
+  inset: 0;
+  z-index: 40;
+  padding: 0;
+}
+
+.window-maximized .workspace .window {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 /* Dock */
 
 .dock {

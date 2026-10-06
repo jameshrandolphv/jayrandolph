@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, booleanAttribute, input } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import { ChangeDetectionStrategy, Component, DestroyRef, booleanAttribute, effect, inject, input, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
 @Component({
@@ -12,7 +13,13 @@ import { RouterLink } from '@angular/router';
         <span class="lights">
           <a class="l-close" [routerLink]="closeLink()" aria-label="Close window"></a>
           <i class="l-min" aria-hidden="true"></i>
-          <i class="l-max" aria-hidden="true"></i>
+          <button
+            type="button"
+            class="l-max"
+            [attr.aria-label]="maximized() ? 'Restore window' : 'Maximize window'"
+            [attr.aria-pressed]="maximized()"
+            (click)="maximized.set(!maximized())"
+          ></button>
         </span>
         <h1>{{ title() }}</h1>
       </header>
@@ -23,6 +30,9 @@ import { RouterLink } from '@angular/router';
   `,
 })
 export class WindowFrame {
+  /** Fills the whole screen, covering the menu bar and dock, until restored. */
+  protected readonly maximized = signal(false);
+
   readonly title = input.required<string>();
   /** Where the red traffic light navigates. */
   readonly closeLink = input<string>('/');
@@ -32,4 +42,11 @@ export class WindowFrame {
   readonly portrait = input(false, { transform: booleanAttribute });
   /** Window sized to a 4:3 content area; fills the workspace on small screens. */
   readonly landscape = input(false, { transform: booleanAttribute });
+
+  constructor() {
+    // The menu bar and dock sit outside the window, so the maximised state is a class on the page root.
+    const root = inject(DOCUMENT).documentElement;
+    effect(() => root.classList.toggle('window-maximized', this.maximized()));
+    inject(DestroyRef).onDestroy(() => root.classList.remove('window-maximized'));
+  }
 }

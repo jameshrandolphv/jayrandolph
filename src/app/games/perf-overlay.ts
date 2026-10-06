@@ -18,6 +18,8 @@ const FLAT_CSS =
 interface Tap {
   /** Event timestamp, to match against the main-thread heartbeat. */
   eventTime: number;
+  /** Where the touch landed: the game, or elsewhere on the page. */
+  where: string;
   /** Milliseconds from the touch event being created to the next frame starting. */
   inputDelay: number;
   /** Time the pointerdown handlers took to run. */
@@ -65,7 +67,7 @@ export const attachPerfOverlay = (app: Application, host: HTMLElement): (() => v
   let frameIndex = 0;
   let frameStart = performance.now();
   let longTasks = 0;
-  let pending: { eventTime: number; handlerMs: number; before: number } | null = null;
+  let pending: { eventTime: number; handlerMs: number; before: number; where: string } | null = null;
 
   const observer = typeof PerformanceObserver === 'undefined' ? null : new PerformanceObserver((l) => (longTasks += l.getEntries().length));
   try {
@@ -76,15 +78,18 @@ export const attachPerfOverlay = (app: Application, host: HTMLElement): (() => v
 
   let downStart = 0;
   let downEvent = 0;
+  let downWhere = '';
   const onDownStart = (event: PointerEvent): void => {
     downStart = performance.now();
     downEvent = event.timeStamp;
+    downWhere = host.contains(event.target as Node) ? 'game' : 'off';
   };
   // Bubbling to the window happens after every handler on the canvas host has run.
   const onDownEnd = (): void => {
-    pending = { eventTime: downEvent, handlerMs: performance.now() - downStart, before: deltas[deltas.length - 1] ?? 0 };
+    pending = { eventTime: downEvent, handlerMs: performance.now() - downStart, where: downWhere, before: deltas[deltas.length - 1] ?? 0 };
   };
-  host.addEventListener('pointerdown', onDownStart, { capture: true });
+  // On the window so touches outside the game are measured too: a stall there isn't caused by the game's code.
+  window.addEventListener('pointerdown', onDownStart, { capture: true });
   window.addEventListener('pointerdown', onDownEnd);
 
   const onFrame = (): void => {
@@ -98,6 +103,7 @@ export const attachPerfOverlay = (app: Application, host: HTMLElement): (() => v
     if (pending) {
       taps.push({
         eventTime: pending.eventTime,
+        where: pending.where,
         inputDelay: now - pending.eventTime,
         handlerMs: pending.handlerMs,
         frames: [pending.before, delta],
@@ -121,7 +127,7 @@ export const attachPerfOverlay = (app: Application, host: HTMLElement): (() => v
       `dpr ${window.devicePixelRatio} canvas ${app.canvas.width}x${app.canvas.height}`,
       ...taps.map((t) => {
         const blocked = Math.max(0, ...beats.filter((b) => b.end >= t.eventTime && b.end <= t.eventTime + TAP_WINDOW_MS).map((b) => b.gap));
-        return `tap in ${t.inputDelay.toFixed(0)}ms handler ${t.handlerMs.toFixed(1)}ms blocked ${blocked.toFixed(0)}ms frames ${t.frames.map((f) => f.toFixed(0)).join(' ')}`;
+        return `${t.where} tap in ${t.inputDelay.toFixed(0)}ms handler ${t.handlerMs.toFixed(1)}ms blocked ${blocked.toFixed(0)}ms frames ${t.frames.map((f) => f.toFixed(0)).join(' ')}`;
       }),
     ];
     box.textContent = lines.join('\n');
@@ -130,7 +136,7 @@ export const attachPerfOverlay = (app: Application, host: HTMLElement): (() => v
   app.ticker.add(onFrame);
   return () => {
     app.ticker.remove(onFrame);
-    host.removeEventListener('pointerdown', onDownStart, { capture: true });
+    window.removeEventListener('pointerdown', onDownStart, { capture: true });
     window.removeEventListener('pointerdown', onDownEnd);
     observer?.disconnect();
     clearTimeout(beatTimer);

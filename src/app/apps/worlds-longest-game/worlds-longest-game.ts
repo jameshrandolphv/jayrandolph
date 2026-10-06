@@ -65,7 +65,7 @@ import { LongestView } from './view';
         bottom: 16px;
         transform: translateX(-50%);
         width: 210px;
-        height: 138px;
+        height: 112px;
         opacity: 0.5;
       }
     }

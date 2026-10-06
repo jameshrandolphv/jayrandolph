@@ -95,6 +95,23 @@ describe('FlappySim', () => {
     }
   });
 
+  it('fills a wider screen with pipes and keeps them until they leave its left edge', () => {
+    const sim = new FlappySim(() => 0.5);
+    sim.left = -100;
+    sim.right = 400;
+    sim.start();
+    sim.flap();
+    sim.step();
+    expect(sim.pipes.length).toBeGreaterThan(3);
+    expect(Math.max(...sim.pipes.map((p) => p.x))).toBeLessThan(400 + PIPE_W);
+
+    sim.pipes = [{ id: 99, x: -100 - PIPE_W + 2, prevX: 0, gapY: 0, scored: true }];
+    sim.step();
+    expect(sim.pipes.some((p) => p.id === 99)).toBe(true);
+    ticks(sim, 2);
+    expect(sim.pipes.some((p) => p.id === 99)).toBe(false);
+  });
+
   it('scores once when the cat passes a pipe', () => {
     const sim = playing();
     sim.step();

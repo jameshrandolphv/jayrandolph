@@ -29,8 +29,8 @@ export const keysVector = (held: ReadonlySet<ArrowKey>): StickVector => {
 };
 
 /**
- * An inverted-T arrow cluster of four equal square keys: left, down and right along the bottom with up above
- * down. Each finger is tracked on its own, so two keys together make a diagonal and a finger can
+ * An inverted-T arrow cluster: left, down and right along the bottom with up above down. Left and right are
+ * square; up and down are the same width but a little shorter, and all three share the bottom edge. Each finger is tracked on its own, so two keys together make a diagonal and a finger can
  * slide from one key to another.
  */
 @Component({
@@ -64,16 +64,18 @@ export const keysVector = (held: ReadonlySet<ArrowKey>): StickVector => {
       container-type: size;
     }
     .cluster {
-      /* Square keys in three columns and two rows; the width is capped so the two rows also fit the height. */
+      /* Three equal columns; up and down are --short times the square key height, and the width is capped so both fit. */
       --gap: 6px;
-      --width: min(100cqw, (100cqh - var(--gap)) * 1.5 + 2 * var(--gap), 480px);
+      --short: 0.8;
+      --width: min(100cqw, (100cqh - var(--gap)) * 3 / (2 * var(--short)) + 2 * var(--gap), 480px);
+      --key: calc((var(--width) - 2 * var(--gap)) / 3);
       display: grid;
       grid-template:
-        '. up .' 1fr
-        'left down right' 1fr / 1fr 1fr 1fr;
+        '. up .' calc(var(--key) * var(--short))
+        'left down right' calc(var(--key) * var(--short)) / 1fr 1fr 1fr;
       gap: var(--gap);
       width: var(--width);
-      height: calc((var(--width) - 2 * var(--gap)) / 3 * 2 + var(--gap));
+      height: calc(var(--key) * var(--short) * 2 + var(--gap));
       touch-action: none;
       user-select: none;
       -webkit-user-select: none;
@@ -88,6 +90,12 @@ export const keysVector = (held: ReadonlySet<ArrowKey>): StickVector => {
       color: rgb(255 255 255 / 0.85);
       pointer-events: none;
       transition: transform 40ms, box-shadow 40ms;
+    }
+    /* The square keys are taller than their row, so they grow upward from the shared bottom edge. */
+    .key[data-key='left'],
+    .key[data-key='right'] {
+      align-self: end;
+      height: var(--key);
     }
     svg {
       width: clamp(12px, calc(var(--width) * 0.11), 44px);

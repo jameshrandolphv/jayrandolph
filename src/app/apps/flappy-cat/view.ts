@@ -1,4 +1,5 @@
 import { Container, Sprite, Texture, TilingSprite } from 'pixi.js';
+import type { VisibleBounds } from '../../games/game-canvas';
 import { renderText, textWidth, type TextStyle } from '../../games/pixel-font';
 import type { Pixels } from '../../games/pixels';
 import type { ScoreResult } from '../../games/score.service';
@@ -72,6 +73,10 @@ export class FlappyView {
   private readonly catFrames = createCatFrames().map((p) => texture(p));
   private readonly cat: Sprite;
   private readonly flash: Sprite;
+  /** Sprites that span the whole screen, stretched whenever the visible width changes. */
+  private readonly wide: (Sprite | TilingSprite)[] = [];
+  private shownLeft = 0;
+  private shownRight = WIDTH;
 
   private readonly textCache = new Map<TextStyle, Map<string, Texture>>();
 
@@ -101,6 +106,7 @@ export class FlappyView {
     private readonly sim: FlappySim,
   ) {
     const sky = new Sprite(Texture.WHITE);
+    this.wide.push(sky);
     sky.tint = COLORS.sky;
     sky.width = WIDTH;
     sky.height = HEIGHT;
@@ -109,6 +115,7 @@ export class FlappyView {
     this.city = this.tiled(createCity(WIDTH), 0, GROUND_Y - CITY_H, WIDTH);
     this.bushes = this.tiled(createBushes(WIDTH), 0, GROUND_Y - BUSH_H, WIDTH);
     this.ground = this.tiled(createGround(), 0, GROUND_Y, WIDTH, GROUND_H);
+    this.wide.push(this.clouds, this.city, this.bushes, this.ground);
 
     this.cat = new Sprite(this.catFrames[1]);
     this.cat.anchor.set(CAT_ANCHOR.x, CAT_ANCHOR.y);
@@ -117,6 +124,7 @@ export class FlappyView {
     this.flash.width = WIDTH;
     this.flash.height = HEIGHT;
     this.flash.alpha = 0;
+    this.wide.push(this.flash);
 
     // Title screen
     this.addCentered(this.title, this.text('Flappy Cat', logoStyle), 52);
@@ -143,6 +151,7 @@ export class FlappyView {
 
     // Paused overlay
     const dim = new Sprite(Texture.WHITE);
+    this.wide.push(dim);
     dim.tint = 0x000000;
     dim.alpha = 0.35;
     dim.width = WIDTH;
@@ -183,8 +192,9 @@ export class FlappyView {
     );
   }
 
-  update(result: ScoreResult | null, alpha = 1): void {
+  update(result: ScoreResult | null, alpha = 1, bounds: VisibleBounds = { left: 0, right: WIDTH }): void {
     const { sim } = this;
+    this.fitWidth(bounds);
     const phase = sim.phase;
 
     const scrollX = lerp(sim.prevScrollX, sim.scrollX, alpha);
@@ -219,6 +229,16 @@ export class FlappyView {
       this.hand.y = 154 + (Math.floor(sim.clock / 14) % 2) * 2;
     }
     if (this.gameOver.visible) this.updateGameOver(result);
+  }
+
+  private fitWidth({ left, right }: VisibleBounds): void {
+    if (left === this.shownLeft && right === this.shownRight) return;
+    this.shownLeft = left;
+    this.shownRight = right;
+    for (const sprite of this.wide) {
+      sprite.x = left;
+      sprite.width = right - left;
+    }
   }
 
   private updateGameOver(result: ScoreResult | null): void {

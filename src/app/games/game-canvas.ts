@@ -9,11 +9,19 @@ import {
   output,
   viewChild,
 } from '@angular/core';
-import type { Application, Container } from 'pixi.js';
+import type { Application, Container, Graphics } from 'pixi.js';
 import { attachPerfOverlay } from './perf-overlay';
+
+/** The logical x range currently on screen; wider than 0 to the logical width when the canvas is extended. */
+export interface VisibleBounds {
+  left: number;
+  right: number;
+}
 
 export interface GameSurface {
   readonly app: Application;
+  /** Updated in place whenever the canvas is resized. */
+  readonly bounds: VisibleBounds;
   /** Draw here in logical pixels; it is scaled to the canvas and clipped to the logical bounds. */
   readonly root: Container;
 }
@@ -65,6 +73,11 @@ export class GameCanvas {
   readonly label = input('Game');
   /** When false the art scales fractionally to fill the host instead of snapping to whole device pixels. */
   readonly integerScale = input(true);
+  /**
+   * When the host is wider than the logical area, reveal the extra width on both sides instead of leaving bars,
+   * for games that draw their world across it (see `GameSurface.bounds`).
+   */
+  readonly extendWidth = input(false);
   /** Read once when the canvas is created. */
   readonly antialias = input(false);
   readonly ready = output<GameSurface>();
@@ -73,6 +86,8 @@ export class GameCanvas {
   private readonly host = viewChild.required<ElementRef<HTMLDivElement>>('host');
   private app?: Application;
   private root?: Container;
+  private clip?: Graphics;
+  private readonly bounds: VisibleBounds = { left: 0, right: 0 };
   private observer?: ResizeObserver;
   private destroyed = false;
   private touchTarget?: HTMLElement;
@@ -122,7 +137,9 @@ export class GameCanvas {
     }
 
     const root = new Container();
-    const clip = new Graphics().rect(0, 0, this.logicalWidth(), this.logicalHeight()).fill(0xffffff);
+    const clip = new Graphics();
+    this.clip = clip;
+    this.bounds.right = this.logicalWidth();
     root.addChild(clip);
     root.mask = clip;
     app.stage.addChild(root);
@@ -141,7 +158,7 @@ export class GameCanvas {
     this.layout();
     this.observer = new ResizeObserver(() => this.layout());
     this.observer.observe(el);
-    this.ready.emit({ app, root });
+    this.ready.emit({ app, root, bounds: this.bounds });
   }
 
   private layout(): void {
@@ -162,5 +179,14 @@ export class GameCanvas {
     };
     root.scale.set(this.scale);
     root.position.set(this.offset.x, this.offset.y);
+
+    // Whole logical pixels, so the clip edge never lands mid-pixel.
+    const extend = this.extendWidth();
+    this.bounds.left = extend ? Math.floor(-this.offset.x / this.scale) : 0;
+    this.bounds.right = extend ? Math.ceil((w - this.offset.x) / this.scale) : this.logicalWidth();
+    this.clip
+      ?.clear()
+      .rect(this.bounds.left, 0, this.bounds.right - this.bounds.left, this.logicalHeight())
+      .fill(0xffffff);
   }
 }

@@ -28,6 +28,7 @@ const PAUSE_KEYS = new Set(['Escape', 'KeyP']);
         [logicalHeight]="height"
         [background]="background"
         [integerScale]="false"
+        [extendWidth]="true"
         label="Flappy Cat"
         (ready)="onReady($event)"
         (press)="onPress($event)"
@@ -48,13 +49,15 @@ export class FlappyCat {
     inject(DestroyRef).onDestroy(() => this.game?.dispose());
   }
 
-  protected onReady({ app, root }: GameSurface): void {
+  protected onReady({ app, root, bounds }: GameSurface): void {
     const game = new FlappyGame(this.scores, new Sfx(this.sound));
     const view = new FlappyView(root, game.sim);
     this.game = game;
     app.ticker.add((ticker) => {
+      game.sim.left = bounds.left;
+      game.sim.right = bounds.right;
       const alpha = game.frame(ticker.deltaMS);
-      view.update(game.result, alpha);
+      view.update(game.result, alpha, bounds);
     });
   }
 
