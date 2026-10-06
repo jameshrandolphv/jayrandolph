@@ -25,7 +25,13 @@ export interface ImageNode extends NodeBase {
   height: number;
 }
 
-export type FsNode = FolderNode | AppNode | ImageNode;
+export interface FileNode extends NodeBase {
+  kind: 'file';
+  /** Plain text shown when the file is opened. */
+  content: string;
+}
+
+export type FsNode = FolderNode | AppNode | ImageNode | FileNode;
 
 export const segmentsOf = (path: string): string[] => (path ? path.split('/') : []);
 

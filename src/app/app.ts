@@ -42,7 +42,7 @@ export class App {
 
   protected readonly dockItems = computed(() => [
     { id: 'desktop', name: 'Desktop', path: '', icon: 'desktop' },
-    ...this.fs.root().children.filter((c) => c.kind !== 'app' || c.dock !== false),
+    ...this.fs.root().children.filter((c) => c.kind === 'app' && c.dock !== false),
   ]);
 
   constructor() {

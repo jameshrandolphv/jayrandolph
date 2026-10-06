@@ -100,6 +100,7 @@ export class GameCanvas {
       antialias: false,
       autoDensity: true,
       resolution: window.devicePixelRatio || 1,
+      roundPixels: true,
     });
     if (this.destroyed) {
       app.destroy(true, { children: true, texture: true });

@@ -24,10 +24,9 @@ export const APPS: readonly AppDef[] = [
     load: () => import('../apps/flappy-cat/flappy-cat').then((m) => m.FlappyCat),
   },
   {
-    id: 'do-not-open',
-    name: 'DO NOT OPEN.txt',
-    icon: 'text',
-    dock: false,
+    id: 'write-stuff',
+    name: 'Write Stuff',
+    icon: 'write',
     load: () => import('../apps/text-edit/text-edit').then((m) => m.TextEdit),
   },
 ];

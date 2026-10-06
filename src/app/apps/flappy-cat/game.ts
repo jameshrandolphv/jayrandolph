@@ -27,13 +27,14 @@ export class FlappyGame {
     void scores.getBest(GAME_ID);
   }
 
-  frame(deltaMs: number): void {
+  frame(deltaMs: number): number {
     this.step.advance(deltaMs, () => {
       const before = this.sim.phase;
       this.sim.step();
       if (before !== 'gameOver' && this.sim.phase === 'gameOver') this.saveScore();
     });
     for (const event of this.sim.drainEvents()) this.sfx.play(SOUNDS[event]);
+    return this.step.alpha;
   }
 
   /** A pointer press in logical coordinates. */

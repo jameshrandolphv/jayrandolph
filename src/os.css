@@ -476,8 +476,7 @@ a.btn {
     padding: 0 0 68px;
   }
 
-  .window.compact,
-  .window.portrait {
+  .window.compact {
     width: 100%;
     height: 100%;
   }

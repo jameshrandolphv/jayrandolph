@@ -8,6 +8,11 @@ export class FixedStep {
     private readonly maxFrameMs = 100,
   ) {}
 
+  /** How far the next tick is toward happening, 0 to 1; renderers blend the last two states by this. */
+  get alpha(): number {
+    return this.accumulator / this.stepMs;
+  }
+
   advance(frameMs: number, tick: () => void): void {
     this.accumulator += Math.min(frameMs, this.maxFrameMs);
     while (this.accumulator >= this.stepMs) {

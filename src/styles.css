@@ -588,10 +588,6 @@ progress::-moz-progress-bar {
 }
 
 @media (max-width: 760px) {
-  .window {
-    border-radius: 0;
-  }
-
   .menu-toggle {
     display: inline-block;
     order: 2;

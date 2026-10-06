@@ -1,5 +1,6 @@
 import { Injectable, signal } from '@angular/core';
 import { APPS, type AppDef } from './apps';
+import { DOCUMENTS, type DocumentDef } from './documents';
 import { segmentsOf, type FolderNode, type FsNode } from './node';
 
 export interface PhotoManifest {
@@ -19,7 +20,7 @@ const folder = (path: string, name: string, children: FsNode[]): FolderNode => (
   children,
 });
 
-export function buildTree(manifest: PhotoManifest, apps: readonly AppDef[]): FolderNode {
+export function buildTree(manifest: PhotoManifest, apps: readonly AppDef[], documents: readonly DocumentDef[] = DOCUMENTS): FolderNode {
   const sorted = [...manifest.albums].sort((a, b) => a.title.localeCompare(b.title, 'en', { numeric: true }));
   const albums = sorted.map((album) => {
     const path = `photography/${album.id}`;
@@ -40,8 +41,19 @@ export function buildTree(manifest: PhotoManifest, apps: readonly AppDef[]): Fol
     );
   });
 
+  const documentsPath = 'documents';
+  const documentNodes = documents.map((doc) => ({
+    kind: 'file' as const,
+    id: doc.id,
+    name: doc.name,
+    path: `${documentsPath}/${doc.id}`,
+    icon: 'text',
+    content: doc.content,
+  }));
+
   return folder('', 'Desktop', [
     folder('photography', 'Photography', albums),
+    folder(documentsPath, 'Documents', documentNodes),
     ...apps.map((app) => ({
       kind: 'app' as const,
       id: app.id,

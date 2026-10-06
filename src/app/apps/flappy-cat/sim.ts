@@ -26,6 +26,8 @@ export interface Pipe {
   id: number;
   /** Left edge. */
   x: number;
+  /** Left edge before the latest tick, for render interpolation. */
+  prevX: number;
   /** Vertical centre of the opening. */
   gapY: number;
   scored: boolean;
@@ -52,6 +54,9 @@ export class FlappySim {
   score = 0;
   catY = CAT_START_Y;
   catVy = 0;
+  /** Positions before the latest tick, for render interpolation. */
+  prevCatY = CAT_START_Y;
+  prevScrollX = 0;
   pipes: Pipe[] = [];
   /** Distance the ground has scrolled. */
   scrollX = 0;
@@ -102,11 +107,15 @@ export class FlappySim {
     this.pipes = [];
     this.catVy = 0;
     this.catY = CAT_START_Y;
+    this.prevCatY = CAT_START_Y;
     this.enter('title');
     return true;
   }
 
   step(): void {
+    this.prevCatY = this.catY;
+    this.prevScrollX = this.scrollX;
+    for (const pipe of this.pipes) pipe.prevX = pipe.x;
     if (this.paused) return;
     this.clock++;
     this.phaseTicks++;
@@ -182,7 +191,7 @@ export class FlappySim {
       if (x >= WIDTH + PIPE_W) return;
       const shift = (this.rng() * 2 - 1) * PIPE_MAX_SHIFT;
       this.lastGapY = Math.min(GAP_MAX, Math.max(GAP_MIN, this.lastGapY + shift));
-      this.pipes.push({ id: this.nextPipeId++, x, gapY: this.lastGapY, scored: false });
+      this.pipes.push({ id: this.nextPipeId++, x, prevX: x, gapY: this.lastGapY, scored: false });
     }
   }
 

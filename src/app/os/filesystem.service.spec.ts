@@ -23,6 +23,7 @@ describe('filesystem', () => {
   it('puts Photography and apps on the desktop', () => {
     expect(root.children.map((c) => [c.kind, c.name])).toEqual([
       ['folder', 'Photography'],
+      ['folder', 'Documents'],
       ['app', 'Film Sim'],
     ]);
   });
@@ -30,6 +31,25 @@ describe('filesystem', () => {
   it('always has a Photography folder, even without albums', () => {
     const empty = buildTree({ albums: [] }, apps);
     expect(resolvePath(empty, ['photography'])).toMatchObject({ kind: 'folder', children: [] });
+  });
+
+  it('keeps documents in a top-level Documents folder and opens them by path', () => {
+    const docs = resolvePath(root, ['documents']);
+    expect(docs?.kind === 'folder' && docs.children.map((c) => c.name)).toEqual([
+      'DO NOT OPEN.txt',
+      'about.txt',
+      'changelog.txt',
+    ]);
+    expect(resolvePath(root, ['documents', 'do-not-open.txt'])).toMatchObject({
+      kind: 'file',
+      content: 'Why would you do that..',
+    });
+    expect(resolvePath(root, ['documents', 'about.txt'])).toMatchObject({
+      kind: 'file',
+      content: 'I will eventually update this',
+    });
+    const changelog = resolvePath(root, ['documents', 'changelog.txt']);
+    expect(changelog?.kind === 'file' && changelog.content).toMatch(/1\.2\.1[\s\S]*1\.2\.0[\s\S]*1\.1\.0[\s\S]*1\.0\.0/);
   });
 
   it('resolves albums and images by path', () => {

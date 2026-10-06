@@ -55,6 +55,16 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
           <stop offset="0.6" stop-color="#f08a5a" />
           <stop offset="1" stop-color="#7a3a5a" />
         </linearGradient>
+        <linearGradient id="ico-pen" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#8a8a8a" />
+          <stop offset="0.3" stop-color="#fdfdfd" />
+          <stop offset="0.6" stop-color="#c4c4c4" />
+          <stop offset="1" stop-color="#6e6e6e" />
+        </linearGradient>
+        <linearGradient id="ico-note" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#fbec8e" />
+          <stop offset="1" stop-color="#e9cf55" />
+        </linearGradient>
         <clipPath id="ico-app-clip"><rect x="4" y="4" width="56" height="56" rx="13" /></clipPath>
         <clipPath id="ico-screen-clip"><rect x="10" y="12" width="44" height="30" rx="2" /></clipPath>
       </defs>
@@ -139,6 +149,23 @@ export class IconDefs {}
             <path fill="#8be05a" d="M10 9h1v1h-1zM14 9h1v1h-1zM9 10h1v1h-1zM13 10h1v1h-1z" />
             <path fill="#aab7cd" d="M10 11h4v1h-4zM10 12h1v1h-1zM13 12h2v1h-2zM11 13h3v1h-3zM7 14h1v1h-1zM4 15h7v1h-7zM4 16h7v1h-7zM5 17h5v1h-5z" />
           </svg>
+        }
+        @case ('write') {
+          <rect x="6" y="14" width="34" height="44" rx="1.5" fill="url(#ico-note)" stroke="#a8923a" stroke-width="0.8" transform="rotate(-14 23 36)" />
+          <g transform="rotate(-9 28 28)">
+            <rect x="10" y="4" width="36" height="48" rx="1.5" fill="url(#ico-paper)" stroke="#7b8695" stroke-width="0.9" />
+            <g stroke="#b4c3da" stroke-width="0.9">
+              <path d="M12 11h32M12 16h32M12 21h32M12 26h32M12 31h32M12 36h32M12 41h32M12 46h32" />
+            </g>
+          </g>
+          <g transform="translate(49 15) rotate(36)">
+            <rect x="-3" y="0" width="6" height="17" rx="3" fill="url(#ico-pen)" stroke="#5c5c5c" stroke-width="0.7" />
+            <rect x="2.6" y="3" width="1.8" height="11" rx="0.9" fill="url(#ico-pen)" stroke="#5c5c5c" stroke-width="0.6" />
+            <rect x="-3.6" y="17" width="7.2" height="9" rx="1" fill="url(#ico-pen)" stroke="#4a4a4a" stroke-width="0.7" />
+            <path d="M-3.6 19.5h7.2M-3.6 21.5h7.2M-3.6 23.5h7.2" stroke="#555" stroke-width="0.6" />
+            <path d="M-3 26h6l-1.6 6h-2.8z" fill="url(#ico-pen)" stroke="#5c5c5c" stroke-width="0.7" stroke-linejoin="round" />
+            <path d="M0 32v4" stroke="#444" stroke-width="0.9" stroke-linecap="round" />
+          </g>
         }
         @default {
           <rect x="4" y="4" width="56" height="56" rx="13" fill="url(#ico-app)" stroke="#12356e" />

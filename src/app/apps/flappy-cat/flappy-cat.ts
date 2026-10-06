@@ -51,8 +51,8 @@ export class FlappyCat {
     const view = new FlappyView(root, game.sim);
     this.game = game;
     app.ticker.add((ticker) => {
-      game.frame(ticker.deltaMS);
-      view.update(game.result);
+      const alpha = game.frame(ticker.deltaMS);
+      view.update(game.result, alpha);
     });
   }
 

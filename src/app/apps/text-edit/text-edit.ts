@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, ElementRef, afterNextRender, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, afterNextRender, input, signal, viewChild } from '@angular/core';
 import { WindowFrame } from '../../ui/window-frame';
 
 const FONTS = ['Helvetica', 'Arial', 'Times New Roman', 'Courier New', 'Georgia', 'Lucida Grande', 'Monaco', 'Verdana', 'Trebuchet MS'];
@@ -35,7 +35,7 @@ const toHex = (css: string): string | null => {
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '(document:selectionchange)': 'onSelectionChange()' },
   template: `
-    <app-window-frame title="DO NOT OPEN.txt" compact>
+    <app-window-frame [title]="name()" [closeLink]="closeLink()" compact>
       <div class="toolbar te-toolbar" role="toolbar" aria-label="Format">
         <select aria-label="Font" (change)="run('fontName', value($event))">
           @for (f of fonts; track f) {
@@ -77,11 +77,16 @@ const toHex = (css: string): string | null => {
           <span [style.left.px]="n * 72 + 6">{{ n }}</span>
         }
       </div>
-      <div #page class="te-page" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Document" spellcheck="false">I will eventually update this...</div>
+      <div #page class="te-page" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Document" spellcheck="false"></div>
     </app-window-frame>
   `,
 })
 export class TextEdit {
+  /** Document title and initial text; the text is only read once, on creation. */
+  readonly name = input('Untitled');
+  readonly content = input('');
+  readonly closeLink = input('/');
+
   protected readonly fonts = FONTS;
   protected readonly sizes = SIZES;
   protected readonly aligns = ALIGNS;
@@ -100,7 +105,11 @@ export class TextEdit {
   private range: Range | null = null;
 
   constructor() {
-    afterNextRender(() => this.page().nativeElement.focus());
+    afterNextRender(() => {
+      const page = this.page().nativeElement;
+      page.textContent = this.content();
+      page.focus();
+    });
   }
 
   protected value(event: Event): string {

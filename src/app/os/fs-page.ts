@@ -2,19 +2,20 @@ import { ChangeDetectionStrategy, Component, computed, effect, inject } from '@a
 import { toSignal } from '@angular/core/rxjs-interop';
 import { Title } from '@angular/platform-browser';
 import { ActivatedRoute, RouterLink, type CanMatchFn } from '@angular/router';
+import { TextEdit } from '../apps/text-edit/text-edit';
 import { WindowFrame } from '../ui/window-frame';
 import { FileSystemService } from './filesystem.service';
 import { Finder } from './finder';
 import { ImageViewer } from './image-viewer';
-import type { FolderNode, ImageNode } from './node';
+import type { FileNode, FolderNode, ImageNode } from './node';
 
 export const fsNodeExists: CanMatchFn = (_route, segments) =>
   inject(FileSystemService).resolve(segments.map((s) => s.path)) !== null;
 
-/** Renders whatever filesystem node the URL points at: a folder window, or an image over its album. */
+/** Renders whatever filesystem node the URL points at: a folder window, an image over its album, or a text document. */
 @Component({
   selector: 'app-fs-page',
-  imports: [Finder, ImageViewer],
+  imports: [Finder, ImageViewer, TextEdit],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (folder(); as f) {
@@ -22,6 +23,10 @@ export const fsNodeExists: CanMatchFn = (_route, segments) =>
     }
     @if (image(); as img) {
       <app-image-viewer [image]="img" [siblings]="photos()" />
+    }
+    <!-- Tracked by path so switching documents recreates the editor with the new text. -->
+    @for (doc of documents(); track doc.path) {
+      <app-text-edit [name]="doc.name" [content]="doc.content" [closeLink]="closeLink()" />
     }
   `,
 })
@@ -36,10 +41,21 @@ export class FsPage {
     return node?.kind === 'image' ? node : null;
   });
 
+  protected readonly documents = computed<FileNode[]>(() => {
+    const node = this.node();
+    return node?.kind === 'file' ? [node] : [];
+  });
+
+  protected readonly closeLink = computed(() => {
+    const node = this.node();
+    const parent = node ? this.fs.parentOf(node) : null;
+    return '/' + (parent?.path ?? '');
+  });
+
   protected readonly folder = computed<FolderNode | null>(() => {
     const node = this.node();
     if (node?.kind === 'folder') return node;
-    return node ? this.fs.parentOf(node) : null;
+    return node?.kind === 'image' ? this.fs.parentOf(node) : null;
   });
 
   protected readonly photos = computed(() =>

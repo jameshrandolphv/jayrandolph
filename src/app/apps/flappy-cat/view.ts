@@ -57,6 +57,7 @@ const texture = (pixels: Pixels, repeat = false): Texture => {
 };
 
 const easeOut = (t: number): number => 1 - (1 - Math.min(1, Math.max(0, t))) ** 3;
+const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
 /** Draws the sim's state with Pixi; owns no game rules. */
 export class FlappyView {
@@ -182,20 +183,21 @@ export class FlappyView {
     );
   }
 
-  update(result: ScoreResult | null): void {
+  update(result: ScoreResult | null, alpha = 1): void {
     const { sim } = this;
     const phase = sim.phase;
 
-    this.clouds.tilePosition.x = -sim.scrollX * 0.12;
-    this.city.tilePosition.x = -sim.scrollX * 0.3;
-    this.bushes.tilePosition.x = -sim.scrollX * 0.6;
-    this.ground.tilePosition.x = -sim.scrollX;
-    this.syncPipes(sim.pipes);
+    const scrollX = lerp(sim.prevScrollX, sim.scrollX, alpha);
+    this.clouds.tilePosition.x = -scrollX * 0.12;
+    this.city.tilePosition.x = -scrollX * 0.3;
+    this.bushes.tilePosition.x = -scrollX * 0.6;
+    this.ground.tilePosition.x = -scrollX;
+    this.syncPipes(sim.pipes, alpha);
 
     const alive = phase !== 'dying' && phase !== 'gameOver';
     const frame = alive ? CAT_FLAP_FRAMES[Math.floor(sim.clock / 4) % CAT_FLAP_FRAMES.length] : 1;
     this.cat.texture = this.catFrames[frame];
-    this.cat.position.set(phase === 'title' ? WIDTH / 2 : 44, Math.round(sim.catY));
+    this.cat.position.set(phase === 'title' ? WIDTH / 2 : 44, lerp(sim.prevCatY, sim.catY, alpha));
     this.cat.rotation = phase === 'title' || phase === 'ready' ? 0 : Math.max(-0.45, Math.min(1.3, sim.catVy * 0.28));
     this.cat.x = Math.round(this.cat.x);
 
@@ -244,7 +246,7 @@ export class FlappyView {
     this.goMedal.visible = done && !!result?.isNewBest;
   }
 
-  private syncPipes(pipes: readonly Pipe[]): void {
+  private syncPipes(pipes: readonly Pipe[], alpha: number): void {
     const live = new Set<number>();
     for (const pipe of pipes) {
       live.add(pipe.id);
@@ -254,7 +256,7 @@ export class FlappyView {
         this.pipeViews.set(pipe.id, view);
         this.pipes.addChild(view);
       }
-      view.x = Math.round(pipe.x);
+      view.x = lerp(pipe.prevX, pipe.x, alpha);
     }
     for (const [id, view] of this.pipeViews) {
       if (live.has(id)) continue;
