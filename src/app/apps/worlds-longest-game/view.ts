@@ -23,6 +23,7 @@ import {
 } from './constants';
 import type { LongestGame } from './game';
 import { enemyPositionAt, type LevelDef } from './level';
+import { paletteFor } from './palette';
 
 const FONT = '"Arial Black", "Helvetica Neue", Arial, sans-serif';
 const BODY_FONT = 'Arial, "Helvetica Neue", sans-serif';
@@ -188,7 +189,7 @@ export class LongestView {
       this.updateBest();
       this.updateTitleButtons();
     }
-    if (sim.def && sim.def !== this.shown) this.loadLevel(sim.def);
+    if (sim.def && sim.def !== this.shown) this.loadLevel(sim.def, sim.level);
 
     if (sim.level !== this.shownLevel) {
       this.shownLevel = sim.level;
@@ -342,19 +343,20 @@ export class LongestView {
     this.introLayer.addChild(this.introLabel);
   }
 
-  private loadLevel(def: LevelDef): void {
+  private loadLevel(def: LevelDef, levelNumber: number): void {
+    const palette = paletteFor(levelNumber);
     this.shown = def;
     this.field.removeChild(this.player);
     this.field.removeChildren().forEach((child) => child.destroy({ children: true }));
 
-    const level = new Graphics().rect(0, 0, FIELD_W, FIELD_H).fill(COLORS.void);
+    const level = new Graphics().rect(0, 0, FIELD_W, FIELD_H).fill(palette.void);
     const tile = (c: number, r: number): number =>
       c < 0 || r < 0 || c >= COLS || r >= ROWS ? TILE_VOID : def.tiles[r * COLS + c]!;
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const t = tile(c, r);
         if (t === TILE_VOID) continue;
-        const color = t === TILE_SAFE ? COLORS.safe : (c + r) % 2 === 0 ? COLORS.floorA : COLORS.floorB;
+        const color = t === TILE_SAFE ? COLORS.safe : (c + r) % 2 === 0 ? palette.floorA : palette.floorB;
         level.rect(c * TILE, r * TILE, TILE, TILE).fill(color);
       }
     }
@@ -380,7 +382,7 @@ export class LongestView {
     });
     this.field.addChild(this.player);
     this.enemyViews = def.enemies.map(() => {
-      const view = dot(ENEMY_R, COLORS.enemy);
+      const view = dot(ENEMY_R, palette.enemy);
       this.field.addChild(view);
       return view;
     });

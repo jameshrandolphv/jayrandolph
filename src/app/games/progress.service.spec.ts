@@ -34,4 +34,23 @@ describe('ProgressStore', () => {
     await store.save('g', 4);
     expect(await store.load('g')).toBe(4);
   });
+
+  it('keeps the seed alongside the level', async () => {
+    const idb = new IDBFactory();
+    await new ProgressStore({ idb }).save('g', 7, 4242);
+    expect(await new ProgressStore({ idb }).loadProgress('g')).toEqual({ level: 7, seed: 4242 });
+    expect(await new ProgressStore({ idb }).load('g')).toBe(7);
+  });
+
+  it('loads progress saved without a seed', async () => {
+    const idb = new IDBFactory();
+    await new ProgressStore({ idb }).save('g', 7);
+    expect(await new ProgressStore({ idb }).loadProgress('g')).toEqual({ level: 7 });
+  });
+
+  it('drops a corrupt seed but keeps the level', async () => {
+    const idb = new IDBFactory();
+    await new ProgressStore({ idb }).save('g', 7, 1.5);
+    expect(await new ProgressStore({ idb }).loadProgress('g')).toEqual({ level: 7 });
+  });
 });

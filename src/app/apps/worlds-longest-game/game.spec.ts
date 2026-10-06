@@ -5,14 +5,15 @@ import type { ScoreStore } from '../../games/score.service';
 import type { Sfx } from '../../games/sfx';
 import { CONTINUE_BUTTON, MENU_BUTTON, NEW_BUTTON, PLAY_BUTTON, START_BUTTON } from './constants';
 import { GAME_ID, LongestGame } from './game';
+import { generateLevel } from './generator';
 
 const scores = { getBest: async () => 0, submit: async () => ({ best: 0, isNewBest: false }) } as unknown as ScoreStore;
 const sfx = { play: () => undefined, unlock: () => undefined, dispose: () => undefined } as unknown as Sfx;
 const centre = (r: { x: number; y: number; w: number; h: number }) => [r.x + r.w / 2, r.y + r.h / 2] as const;
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 
-const open = async (progress: ProgressStore) => {
-  const game = new LongestGame(scores, sfx, progress, 1);
+const open = async (progress: ProgressStore, seed = 1) => {
+  const game = new LongestGame(scores, sfx, progress, seed);
   await settle();
   return game;
 };
@@ -91,5 +92,52 @@ describe('LongestGame progress', () => {
     game.frame(16);
     await settle();
     expect(await new ProgressStore({ idb }).load(GAME_ID)).toBe(1);
+  });
+
+  it('stores the seed with the level and rebuilds the same level when reopened', async () => {
+    const idb = new IDBFactory();
+    const first = await open(new ProgressStore({ idb }), 111);
+    first.keyDown('Enter');
+    first.keyDown('Enter');
+    first.frame(16);
+    await settle();
+    expect(await new ProgressStore({ idb }).loadProgress(GAME_ID)).toEqual({ level: 1, seed: 111 });
+
+    const second = await open(new ProgressStore({ idb }), 222);
+    second.press(...centre(CONTINUE_BUTTON));
+    expect(second.sim.def).toEqual(generateLevel(1, 111));
+    expect(second.sim.def).not.toEqual(generateLevel(1, 222));
+  });
+
+  it('keeps the saved seed through later levels and saves a new one for a new run', async () => {
+    const idb = new IDBFactory();
+    const progress = new ProgressStore({ idb });
+    await progress.save(GAME_ID, 3, 111);
+    const game = await open(progress, 222);
+    game.press(...centre(CONTINUE_BUTTON));
+    expect(game.sim.level).toBe(3);
+    game.frame(16);
+    await settle();
+    expect(await new ProgressStore({ idb }).loadProgress(GAME_ID)).toEqual({ level: 3, seed: 111 });
+
+    game.keyDown('Enter');
+    game.keyDown('Enter');
+    game.frame(16);
+    game.press(...centre(MENU_BUTTON));
+    game.press(...centre(NEW_BUTTON));
+    game.press(...centre(START_BUTTON));
+    game.frame(16);
+    await settle();
+    const saved = await new ProgressStore({ idb }).loadProgress(GAME_ID);
+    expect(saved.level).toBe(1);
+    expect(saved.seed).not.toBe(111);
+  });
+
+  it('still resumes progress saved without a seed', async () => {
+    const progress = new ProgressStore({ idb: new IDBFactory() });
+    await progress.save(GAME_ID, 4);
+    const game = await open(progress);
+    game.press(...centre(CONTINUE_BUTTON));
+    expect(game.sim.level).toBe(4);
   });
 });

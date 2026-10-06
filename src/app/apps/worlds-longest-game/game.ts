@@ -46,8 +46,13 @@ export class LongestGame {
   private submitted = 0;
   /** Level of the saved game on offer from the title screen; 0 if none. */
   private resumeLevel = 0;
-  /** The level last written to storage, so it is only written when it changes. */
+  /** The level and seed last written to storage, so they are only written when they change. */
   private savedLevel = 0;
+  private savedSeed = 0;
+  /** Levels are generated from this; a resumed game takes the seed it was saved with. */
+  private seed: number;
+  /** Seed of the saved game on offer from the title screen, if it was stored. */
+  private resumeSeed?: number;
   /** Set once a run starts, so a slow load can't offer a save that has already been used or cleared. */
   private started = false;
 
@@ -56,14 +61,18 @@ export class LongestGame {
     private readonly sfx: Sfx,
     private readonly progress: ProgressStore,
     seed = randomSeed(),
-    generate: (level: number) => LevelDef = (level) => generateLevel(level, seed),
+    generate?: (level: number) => LevelDef,
   ) {
-    this.sim = new LongestSim(generate);
+    this.seed = seed;
+    this.sim = new LongestSim(generate ?? ((level) => generateLevel(level, this.seed)));
     void scores.getBest(GAME_ID).then((best) => (this.best = Math.max(this.best, best)));
-    void progress.load(GAME_ID).then((level) => {
+    void progress.loadProgress(GAME_ID).then(({ level, seed: savedSeed }) => {
       if (this.started) return;
       this.resumeLevel = level;
       this.savedLevel = level;
+      // Without a saved seed the level can't be rebuilt, so the resumed game keeps this session's seed.
+      if (savedSeed !== undefined) this.resumeSeed = savedSeed;
+      this.savedSeed = savedSeed ?? this.seed;
     });
   }
 
@@ -177,22 +186,30 @@ export class LongestGame {
 
   private resume(): void {
     this.started = true;
-    if (this.sim.canReturn) this.sim.returnToRun();
-    else this.sim.begin(this.resumeLevel);
+    if (this.sim.canReturn) {
+      this.sim.returnToRun();
+      return;
+    }
+    if (this.resumeSeed !== undefined) this.seed = this.resumeSeed;
+    this.sim.begin(this.resumeLevel);
   }
 
   /** Drops any saved game and starts again from level 1. */
   private startNew(): void {
     this.started = true;
     this.resumeLevel = 0;
+    this.resumeSeed = undefined;
+    // A seed that has already been played would repeat the same levels.
+    if (this.sim.level > 0) this.seed = randomSeed();
     this.sim.begin();
   }
 
   private saveProgress(): void {
     const { level } = this.sim;
-    if (level === 0 || level === this.savedLevel) return;
+    if (level === 0 || (level === this.savedLevel && this.seed === this.savedSeed)) return;
     this.savedLevel = level;
-    void this.progress.save(GAME_ID, level);
+    this.savedSeed = this.seed;
+    void this.progress.save(GAME_ID, level, this.seed);
   }
 
   /** Held keys win over the stick; both give a direction of at most length 1. */
