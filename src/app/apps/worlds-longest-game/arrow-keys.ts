@@ -9,15 +9,15 @@ export type ArrowKey = 'left' | 'right' | 'up' | 'down';
 
 interface Key {
   readonly key: ArrowKey;
-  readonly glyph: string;
-  readonly label: string;
+  /** Degrees to turn an upward-pointing arrow. */
+  readonly turn: number;
 }
 
 const KEYS: readonly Key[] = [
-  { key: 'left', glyph: '◀', label: 'Left' },
-  { key: 'up', glyph: '▲', label: 'Up' },
-  { key: 'down', glyph: '▼', label: 'Down' },
-  { key: 'right', glyph: '▶', label: 'Right' },
+  { key: 'left', turn: -90 },
+  { key: 'up', turn: 0 },
+  { key: 'down', turn: 180 },
+  { key: 'right', turn: 90 },
 ];
 
 /** Movement for the held keys; opposite keys cancel and diagonals are normalised to the same speed. */
@@ -29,8 +29,8 @@ export const keysVector = (held: ReadonlySet<ArrowKey>): StickVector => {
 };
 
 /**
- * A MacBook-style arrow cluster: full-height left and right keys with half-height up and down stacked
- * between them. Each finger is tracked on its own, so two keys together make a diagonal and a finger can
+ * A MacBook arrow cluster: three equal-width keys, with square left and right keys and half-height up and
+ * down keys stacked between them. Each finger is tracked on its own, so two keys together make a diagonal and a finger can
  * slide from one key to another.
  */
 @Component({
@@ -48,7 +48,9 @@ export const keysVector = (held: ReadonlySet<ArrowKey>): StickVector => {
     >
       @for (k of keys; track k.key) {
         <div class="key" [class.pressed]="pressed().has(k.key)" [attr.data-key]="k.key" [style.grid-area]="k.key">
-          <span>{{ k.glyph }}</span>
+          <svg viewBox="0 0 24 24" [style.transform]="'rotate(' + k.turn + 'deg)'">
+            <path d="M12 6 L19 17 H5 Z" />
+          </svg>
         </div>
       }
     </div>
@@ -62,13 +64,16 @@ export const keysVector = (held: ReadonlySet<ArrowKey>): StickVector => {
       container-type: size;
     }
     .cluster {
+      /* Three keys of equal width; the full-height keys are square and the up and down keys split that height. */
+      --gap: 6px;
+      --width: min(100cqw, 3 * 100cqh + 2 * var(--gap), 480px);
       display: grid;
       grid-template:
         'left up right' 1fr
         'left down right' 1fr / 1fr 1fr 1fr;
-      gap: 6px;
-      width: min(100cqw, 100cqh * 1.5, 420px);
-      aspect-ratio: 3 / 2;
+      gap: var(--gap);
+      width: var(--width);
+      height: calc((var(--width) - 2 * var(--gap)) / 3);
       touch-action: none;
       user-select: none;
       -webkit-user-select: none;
@@ -81,10 +86,13 @@ export const keysVector = (held: ReadonlySet<ArrowKey>): StickVector => {
       border: 2px solid rgb(255 255 255 / 0.35);
       box-shadow: 0 3px 0 #0c0c10, 0 4px 10px rgb(0 0 0 / 0.5);
       color: rgb(255 255 255 / 0.85);
-      font-size: clamp(14px, 9cqmin, 40px);
-      line-height: 1;
       pointer-events: none;
       transition: transform 40ms, box-shadow 40ms;
+    }
+    svg {
+      width: clamp(12px, calc(var(--width) * 0.11), 44px);
+      height: auto;
+      fill: currentColor;
     }
     .key.pressed {
       background: linear-gradient(180deg, #ffffff 0%, #b9c4d8 100%);

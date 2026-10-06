@@ -56,14 +56,15 @@ import { LongestView } from './view';
       display: none;
     }
     @media (pointer: coarse), (max-width: 760px) {
-      /* Phones in landscape: see-through arrow keys over the bottom-left of the game. */
+      /* Phones in landscape: see-through arrow keys centred over the bottom of the game. */
       .pad {
         display: block;
         position: absolute;
-        left: 16px;
+        left: 50%;
         bottom: 16px;
-        width: 210px;
-        height: 140px;
+        transform: translateX(-50%);
+        width: 270px;
+        height: 88px;
         opacity: 0.5;
       }
     }
@@ -80,6 +81,7 @@ import { LongestView } from './view';
       }
       .pad {
         position: static;
+        transform: none;
         flex: 1 1 0;
         width: 100%;
         height: auto;
