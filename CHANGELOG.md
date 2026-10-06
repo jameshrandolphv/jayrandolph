@@ -1,7 +1,7 @@
 # Changelog
 
 ## 1.3.2
-- Fixed a frame delay on high refresh screens for Flappy Cat
+- Fixed a frame delay on high refresh screens for Flappy Cat; adjusted joystick 
 
 ## 1.3.1
 - World's Longest Game difficulty and gameplay adjustments
