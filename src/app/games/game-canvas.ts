@@ -28,7 +28,7 @@ export interface LogicalPoint {
   selector: 'app-game-canvas',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { role: 'application', '[attr.aria-label]': 'label()' },
-  template: `<div #host class="game-host" (pointerdown)="onPointerDown($event)" (touchstart)="$event.preventDefault()"></div>`,
+  template: `<div #host class="game-host" (pointerdown)="onPointerDown($event)"></div>`,
   styles: `
     :host {
       display: flex;
@@ -43,6 +43,7 @@ export interface LogicalPoint {
       touch-action: none;
       user-select: none;
       -webkit-user-select: none;
+      -webkit-touch-callout: none;
       -webkit-tap-highlight-color: transparent;
       cursor: pointer;
     }
