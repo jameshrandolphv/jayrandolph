@@ -1,5 +1,4 @@
 import { FixedStep } from '../../games/fixed-step';
-import { FramePacer } from '../../games/frame-pacer';
 import type { Sfx, SfxName } from '../../games/sfx';
 import type { ScoreResult, ScoreStore } from '../../games/score.service';
 import { OK_BUTTON, PAUSE_BUTTON, START_BUTTON, inRect } from './constants';
@@ -16,7 +15,6 @@ export class FlappyGame {
   result: ScoreResult | null = null;
 
   private readonly step = new FixedStep();
-  private readonly pacer = new FramePacer();
   private run = 0;
 
   constructor(
@@ -30,7 +28,7 @@ export class FlappyGame {
   }
 
   frame(deltaMs: number): number {
-    this.step.advance(this.pacer.pace(deltaMs), () => {
+    this.step.advance(deltaMs, () => {
       const before = this.sim.phase;
       this.sim.step();
       if (before !== 'gameOver' && this.sim.phase === 'gameOver') this.saveScore();
