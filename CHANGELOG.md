@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.3.3
+- Increased difficulty and variety of levels generated in WLG
+
 ## 1.3.2
 - Fixed a frame delay on high refresh screens for Flappy Cat; swapped to a d-pad in World's Longest Game
 

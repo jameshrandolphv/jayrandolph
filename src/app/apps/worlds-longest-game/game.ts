@@ -5,6 +5,7 @@ import type { ScoreStore } from '../../games/score.service';
 import { BACK_BUTTON, CONTINUE_BUTTON, MENU_BUTTON, NEW_BUTTON, PLAY_BUTTON, START_BUTTON, inRect } from './constants';
 import { generateLevel } from './generator';
 import type { LevelDef } from './level';
+import { LevelSource } from './level-source';
 import { LongestSim, type SimEvent } from './sim';
 
 export const GAME_ID = 'worlds-longest-game';
@@ -49,10 +50,15 @@ export class LongestGame {
   /** The level and seed last written to storage, so they are only written when they change. */
   private savedLevel = 0;
   private savedSeed = 0;
+  private savedDeaths = 0;
+  /** The seed and level the next level was last requested for, so it is only requested once. */
+  private prefetched = '';
   /** Levels are generated from this; a resumed game takes the seed it was saved with. */
   private seed: number;
   /** Seed of the saved game on offer from the title screen, if it was stored. */
   private resumeSeed?: number;
+  /** Deaths of the saved game on offer from the title screen. */
+  private resumeDeaths = 0;
   /** Set once a run starts, so a slow load can't offer a save that has already been used or cleared. */
   private started = false;
 
@@ -62,16 +68,24 @@ export class LongestGame {
     private readonly progress: ProgressStore,
     seed = randomSeed(),
     generate?: (level: number) => LevelDef,
+    /** Where levels can be built ahead of time; without a worker behind it each is made when it is reached. */
+    private readonly levels = new LevelSource(),
   ) {
     this.seed = seed;
-    this.sim = new LongestSim(generate ?? ((level) => generateLevel(level, this.seed)));
+    this.sim = new LongestSim(
+      generate ?? ((level) => this.levels.take(level, this.seed) ?? generateLevel(level, this.seed)),
+    );
     void scores.getBest(GAME_ID).then((best) => (this.best = Math.max(this.best, best)));
-    void progress.loadProgress(GAME_ID).then(({ level, seed: savedSeed }) => {
+    void progress.loadProgress(GAME_ID).then(({ level, seed: savedSeed, deaths = 0 }) => {
       if (this.started) return;
       this.resumeLevel = level;
       this.savedLevel = level;
+      this.resumeDeaths = this.savedDeaths = deaths;
       // Without a saved seed the level can't be rebuilt, so the resumed game keeps this session's seed.
-      if (savedSeed !== undefined) this.resumeSeed = savedSeed;
+      if (savedSeed !== undefined) {
+        this.resumeSeed = savedSeed;
+        this.levels.prefetch(level, savedSeed);
+      }
       this.savedSeed = savedSeed ?? this.seed;
     });
   }
@@ -87,6 +101,7 @@ export class LongestGame {
     for (const event of this.sim.drainEvents()) this.sfx.play(SOUNDS[event]);
     this.saveBest();
     this.saveProgress();
+    this.prefetchNext();
     return this.step.alpha;
   }
 
@@ -191,7 +206,7 @@ export class LongestGame {
       return;
     }
     if (this.resumeSeed !== undefined) this.seed = this.resumeSeed;
-    this.sim.begin(this.resumeLevel);
+    this.sim.begin(this.resumeLevel, this.resumeDeaths);
   }
 
   /** Drops any saved game and starts again from level 1. */
@@ -199,17 +214,30 @@ export class LongestGame {
     this.started = true;
     this.resumeLevel = 0;
     this.resumeSeed = undefined;
+    this.resumeDeaths = 0;
+    this.levels.clear();
     // A seed that has already been played would repeat the same levels.
     if (this.sim.level > 0) this.seed = randomSeed();
     this.sim.begin();
   }
 
-  private saveProgress(): void {
+  /** As soon as a level starts, the one after it is requested. */
+  private prefetchNext(): void {
     const { level } = this.sim;
-    if (level === 0 || (level === this.savedLevel && this.seed === this.savedSeed)) return;
+    const key = `${this.seed}:${level}`;
+    if (level === 0 || key === this.prefetched) return;
+    this.prefetched = key;
+    this.levels.prefetch(level + 1, this.seed);
+  }
+
+  private saveProgress(): void {
+    const { level, deaths } = this.sim;
+    if (level === 0 || (level === this.savedLevel && this.seed === this.savedSeed && deaths === this.savedDeaths))
+      return;
     this.savedLevel = level;
     this.savedSeed = this.seed;
-    void this.progress.save(GAME_ID, level, this.seed);
+    this.savedDeaths = deaths;
+    void this.progress.save(GAME_ID, level, this.seed, deaths);
   }
 
   /** Held keys win over the stick; both give a direction of at most length 1. */

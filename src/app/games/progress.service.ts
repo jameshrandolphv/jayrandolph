@@ -6,6 +6,8 @@ interface ProgressRecord {
   level: number;
   /** Seed the level was generated from, for games whose levels are random. */
   seed?: number;
+  /** Deaths so far in the saved run, for games that count them. */
+  deaths?: number;
 }
 
 export interface Progress {
@@ -13,6 +15,8 @@ export interface Progress {
   level: number;
   /** Absent for progress saved without one. */
   seed?: number;
+  /** Absent for progress saved without one. */
+  deaths?: number;
 }
 
 export interface ProgressStoreOptions {
@@ -42,17 +46,28 @@ export class ProgressStore {
     try {
       const record = await idbGet<ProgressRecord>(await this.open(), PROGRESS_STORE, game);
       if (!record || !Number.isSafeInteger(record.level) || record.level <= 0) return { level: 0 };
-      return Number.isSafeInteger(record.seed) ? { level: record.level, seed: record.seed } : { level: record.level };
+      const progress: Progress = { level: record.level };
+      if (Number.isSafeInteger(record.seed)) progress.seed = record.seed;
+      if (Number.isSafeInteger(record.deaths) && record.deaths! >= 0) progress.deaths = record.deaths;
+      return progress;
     } catch {
       return { level: 0 };
     }
   }
 
   /** Saving 0 clears the progress. */
-  async save(game: string, level: number, seed?: number): Promise<void> {
-    this.session.set(game, seed === undefined ? { level } : { level, seed });
+  async save(game: string, level: number, seed?: number, deaths?: number): Promise<void> {
+    const progress: Progress = { level };
+    if (seed !== undefined) progress.seed = seed;
+    if (deaths !== undefined) progress.deaths = deaths;
+    this.session.set(game, progress);
     try {
-      await idbPut(await this.open(), PROGRESS_STORE, { game, level, seed } satisfies ProgressRecord);
+      await idbPut(await this.open(), PROGRESS_STORE, {
+        game,
+        level,
+        seed,
+        deaths,
+      } satisfies ProgressRecord);
     } catch {
       // The session value still applies.
     }

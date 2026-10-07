@@ -1,5 +1,5 @@
 import { COLS, ENEMY_R, PLAYER_SIZE, ROWS, TILE, TILE_FLOOR, TILE_SAFE, TILE_VOID } from './constants';
-import { enemyPositionAt, insideZone, zoneCentre, type LevelDef } from './level';
+import { enemyPositionAt, insideZone, zoneCentre, type LevelDef, type Point, type TileRect } from './level';
 
 /*
  * Conservative reachability check over (cell, time). The level repeats every `period` ticks, so time is
@@ -16,7 +16,7 @@ const GW = Math.floor((COLS * TILE) / CELL);
 const GH = Math.floor((ROWS * TILE) / CELL);
 const N = GW * GH;
 /** A coin counts as collected when the player's centre is this close, which always overlaps it. */
-const COIN_REACH = HALF - 4;
+export const COIN_REACH = HALF - 4;
 
 const MOVES = [0, 1, -1, GW, -GW];
 
@@ -35,7 +35,12 @@ const walkableCells = (level: LevelDef): Uint8Array => {
     for (let i = 0; i < GW; i++) {
       const x = centre(i);
       const y = centre(j);
-      walk[j * GW + i] = +(floorAt(level, x - e, y - e) && floorAt(level, x + e, y - e) && floorAt(level, x - e, y + e) && floorAt(level, x + e, y + e));
+      walk[j * GW + i] = +(
+        floorAt(level, x - e, y - e) &&
+        floorAt(level, x + e, y - e) &&
+        floorAt(level, x - e, y + e) &&
+        floorAt(level, x + e, y + e)
+      );
     }
   }
   return walk;
@@ -68,7 +73,8 @@ const hazardLayers = (level: LevelDef, layers: number): Uint8Array => {
 /** Cells the player may use for one segment: its two zones and the chamber that joins them. */
 const segmentCells = (level: LevelDef, walk: Uint8Array, segment: number): Uint8Array => {
   const { zones } = level;
-  const zoneOf = (c: number, r: number): number => zones.findIndex((z) => c >= z.c && c < z.c + z.w && r >= z.r && r < z.r + z.h);
+  const zoneOf = (c: number, r: number): number =>
+    zones.findIndex((z) => c >= z.c && c < z.c + z.w && r >= z.r && r < z.r + z.h);
 
   // Label chamber components, and note which zones each touches.
   const label = new Int32Array(COLS * ROWS).fill(-1);
@@ -83,7 +89,12 @@ const segmentCells = (level: LevelDef, walk: Uint8Array, segment: number): Uint8
       const at = stack.pop()!;
       const c = at % COLS;
       const r = Math.floor(at / COLS);
-      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      for (const [dc, dr] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ] as const) {
         const nc = c + dc;
         const nr = r + dr;
         if (nc < 0 || nr < 0 || nc >= COLS || nr >= ROWS) continue;
@@ -113,82 +124,161 @@ const segmentCells = (level: LevelDef, walk: Uint8Array, segment: number): Uint8
   return allowed;
 };
 
+interface Workspace {
+  level: LevelDef;
+  layers: number;
+  walk: Uint8Array;
+  haz: Uint8Array;
+  visited: Uint8Array;
+  queue: Int32Array;
+  /** How many states the last flood visited; they are the first entries of `queue`. */
+  reached: number;
+}
+
+const workspaceFor = (level: LevelDef): Workspace => {
+  const layers = level.period / STEP;
+  return {
+    level,
+    layers,
+    walk: walkableCells(level),
+    haz: hazardLayers(level, layers),
+    visited: new Uint8Array(layers * N),
+    queue: new Int32Array(layers * N),
+    reached: 0,
+  };
+};
+
+/** The (cell, time) states the player may be in while on the stretch after zone `segment`. */
+const openStates = (ws: Workspace, segment: number): { allowed: Uint8Array; open: Uint8Array } => {
+  const { level, layers, walk, haz } = ws;
+  const allowed = segmentCells(level, walk, segment);
+  const open = new Uint8Array(layers * N);
+  for (let t = 0; t < layers; t++) {
+    for (let cell = 0; cell < N; cell++) open[t * N + cell] = +(allowed[cell] === 1 && haz[t * N + cell] === 0);
+  }
+  return { allowed, open };
+};
+
+/**
+ * Marks every state reachable from `sources` and leaves them in `ws.queue`. A step between two times
+ * needs the same four states open whichever way it is taken, so running time backwards (`step` of -1)
+ * finds the states that can reach the sources instead.
+ */
+const flood = (ws: Workspace, open: Uint8Array, sources: readonly number[], step: 1 | -1 = 1): void => {
+  const { layers, visited, queue } = ws;
+  for (let i = 0; i < ws.reached; i++) visited[queue[i]!] = 0;
+  let head = 0;
+  let tail = 0;
+  for (const s of sources) {
+    visited[s] = 1;
+    queue[tail++] = s;
+  }
+  while (head < tail) {
+    const s = queue[head++]!;
+    const t = Math.floor(s / N);
+    const cell = s - t * N;
+    const nt = (t + step + layers) % layers;
+    if (!open[nt * N + cell]) continue;
+    for (const move of MOVES) {
+      const next = cell + move;
+      if (next < 0 || next >= N) continue;
+      const ns = nt * N + next;
+      if (visited[ns] || !open[ns] || !open[t * N + next]) continue;
+      visited[ns] = 1;
+      queue[tail++] = ns;
+    }
+  }
+  ws.reached = tail;
+};
+
+const zoneCells = (allowed: Uint8Array, zone: TileRect): number[] => {
+  const cells: number[] = [];
+  for (let cell = 0; cell < N; cell++) {
+    if (allowed[cell] && insideZone(zone, centre(cell % GW), centre(Math.floor(cell / GW)))) cells.push(cell);
+  }
+  return cells;
+};
+
+/** Whether the player can get from zone `segment` to the next one, collecting every coin of the stretch on the way. */
+const solveSegment = (ws: Workspace, segment: number): boolean => {
+  const { level, queue } = ws;
+  const { allowed, open } = openStates(ws, segment);
+
+  const start = level.zones[segment]!;
+  const goal = level.zones[segment + 1]!;
+  const pending = level.coins.filter((c) => c.segment === segment);
+  const sources = zoneCells(allowed, start);
+
+  let from = zoneCentre(start);
+  while (pending.length) {
+    let nearest = 0;
+    for (let k = 1; k < pending.length; k++) {
+      if (
+        Math.hypot(pending[k]!.x - from.x, pending[k]!.y - from.y) <
+        Math.hypot(pending[nearest]!.x - from.x, pending[nearest]!.y - from.y)
+      )
+        nearest = k;
+    }
+    const [coin] = pending.splice(nearest, 1);
+    flood(ws, open, sources);
+    sources.length = 0;
+    for (let i = 0; i < ws.reached; i++) {
+      const s = queue[i]!;
+      const cell = s % N;
+      if (
+        Math.abs(centre(cell % GW) - coin!.x) <= COIN_REACH &&
+        Math.abs(centre(Math.floor(cell / GW)) - coin!.y) <= COIN_REACH
+      )
+        sources.push(s);
+    }
+    if (!sources.length) return false;
+    from = coin!;
+  }
+
+  flood(ws, open, sources);
+  for (let i = 0; i < ws.reached; i++) {
+    const cell = queue[i]! % N;
+    if (insideZone(goal, centre(cell % GW), centre(Math.floor(cell / GW)))) return true;
+  }
+  return false;
+};
+
 /** Whether the player can visit every coin, in nearest-first order, and reach the goal from each zone. */
 export const isSolvable = (level: LevelDef): boolean => {
-  const layers = level.period / STEP;
-  const walk = walkableCells(level);
-  const haz = hazardLayers(level, layers);
-  const visited = new Uint8Array(layers * N);
-  const queue = new Int32Array(layers * N);
-
-  for (let segment = 0; segment < level.zones.length - 1; segment++) {
-    const allowed = segmentCells(level, walk, segment);
-    const free = (t: number, cell: number): boolean => allowed[cell] === 1 && haz[t * N + cell] === 0;
-
-    const flood = (sources: number[]): void => {
-      visited.fill(0);
-      let head = 0;
-      let tail = 0;
-      for (const s of sources) {
-        visited[s] = 1;
-        queue[tail++] = s;
-      }
-      while (head < tail) {
-        const s = queue[head++]!;
-        const t = Math.floor(s / N);
-        const cell = s - t * N;
-        const nt = t + 1 === layers ? 0 : t + 1;
-        if (!free(nt, cell)) continue;
-        for (const move of MOVES) {
-          const next = cell + move;
-          if (next < 0 || next >= N) continue;
-          const ns = nt * N + next;
-          if (visited[ns] || !free(nt, next) || !free(t, next)) continue;
-          visited[ns] = 1;
-          queue[tail++] = ns;
-        }
-      }
-    };
-
-    const start = level.zones[segment]!;
-    const goal = level.zones[segment + 1]!;
-    const centreOfStart = zoneCentre(start);
-    const pending = level.coins.filter((c) => c.segment === segment);
-    const sources: number[] = [];
-    for (let cell = 0; cell < N; cell++) {
-      if (allowed[cell] && insideZone(start, centre(cell % GW), centre(Math.floor(cell / GW)))) sources.push(cell);
-    }
-
-    let from = centreOfStart;
-    while (pending.length) {
-      let nearest = 0;
-      for (let k = 1; k < pending.length; k++) {
-        if (Math.hypot(pending[k]!.x - from.x, pending[k]!.y - from.y) < Math.hypot(pending[nearest]!.x - from.x, pending[nearest]!.y - from.y)) nearest = k;
-      }
-      const [coin] = pending.splice(nearest, 1);
-      flood(sources);
-      sources.length = 0;
-      for (let t = 0; t < layers; t++) {
-        for (let cell = 0; cell < N; cell++) {
-          const s = t * N + cell;
-          if (!visited[s]) continue;
-          if (Math.abs(centre(cell % GW) - coin!.x) <= COIN_REACH && Math.abs(centre(Math.floor(cell / GW)) - coin!.y) <= COIN_REACH) sources.push(s);
-        }
-      }
-      if (!sources.length) return false;
-      from = coin!;
-    }
-
-    flood(sources);
-    let reached = false;
-    for (let s = 0; s < layers * N && !reached; s++) {
-      if (!visited[s]) continue;
-      const cell = s % N;
-      reached = insideZone(goal, centre(cell % GW), centre(Math.floor(cell / GW)));
-    }
-    if (!reached) return false;
-  }
+  const workspace = workspaceFor(level);
+  for (let segment = 0; segment < level.zones.length - 1; segment++)
+    if (!solveSegment(workspace, segment)) return false;
   return true;
+};
+
+/** Like isSolvable, for the one stretch after zone `segment`; enemies elsewhere don't matter to it. */
+export const isSegmentSolvable = (level: LevelDef, segment: number): boolean =>
+  solveSegment(workspaceFor(level), segment);
+
+/**
+ * Centres of the cells where, on some way from zone `segment` to the next, the player can be: reached
+ * from the start safely and with a safe way on to the goal. Coins that sit on these can be collected.
+ */
+export const viableSpots = (level: LevelDef, segment: number): Point[] => {
+  const ws = workspaceFor(level);
+  const { allowed, open } = openStates(ws, segment);
+  flood(ws, open, zoneCells(allowed, level.zones[segment]!));
+  const forward = Array.from(ws.queue.subarray(0, ws.reached));
+
+  const goal = zoneCells(allowed, level.zones[segment + 1]!);
+  const sources: number[] = [];
+  for (let t = 0; t < ws.layers; t++) for (const cell of goal) if (open[t * N + cell]) sources.push(t * N + cell);
+  flood(ws, open, sources, -1);
+
+  const seen = new Uint8Array(N);
+  const spots: Point[] = [];
+  for (const s of forward) {
+    const cell = s % N;
+    if (!ws.visited[s] || seen[cell]) continue;
+    seen[cell] = 1;
+    spots.push({ x: centre(cell % GW), y: centre(Math.floor(cell / GW)) });
+  }
+  return spots;
 };
 
 export interface OpenArea {
@@ -210,7 +300,8 @@ export const openAreas = (level: LevelDef, minCells: number): OpenArea[] => {
   for (let j = 0; j < GH; j++) {
     for (let i = 0; i < GW; i++) {
       const cell = j * GW + i;
-      if (!walk[cell] || level.tiles[Math.floor(centre(j) / TILE) * COLS + Math.floor(centre(i) / TILE)] !== TILE_FLOOR) continue;
+      if (!walk[cell] || level.tiles[Math.floor(centre(j) / TILE) * COLS + Math.floor(centre(i) / TILE)] !== TILE_FLOOR)
+        continue;
       let hit = false;
       for (let t = 0; t < layers && !hit; t++) hit = haz[t * N + cell] === 1;
       open[cell] = +!hit;

@@ -29,7 +29,23 @@ const corridor = (enemies: Enemy[] = [], zones = 3): LevelDef => {
   };
 };
 
-const still = (x: number, y: number): Enemy => ({ kind: 'sweep', ax: x, ay: y, bx: x, by: y, period: 720, phase: 0 });
+/** A corridor along row 5 (columns 1 to 9) with a two-tile-wide-free shaft of one column going up from column 5. */
+const shaft = (): LevelDef => {
+  const def = corridor([], 2);
+  for (let r = 1; r < 5; r++) def.tiles[r * COLS + 5] = TILE_FLOOR;
+  for (let c = 1; c <= 9; c++) def.tiles[6 * COLS + c] = TILE_VOID;
+  return def;
+};
+
+const still = (x: number, y: number): Enemy => ({
+  kind: 'sweep',
+  ax: x,
+  ay: y,
+  bx: x,
+  by: y,
+  period: 720,
+  phase: 0,
+});
 
 const started = (def: LevelDef, onGenerate: (level: number) => void = () => undefined): LongestSim => {
   const sim = new LongestSim((level) => {
@@ -110,6 +126,14 @@ describe('LongestSim', () => {
     expect(sim.level).toBe(1);
     expect(sim.deaths).toBe(0);
     expect(sim.checkpoint).toBe(0);
+  });
+
+  it('can start a run with deaths already counted', () => {
+    const sim = new LongestSim(() => corridor());
+    sim.showInstructions();
+    sim.begin(3, 20);
+    expect(sim.level).toBe(3);
+    expect(sim.deaths).toBe(20);
   });
 
   it('moves at a constant speed and normalises diagonals', () => {
@@ -199,5 +223,58 @@ describe('LongestSim', () => {
     expect(sim.collected).toEqual([true, false]);
     expect(sim.x).toBe(5.5 * 48);
     expect(sim.y).toBe(5.5 * 48);
+  });
+
+  describe('corner snapping', () => {
+    it('slides a misaligned square into an opening on the side it is clipping', () => {
+      for (const [x, expected] of [
+        [250, 256],
+        [280, 272],
+      ] as const) {
+        const sim = started(shaft());
+        sim.x = x;
+        sim.y = 5.5 * 48;
+        walk(sim, 0, -1, 20);
+        expect(sim.x).toBeCloseTo(expected, 0);
+        expect(sim.y).toBeLessThan(5 * 48 - 16);
+        expect(sim.phase).toBe('playing');
+      }
+    });
+
+    it('moves forward at the same pace once lined up', () => {
+      const sim = started(shaft());
+      sim.x = 5.5 * 48;
+      sim.y = 5.5 * 48;
+      walk(sim, 0, -1, 10);
+      expect(sim.x).toBe(5.5 * 48);
+      expect(sim.y).toBeCloseTo(5.5 * 48 - 35, 5);
+    });
+
+    it('does not slide when the opening is further away than the snap range', () => {
+      const sim = started(shaft());
+      sim.x = 5.5 * 48 + 27;
+      sim.y = 5.5 * 48;
+      walk(sim, 0, -1, 20);
+      expect(sim.x).toBe(5.5 * 48 + 27);
+      expect(sim.y).toBeGreaterThanOrEqual(5 * 48 + 16 - 0.01);
+    });
+
+    it('does not pull against a held sideways direction', () => {
+      const sim = started(shaft());
+      sim.x = 250;
+      sim.y = 5.5 * 48;
+      walk(sim, -1, -1, 20);
+      expect(sim.x).toBeLessThanOrEqual(250);
+      expect(sim.y).toBeGreaterThanOrEqual(5 * 48 + 16 - 0.01);
+    });
+
+    it('does not jog the square along a flat wall', () => {
+      const sim = started(corridor());
+      walk(sim, 1, 0, 10);
+      const { y } = sim;
+      walk(sim, 0, -1, 40);
+      expect(sim.y).toBeGreaterThanOrEqual(256 - 0.01);
+      expect(y).toBe(5.5 * 48);
+    });
   });
 });

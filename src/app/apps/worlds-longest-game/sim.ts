@@ -17,6 +17,8 @@ export type SimEvent = 'death' | 'coin' | 'checkpoint' | 'clear' | 'click';
 const HALF = PLAYER_SIZE / 2;
 /** Keeps the player's square just inside a tile edge instead of on the boundary. */
 const EDGE = 0.001;
+/** How far off an opening the square can be and still be slid into line with it. */
+const CORNER_SNAP = 12;
 
 /** Deterministic game state advanced at a fixed tick rate; has no rendering or input knowledge. */
 export class LongestSim {
@@ -71,10 +73,10 @@ export class LongestSim {
     this.events.push('click');
   }
 
-  /** Starts a run, from level 1 unless resuming a saved one. */
-  begin(level = 1): void {
+  /** Starts a run, from level 1 with no deaths unless resuming a saved one. */
+  begin(level = 1, deaths = 0): void {
     if (this.phase !== 'instructions' && this.phase !== 'title') return;
-    this.deaths = 0;
+    this.deaths = deaths;
     this.menuFrom = null;
     this.events.push('click');
     this.startLevel(level);
@@ -171,20 +173,51 @@ export class LongestSim {
 
   /** Each axis is resolved on its own so the square slides along walls. */
   private move(): void {
-    const dx = this.moveX * PLAYER_SPEED;
-    const dy = this.moveY * PLAYER_SPEED;
-    for (let left = Math.abs(dx); left > 0; ) {
-      const part = Math.min(left, 1) * Math.sign(dx);
-      if (this.blockedAt(this.x + part, this.y)) break;
-      this.x += part;
+    this.advance(true, this.moveX * PLAYER_SPEED, this.moveY);
+    this.advance(false, this.moveY * PLAYER_SPEED, this.moveX);
+  }
+
+  /** `steer` is the held input on the other axis. */
+  private advance(horizontal: boolean, amount: number, steer: number): void {
+    for (let left = Math.abs(amount); left > 0;) {
+      const part = Math.min(left, 1) * Math.sign(amount);
+      const nx = horizontal ? this.x + part : this.x;
+      const ny = horizontal ? this.y : this.y + part;
+      if (!this.blockedAt(nx, ny)) {
+        this.x = nx;
+        this.y = ny;
+      } else {
+        const nudge = this.cornerNudge(horizontal, part);
+        // Never fight the player: a nudge against the held direction is skipped.
+        if (nudge === 0 || nudge * steer < 0) return;
+        if (horizontal) this.y += nudge * Math.min(left, 1);
+        else this.x += nudge * Math.min(left, 1);
+      }
       left -= Math.abs(part);
     }
-    for (let left = Math.abs(dy); left > 0; ) {
-      const part = Math.min(left, 1) * Math.sign(dy);
-      if (this.blockedAt(this.x, this.y + part)) break;
-      this.y += part;
-      left -= Math.abs(part);
+  }
+
+  /**
+   * When a step is blocked only because the square clips a corner, the side (-1 or 1) it should slide
+   * towards to line up with the opening; 0 if there is no opening close enough, or two equally near.
+   */
+  private cornerNudge(horizontal: boolean, part: number): -1 | 0 | 1 {
+    const free = (side: number, offset: number): boolean => {
+      const lateral = side * offset;
+      return horizontal
+        ? !this.blockedAt(this.x + part, this.y + lateral)
+        : !this.blockedAt(this.x + lateral, this.y + part);
+    };
+    for (let offset = 1; offset <= CORNER_SNAP; offset++) {
+      const minus = free(-1, offset);
+      const plus = free(1, offset);
+      if (minus === plus && !minus) continue;
+      if (minus && plus) return 0;
+      const side = minus ? -1 : 1;
+      const [dx, dy] = horizontal ? [0, side] : [side, 0];
+      return this.blockedAt(this.x + dx, this.y + dy) ? 0 : side;
     }
+    return 0;
   }
 
   private collide(): void {

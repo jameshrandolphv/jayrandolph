@@ -53,4 +53,20 @@ describe('ProgressStore', () => {
     await new ProgressStore({ idb }).save('g', 7, 1.5);
     expect(await new ProgressStore({ idb }).loadProgress('g')).toEqual({ level: 7 });
   });
+
+  it('keeps the death count alongside the level and seed', async () => {
+    const idb = new IDBFactory();
+    await new ProgressStore({ idb }).save('g', 7, 4242, 31);
+    expect(await new ProgressStore({ idb }).loadProgress('g')).toEqual({
+      level: 7,
+      seed: 4242,
+      deaths: 31,
+    });
+  });
+
+  it('drops a corrupt death count but keeps the level', async () => {
+    const idb = new IDBFactory();
+    await new ProgressStore({ idb }).save('g', 7, 4242, -3);
+    expect(await new ProgressStore({ idb }).loadProgress('g')).toEqual({ level: 7, seed: 4242 });
+  });
 });

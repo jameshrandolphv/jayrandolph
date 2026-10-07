@@ -1,4 +1,4 @@
-import { CanvasTextMetrics, Container, FillGradient, Graphics, Text, TextStyle, type TextStyleOptions } from 'pixi.js';
+import { CanvasTextMetrics, Container, FillGradient, Graphics, GraphicsContext, Text, TextStyle, type TextStyleOptions } from 'pixi.js';
 import {
   BACK_BUTTON,
   BAR,
@@ -124,6 +124,7 @@ export class LongestView {
   private readonly player = new Graphics();
   private coinViews: Graphics[] = [];
   private enemyViews: Graphics[] = [];
+  private enemyShape?: GraphicsContext;
   private titleButtons = new Container();
   private introLabel = new Container();
   private shown: LevelDef | null = null;
@@ -348,6 +349,7 @@ export class LongestView {
     this.shown = def;
     this.field.removeChild(this.player);
     this.field.removeChildren().forEach((child) => child.destroy({ children: true }));
+    this.enemyShape?.destroy();
 
     const level = new Graphics().rect(0, 0, FIELD_W, FIELD_H).fill(palette.void);
     const tile = (c: number, r: number): number =>
@@ -381,8 +383,14 @@ export class LongestView {
       return view;
     });
     this.field.addChild(this.player);
+    // Every enemy looks the same, so they share one set of drawing instructions.
+    const enemyShape = (this.enemyShape = new GraphicsContext())
+      .circle(0, 0, ENEMY_R)
+      .fill(0x000000)
+      .circle(0, 0, ENEMY_R - 3)
+      .fill(palette.enemy);
     this.enemyViews = def.enemies.map(() => {
-      const view = dot(ENEMY_R, palette.enemy);
+      const view = new Graphics(enemyShape);
       this.field.addChild(view);
       return view;
     });

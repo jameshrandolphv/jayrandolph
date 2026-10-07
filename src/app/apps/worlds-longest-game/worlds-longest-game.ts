@@ -8,6 +8,7 @@ import { WindowFrame } from '../../ui/window-frame';
 import { HEIGHT, WIDTH } from './constants';
 import { LongestGame } from './game';
 import { ArrowKeys, type StickVector } from './arrow-keys';
+import { LevelSource, workerLevelBuilder } from './level-source';
 import { LongestView } from './view';
 
 @Component({
@@ -102,12 +103,24 @@ export class WorldsLongestGame {
   private readonly progress = inject(ProgressService);
   private readonly sound = inject(SoundSettings);
 
+  private readonly levelBuilder = typeof Worker === 'undefined' ? undefined : workerLevelBuilder();
+
   constructor() {
-    inject(DestroyRef).onDestroy(() => this.game?.dispose());
+    inject(DestroyRef).onDestroy(() => {
+      this.game?.dispose();
+      this.levelBuilder?.stop();
+    });
   }
 
   protected onReady({ app, root }: GameSurface): void {
-    const game = new LongestGame(this.scores, new Sfx(this.sound), this.progress);
+    const game = new LongestGame(
+      this.scores,
+      new Sfx(this.sound),
+      this.progress,
+      undefined,
+      undefined,
+      new LevelSource(this.levelBuilder?.build),
+    );
     const view = new LongestView(root, game);
     this.game = game;
     app.ticker.add((ticker) => view.update(game.frame(ticker.deltaMS)));
