@@ -8,11 +8,13 @@ Personal website styled as a Mac OS X Aqua / Frutiger Aero desktop. Built with A
 - Apps are registered in `src/app/os/apps.ts`; folders come from the filesystem service in `src/app/os/filesystem.service.ts`.
 - Film Sim (`/film-sim`) is a Rust/WebAssembly film simulator (see `engine/`).
 
-## Adding photographs
+## Photographs
 
-Put originals in `photos-src/<album-name>/` (jpg, jpeg, png, webp, avif). An optional `album.json` with `{ "title": "…" }` overrides the folder-derived title.
+Photos are hosted in a private S3 bucket and listed by a Lambda in [jayrandolph-service](https://github.com/jameshrandolphv/jayrandolph-service), which returns album/photo metadata and presigned URLs for each thumbnail and original. `FileSystemService` loads `GET <photosApiUrl>/albums` at startup and reloads it halfway through the URL lifetime.
 
-`npm run photos` (run automatically before `start` and `build`) writes thumbnails, display copies and `manifest.json` to `public/photos/`. Originals are never served.
+Set `photosApiUrl` (the stack's `ApiUrl` output) in `src/environments/environment.ts` for `npm start` and `src/environments/environment.prod.ts` for production builds. While it is empty the Pictures folder is empty. The API must allow this site's origin (the service's CDK `origins` context).
+
+Originals still live in `photos-src/<album-name>/`; upload them with the service's `scripts/upload-photos.mjs` (see its README).
 
 ## Commands
 

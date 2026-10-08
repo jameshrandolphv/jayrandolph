@@ -1,9 +1,12 @@
 import { Injectable, signal } from '@angular/core';
+import { environment } from '../../environments/environment';
 import { APPS, type AppDef } from './apps';
 import { DOCUMENTS, type DocumentDef } from './documents';
 import { segmentsOf, type FolderNode, type FsNode } from './node';
 
 export interface PhotoManifest {
+  /** Seconds the presigned image URLs stay valid. */
+  expiresIn?: number;
   albums: {
     id: string;
     title: string;
@@ -76,20 +79,44 @@ export function resolvePath(root: FolderNode, segments: readonly string[]): FsNo
   return node;
 }
 
+const MIN_REFRESH_MS = 60_000;
+const RETRY_MS = 60_000;
+const DEFAULT_LIFETIME_S = 3600;
+const FETCH_TIMEOUT_MS = 10_000;
+
+async function fetchManifest(): Promise<PhotoManifest | null> {
+  if (!environment.photosApiUrl) return null;
+  try {
+    const res = await fetch(`${environment.photosApiUrl.replace(/\/$/, '')}/albums`, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    const data: unknown = res.ok ? await res.json() : null;
+    return data && Array.isArray((data as PhotoManifest).albums) ? (data as PhotoManifest) : null;
+  } catch {
+    // API unreachable: keep whatever is already showing (an empty library on first load).
+    return null;
+  }
+}
+
 @Injectable({ providedIn: 'root' })
 export class FileSystemService {
   readonly root = signal<FolderNode>(buildTree({ albums: [] }, APPS));
 
+  private refreshTimer: ReturnType<typeof setTimeout> | undefined;
+
   async load(): Promise<void> {
-    let manifest: PhotoManifest = { albums: [] };
-    try {
-      const res = await fetch('photos/manifest.json');
-      const data: unknown = res.ok ? await res.json() : null;
-      if (data && Array.isArray((data as PhotoManifest).albums)) manifest = data as PhotoManifest;
-    } catch {
-      // No manifest yet (or the dev server answered with the SPA fallback): show an empty library.
-    }
-    this.root.set(buildTree(manifest, APPS));
+    const manifest = await fetchManifest();
+    if (manifest) this.root.set(buildTree(manifest, APPS));
+    this.scheduleRefresh(manifest);
+  }
+
+  /** Image URLs are presigned and expire, so reload the listing well before they do. */
+  private scheduleRefresh(manifest: PhotoManifest | null): void {
+    clearTimeout(this.refreshTimer);
+    if (!environment.photosApiUrl) return;
+    const lifetime = manifest ? (manifest.expiresIn ?? DEFAULT_LIFETIME_S) : 0;
+    const delayMs = lifetime > 0 ? Math.max(lifetime * 500, MIN_REFRESH_MS) : RETRY_MS;
+    this.refreshTimer = setTimeout(() => void this.load(), delayMs);
   }
 
   resolve(segments: readonly string[]): FsNode | null {

@@ -27,17 +27,5 @@
         "files": ["/*.wasm", "/film/**"]
       }
     }
-  ],
-  "dataGroups": [
-    {
-      "name": "photo-list",
-      "urls": ["/photos/manifest.json"],
-      "cacheConfig": {
-        "strategy": "freshness",
-        "maxSize": 1,
-        "maxAge": "30d",
-        "timeout": "3s"
-      }
-    }
   ]
 }

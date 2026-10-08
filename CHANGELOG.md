@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.4.0
+- Photos are now served from a private S3 bucket through the photo service API
+
 ## 1.3.3
 - Increased difficulty and variety of levels generated in WLG
 

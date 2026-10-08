@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { environment } from '../../environments/environment';
 import type { AppDef } from './apps';
-import { buildTree, resolvePath, type PhotoManifest } from './filesystem.service';
+import { buildTree, FileSystemService, resolvePath, type PhotoManifest } from './filesystem.service';
 
 const apps: AppDef[] = [{ id: 'film-sim', name: 'Film Sim', icon: 'film', load: () => Promise.reject() }];
 
@@ -10,8 +11,8 @@ const manifest: PhotoManifest = {
       id: 'iceland',
       title: 'Iceland',
       images: [
-        { id: 'a', name: 'A', thumb: 'photos/iceland/thumbs/a.webp', src: 'photos/iceland/display/a.webp', width: 3, height: 2 },
-        { id: 'b', name: 'B', thumb: 'photos/iceland/thumbs/b.webp', src: 'photos/iceland/display/b.webp', width: 2, height: 3 },
+        { id: 'a', name: 'A', thumb: 'https://s3.example/iceland/thumbs/a.webp', src: 'https://s3.example/iceland/originals/a.jpg', width: 3, height: 2 },
+        { id: 'b', name: 'B', thumb: 'https://s3.example/iceland/thumbs/b.webp', src: 'https://s3.example/iceland/originals/b.jpg', width: 2, height: 3 },
       ],
     },
   ],
@@ -57,7 +58,7 @@ describe('filesystem', () => {
     expect(resolvePath(root, ['pictures', 'iceland', 'b'])).toMatchObject({
       kind: 'image',
       path: 'pictures/iceland/b',
-      src: 'photos/iceland/display/b.webp',
+      src: 'https://s3.example/iceland/originals/b.jpg',
     });
     expect(resolvePath(root, [])).toBe(root);
   });
@@ -78,5 +79,72 @@ describe('filesystem', () => {
     expect(resolvePath(root, ['nope'])).toBeNull();
     expect(resolvePath(root, ['pictures', 'iceland', 'a', 'x'])).toBeNull();
     expect(resolvePath(root, ['film-sim', 'x'])).toBeNull();
+  });
+});
+
+describe('FileSystemService.load', () => {
+  const albumsOf = (fs: FileSystemService) => {
+    const pictures = fs.resolve(['pictures']);
+    return pictures?.kind === 'folder' ? pictures.children.map((c) => c.name) : [];
+  };
+  const respond = (body: unknown, ok = true) => vi.fn().mockResolvedValue({ ok, json: () => Promise.resolve(body) });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    environment.photosApiUrl = 'https://api.example/';
+  });
+
+  afterEach(() => {
+    environment.photosApiUrl = '';
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('builds the tree from the API and refreshes at half the URL lifetime', async () => {
+    const fetchMock = respond({ ...manifest, expiresIn: 600 });
+    vi.stubGlobal('fetch', fetchMock);
+    const fs = new FileSystemService();
+
+    await fs.load();
+    expect(fetchMock).toHaveBeenCalledWith('https://api.example/albums', expect.anything());
+    expect(albumsOf(fs)).toEqual(['Iceland']);
+
+    await vi.advanceTimersByTimeAsync(299_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the current library and retries when the API fails', async () => {
+    const fs = new FileSystemService();
+    vi.stubGlobal('fetch', respond(manifest));
+    await fs.load();
+
+    const failing = vi.fn().mockRejectedValue(new Error('offline'));
+    vi.stubGlobal('fetch', failing);
+    await vi.advanceTimersByTimeAsync(1_800_000);
+    expect(failing).toHaveBeenCalledTimes(1);
+    expect(albumsOf(fs)).toEqual(['Iceland']);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(failing).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows an empty library without calling the API when no URL is configured', async () => {
+    environment.photosApiUrl = '';
+    const fetchMock = respond(manifest);
+    vi.stubGlobal('fetch', fetchMock);
+    const fs = new FileSystemService();
+
+    await fs.load();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(albumsOf(fs)).toEqual([]);
+  });
+
+  it('ignores a malformed response', async () => {
+    vi.stubGlobal('fetch', respond({ nope: true }));
+    const fs = new FileSystemService();
+    await fs.load();
+    expect(albumsOf(fs)).toEqual([]);
   });
 });
