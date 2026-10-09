@@ -11,6 +11,8 @@ export interface Chamber {
   route?: Point[];
   /** Dead ends worth tucking a coin into. */
   nooks?: Point[];
+  /** The side branches those dead ends are the ends of, in the same order; they lead nowhere, so only a coin gives them a purpose. */
+  branches?: TileRect[];
 }
 
 export interface Plan {
@@ -42,6 +44,7 @@ const transposed = (plan: Plan): Plan => ({
     parts: chamber.parts.map(swapAxes),
     ...(chamber.route && { route: chamber.route.map(swapPoint) }),
     ...(chamber.nooks && { nooks: chamber.nooks.map(swapPoint) }),
+    ...(chamber.branches && { branches: chamber.branches.map(swapAxes) }),
   })),
 });
 
@@ -340,6 +343,7 @@ const comb = (rand: Random, d: Difficulty): Plan | null => {
   const chambers: Chamber[] = zones.slice(1).map((zone, i) => ({
     parts: [{ c: zones[i]!.c + ZONE_LENGTH, r: y0, w: zone.c - zones[i]!.c - ZONE_LENGTH, h: thick }],
     nooks: [],
+    branches: [],
   }));
 
   const branches = rand.int(1, segments > 1 ? 2 * segments : 3);
@@ -358,6 +362,7 @@ const comb = (rand: Random, d: Difficulty): Plan | null => {
     if (taken.some((other) => up === other.r < y0 && overlaps(branch, other, 1))) continue;
     taken.push(branch);
     chambers[i]!.parts.push(branch);
+    chambers[i]!.branches!.push(branch);
     chambers[i]!.nooks!.push({
       x: (c + width / 2) * TILE,
       y: (up ? y0 - h + 0.6 : y0 + thick + h - 0.6) * TILE,

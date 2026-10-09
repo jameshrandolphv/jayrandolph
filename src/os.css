@@ -72,6 +72,11 @@ app-not-found {
   font-size: 12px;
 }
 
+.mb-status {
+  font-size: 12px;
+  color: #333;
+}
+
 /* Workspace */
 
 .workspace {

@@ -2,8 +2,9 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, output } f
 import { Router } from '@angular/router';
 import { SessionService } from '../core/session.service';
 import { NodeIcon } from '../ui/node-icon';
-import { ContextMenuService } from './context-menu';
+import { ContextMenuService, type ContextMenuItem } from './context-menu';
 import { hrefOf, type FsNode, type ImageNode } from './node';
+import { WallpaperService } from './wallpaper.service';
 
 /** Icon or photo thumbnail plus label for one filesystem node. */
 @Component({
@@ -35,6 +36,7 @@ export class FsItem {
   private readonly router = inject(Router);
   private readonly contextMenu = inject(ContextMenuService);
   private readonly session = inject(SessionService);
+  private readonly wallpaper = inject(WallpaperService);
 
   readonly node = input.required<FsNode>();
   readonly selected = input(false);
@@ -73,7 +75,12 @@ export class FsItem {
       x = rect.left + rect.width / 2;
       y = rect.top + rect.height / 2;
     }
-    this.contextMenu.open(x, y, [{ label: 'Open in Film Sim', action: () => this.openInFilmSim(img) }]);
+    const items: ContextMenuItem[] = [
+      { label: 'Open in Film Sim', action: () => this.openInFilmSim(img) },
+      { label: 'Use as Wallpaper', action: () => void this.wallpaper.setFromUrl(img.src, img.name) },
+    ];
+    if (this.wallpaper.custom()) items.push({ label: 'Reset Wallpaper', action: () => void this.wallpaper.reset() });
+    this.contextMenu.open(x, y, items);
   }
 
   private openInFilmSim(img: ImageNode): void {

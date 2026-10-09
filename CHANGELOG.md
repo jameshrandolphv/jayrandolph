@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.4.2
+- Can now set wallpaper from photos; World's Longest Game bug fixes
+
 ## 1.4.1
 - Bug fixes
 

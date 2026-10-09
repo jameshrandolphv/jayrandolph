@@ -16,6 +16,7 @@ import {
   type Box,
 } from './patterns';
 import { createRandom, hashSeed, type Random } from './rng';
+import { crossesWheels } from './wheels';
 import { COIN_REACH, isSegmentSolvable, isSolvable, openAreas, viableSpots, type OpenArea } from './solver';
 
 const area = (r: TileRect): number => r.w * r.h;
@@ -38,7 +39,7 @@ const populateChamber = (rand: Random, chamber: Chamber, d: Difficulty): Enemy[]
       while (kinds.length) {
         const [kind] = kinds.splice(rand.int(0, kinds.length - 1), 1);
         const made = populate(rand, kind!, box, d);
-        if (made.length) {
+        if (made.length && !crossesWheels(enemies, made)) {
           enemies.push(...made);
           break;
         }
@@ -75,9 +76,38 @@ const gridCoins = (chamber: Chamber, wanted: number): Point[] => {
 const collectable = (spots: readonly Point[], p: Point): boolean =>
   spots.some((s) => Math.abs(s.x - p.x) <= COIN_REACH && Math.abs(s.y - p.y) <= COIN_REACH);
 
+const inRect = (rect: TileRect, p: Point): boolean =>
+  p.x >= rect.c * TILE && p.x < (rect.c + rect.w) * TILE && p.y >= rect.r * TILE && p.y < (rect.r + rect.h) * TILE;
+
+/** Whether any enemy is ever in the rectangle, sampled through the level's loop. */
+const visited = (level: LevelDef, rect: TileRect): boolean =>
+  level.enemies.some((e) => {
+    for (let tick = 0; tick < level.period; tick += 6) if (inRect(rect, enemyPositionAt(e, tick))) return true;
+    return false;
+  });
+
+/** The side branches that have enemies in them, as chamber index and branch index. */
+const guardedBranches = (plan: Plan, level: LevelDef): Array<[number, number]> =>
+  plan.chambers.flatMap((chamber, i) =>
+    (chamber.branches ?? []).flatMap((branch, b): Array<[number, number]> => (visited(level, branch) ? [[i, b]] : [])),
+  );
+
+/** Whether every side branch with enemies in it has a coin, since otherwise nobody has a reason to go in. */
+export const deadEndsHaveCoins = (plan: Plan, level: LevelDef): boolean =>
+  guardedBranches(plan, level).every(([i, b]) => level.coins.some((c) => inRect(plan.chambers[i]!.branches![b]!, c)));
+
+/** Where to put a branch's coin: its far end, or the nearest place to it the player can safely reach. */
+const branchCoin = (spots: readonly Point[], branch: TileRect, nook: Point): Point | undefined => {
+  if (collectable(spots, nook)) return nook;
+  return spots
+    .filter((p) => inRect(branch, p))
+    .sort((a, b) => Math.hypot(a.x - nook.x, a.y - nook.y) - Math.hypot(b.x - nook.x, b.y - nook.y))[0];
+};
+
 /**
- * Places coins, each only where the player can safely be on the way through the level: some tucked into
- * dead ends first, the rest scattered, or a whole grid of them. Every chamber's enemies must be in place.
+ * Places coins, each only where the player can safely be on the way through the level. A side branch
+ * with enemies in it always gets one, as it leads nowhere else; then some more go into the remaining
+ * dead ends, and the rest are scattered, or a whole grid of them. Every chamber's enemies must be in place.
  */
 const placeCoins = (rand: Random, plan: Plan, level: LevelDef, d: Difficulty): Coin[] => {
   const spots = plan.chambers.map((_, i) => viableSpots(level, i));
@@ -85,11 +115,20 @@ const placeCoins = (rand: Random, plan: Plan, level: LevelDef, d: Difficulty): C
     return gridCoins(plan.chambers[0]!, d.hallCoins)
       .filter((p) => collectable(spots[0]!, p))
       .map((p) => ({ ...p, segment: 0 }));
+
   const coins: Coin[] = [];
-  const nooks = plan.chambers.map(
-    (c) => c.nooks?.filter((n) => collectable(spots[plan.chambers.indexOf(c)]!, n)) ?? [],
+  const covered = new Set<string>();
+  for (const [i, b] of guardedBranches(plan, level)) {
+    const chamber = plan.chambers[i]!;
+    const spot = branchCoin(spots[i]!, chamber.branches![b]!, chamber.nooks![b]!);
+    if (!spot) continue;
+    coins.push({ ...spot, segment: i });
+    covered.add(`${i}:${b}`);
+  }
+  const nooks = plan.chambers.map((c, i) =>
+    (c.nooks ?? []).filter((n, b) => !covered.has(`${i}:${b}`) && collectable(spots[i]!, n)),
   );
-  for (let i = 0; i < d.coins; i++) {
+  for (let i = coins.length; i < d.coins; i++) {
     const segment = i % plan.chambers.length;
     const nook = nooks[segment]!.splice(rand.int(0, Math.max(0, nooks[segment]!.length - 1)), 1)[0];
     if (nook) {
@@ -207,6 +246,7 @@ const fillOpenAreas = (rand: Random, plan: Plan, level: LevelDef, d: Difficulty)
     const chamber = chamberAt(plan, (open.x0 + open.x1) / 2, (open.y0 + open.y1) / 2);
     // Coins are left out of the quick check; generateLevel checks the whole level again at the end.
     const solvable = (extra: Enemy[]): boolean => {
+      if (crossesWheels(current.enemies, extra)) return false;
       const grown = { ...current, coins: [], enemies: [...current.enemies, ...extra] };
       return chamber < 0 ? isSolvable(grown) : isSegmentSolvable(grown, chamber);
     };
@@ -234,7 +274,11 @@ const easedBy = (d: Difficulty, steps: number): Difficulty =>
       };
 
 /** A level and whether it can be beaten; coins are the last thing placed and the last thing checked. */
-const buildChecked = (seed: number, number: number, d: Difficulty): { level: LevelDef; solvable: boolean } => {
+export const buildChecked = (
+  seed: number,
+  number: number,
+  d: Difficulty,
+): { level: LevelDef; plan: Plan; solvable: boolean } => {
   const rand = createRandom(seed);
   const plan = planLevel(rand, d);
   const bare: LevelDef = {
@@ -253,20 +297,24 @@ const buildChecked = (seed: number, number: number, d: Difficulty): { level: Lev
   const enemies: Enemy[] = [];
   plan.chambers.forEach((chamber, i) => {
     let made: Enemy[] = [];
+    let clear: Enemy[] | undefined;
     for (let attempt = 0; attempt < CHAMBER_TRIES; attempt++) {
       made = populateChamber(rand, chamber, easedBy(d, Math.max(0, attempt - CHAMBER_TRIES / 2)));
+      if (crossesWheels(enemies, made)) continue;
+      clear = made;
       if (isSegmentSolvable({ ...bare, enemies: made }, i)) break;
     }
-    enemies.push(...made);
+    // A draw whose spinners don't cross is kept over a later one that does, even if it is the harder to beat.
+    enemies.push(...(clear ?? made));
   });
   const filled = fillOpenAreas(rand, plan, { ...bare, enemies }, d);
 
   let level = filled;
   for (let attempt = 0; attempt < COIN_TRIES; attempt++) {
     level = { ...filled, coins: placeCoins(rand, plan, filled, d) };
-    if (isSolvable(level)) return { level, solvable: true };
+    if (isSolvable(level) && deadEndsHaveCoins(plan, level)) return { level, plan, solvable: true };
   }
-  return { level, solvable: false };
+  return { level, plan, solvable: false };
 };
 
 export const buildLevel = (seed: number, number: number, d: Difficulty): LevelDef =>

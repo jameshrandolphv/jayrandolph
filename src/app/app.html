@@ -1,12 +1,15 @@
 <app-icon-defs />
 
-<div class="wallpaper" aria-hidden="true"></div>
+<div class="wallpaper" aria-hidden="true" [style.background-image]="wallpaper.cssImage()"></div>
 
 <app-desktop />
 
 <header class="menubar">
   <strong class="mb-app">{{ activeName() }}</strong>
   <span class="spacer"></span>
+  @if (wallpaper.status(); as message) {
+    <span class="mb-status" role="status">{{ message }}</span>
+  }
   <button
     type="button"
     class="mb-volume"

@@ -7,6 +7,7 @@ import { SoundSettings } from './core/sound-settings';
 import { ContextMenu } from './os/context-menu';
 import { Desktop } from './os/desktop';
 import { FileSystemService } from './os/filesystem.service';
+import { WallpaperService } from './os/wallpaper.service';
 import { IconDefs, NodeIcon } from './ui/node-icon';
 
 @Component({
@@ -19,6 +20,7 @@ export class App {
   private readonly fs = inject(FileSystemService);
   private readonly router = inject(Router);
   protected readonly sound = inject(SoundSettings);
+  protected readonly wallpaper = inject(WallpaperService);
 
   private readonly url = toSignal(
     this.router.events.pipe(

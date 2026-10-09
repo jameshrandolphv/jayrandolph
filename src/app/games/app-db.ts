@@ -1,10 +1,12 @@
 export const APP_DB_NAME = 'jay-randolph-os';
-export const APP_DB_VERSION = 2;
+export const APP_DB_VERSION = 3;
 /** Per-app records that aren't user data, such as signing keys. */
 export const META_STORE = 'app-meta';
 export const SCORES_STORE = 'scores';
 /** Where each game left off, so a player can resume across sessions. */
 export const PROGRESS_STORE = 'progress';
+/** The desktop wallpaper the player chose. */
+export const WALLPAPER_STORE = 'wallpaper';
 
 export function openAppDb(factory: IDBFactory, name = APP_DB_NAME): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -14,6 +16,7 @@ export function openAppDb(factory: IDBFactory, name = APP_DB_NAME): Promise<IDBD
       if (!db.objectStoreNames.contains(META_STORE)) db.createObjectStore(META_STORE, { keyPath: 'id' });
       if (!db.objectStoreNames.contains(SCORES_STORE)) db.createObjectStore(SCORES_STORE, { keyPath: 'game' });
       if (!db.objectStoreNames.contains(PROGRESS_STORE)) db.createObjectStore(PROGRESS_STORE, { keyPath: 'game' });
+      if (!db.objectStoreNames.contains(WALLPAPER_STORE)) db.createObjectStore(WALLPAPER_STORE, { keyPath: 'id' });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -32,6 +35,15 @@ export function idbPut(db: IDBDatabase, store: string, value: unknown): Promise<
   return new Promise((resolve, reject) => {
     const tx = db.transaction(store, 'readwrite');
     tx.objectStore(store).put(value);
+    tx.oncomplete = () => resolve();
+    tx.onerror = tx.onabort = () => reject(tx.error);
+  });
+}
+
+export function idbDelete(db: IDBDatabase, store: string, key: IDBValidKey): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    tx.objectStore(store).delete(key);
     tx.oncomplete = () => resolve();
     tx.onerror = tx.onabort = () => reject(tx.error);
   });

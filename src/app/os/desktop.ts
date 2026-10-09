@@ -1,6 +1,8 @@
 import { ChangeDetectionStrategy, Component, ElementRef, inject, signal } from '@angular/core';
+import { ContextMenuService } from './context-menu';
 import { FileSystemService } from './filesystem.service';
 import { FsItem } from './fs-item';
+import { WallpaperService } from './wallpaper.service';
 
 interface Box {
   x: number;
@@ -18,6 +20,7 @@ const DRAG_THRESHOLD = 3;
   host: {
     class: 'desktop',
     '(pointerdown)': 'onPointerDown($event)',
+    '(contextmenu)': 'onContextMenu($event)',
     '(pointermove)': 'onPointerMove($event)',
     '(pointerup)': 'onPointerEnd($event)',
     '(pointercancel)': 'onPointerEnd($event)',
@@ -44,6 +47,8 @@ export class Desktop {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
 
   protected readonly fs = inject(FileSystemService);
+  private readonly wallpaper = inject(WallpaperService);
+  private readonly contextMenu = inject(ContextMenuService);
   protected readonly selected = signal<ReadonlySet<string>>(new Set());
   protected readonly band = signal<Box | null>(null);
 
@@ -73,6 +78,15 @@ export class Desktop {
     this.pointerId = event.pointerId;
     this.dragging = false;
     this.host.setPointerCapture(event.pointerId);
+  }
+
+  /** Only the bare desktop has a menu, and only once there is a chosen wallpaper to take off. */
+  protected onContextMenu(event: MouseEvent): void {
+    if ((event.target as Element).closest('li') || !this.wallpaper.custom()) return;
+    event.preventDefault();
+    this.contextMenu.open(event.clientX, event.clientY, [
+      { label: 'Reset Wallpaper', action: () => void this.wallpaper.reset() },
+    ]);
   }
 
   protected onPointerMove(event: PointerEvent): void {

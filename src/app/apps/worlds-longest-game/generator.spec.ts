@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { COLS, ENEMY_R, MAX_ENEMY_SPEED, ROWS, TILE, TILE_SAFE, TILE_VOID } from './constants';
 import { difficultyFor } from './difficulty';
-import { generateLevel } from './generator';
+import { buildChecked, deadEndsHaveCoins, generateLevel } from './generator';
 import { enemyPositionAt, insideZone, tileAt, type LevelDef } from './level';
+import type { Plan } from './layouts';
+import { hashSeed } from './rng';
 import { isSolvable, openAreas, viableSpots } from './solver';
+import { wheelsOf, wheelsOverlap } from './wheels';
 
 const SEEDS = [1, 7, 12345];
 
@@ -264,4 +267,78 @@ describe('isSolvable', () => {
     };
     expect(viableSpots(parked, 0).some((s) => Math.hypot(s.x - first!.x, s.y - first!.y) < 12)).toBe(false);
   });
+});
+
+describe('spinners', () => {
+  it('never turn into each other', () => {
+    for (const number of [5, 15, 30, 45]) {
+      for (const seed of [1, 7, 12345, 777, 4242]) {
+        const wheels = wheelsOf(generateLevel(number, seed).enemies);
+        for (let i = 0; i < wheels.length; i++)
+          for (let j = i + 1; j < wheels.length; j++)
+            expect(wheelsOverlap(wheels[i]!, wheels[j]!), `level ${number}, seed ${seed}`).toBe(false);
+      }
+    }
+  });
+});
+
+describe('dead ends', () => {
+  const branch = { c: 5, r: 2, w: 2, h: 3 };
+  const plan = {
+    grid: false,
+    zones: [],
+    chambers: [{ parts: [], branches: [branch], nooks: [{ x: 6 * TILE, y: 2.6 * TILE }] }],
+  } as Plan;
+  const level = (enemies: LevelDef['enemies'], coins: LevelDef['coins']) => ({ period: 60, enemies, coins }) as LevelDef;
+  const dot = (x: number, y: number): LevelDef['enemies'][number] => ({
+    kind: 'sweep',
+    ax: x,
+    ay: y,
+    bx: x,
+    by: y,
+    period: 60,
+    phase: 0,
+  });
+
+  it('need a coin when enemies are in them', () => {
+    const guard = [dot(6 * TILE, 3 * TILE)];
+    expect(deadEndsHaveCoins(plan, level(guard, []))).toBe(false);
+    expect(deadEndsHaveCoins(plan, level(guard, [{ x: 6 * TILE, y: 2.6 * TILE, segment: 0 }]))).toBe(true);
+  });
+
+  it('can stay bare when nothing is in them, and enemies outside do not count', () => {
+    expect(deadEndsHaveCoins(plan, level([], []))).toBe(true);
+    expect(deadEndsHaveCoins(plan, level([dot(2 * TILE, 3 * TILE)], []))).toBe(true);
+  });
+
+  it('get a coin in every generated comb that has enemies in a branch', () => {
+    let checked = 0;
+    for (const number of [10, 15, 24, 30]) {
+      for (let seed = 1; seed <= 25; seed++) {
+        const built = buildChecked(hashSeed(seed, number, 0), number, difficultyFor(number));
+        if (!built.solvable) continue;
+        for (const chamber of built.plan.chambers) {
+          for (const b of chamber.branches ?? []) {
+            const guarded = built.level.enemies.some((e) => {
+              for (let tick = 0; tick < built.level.period; tick += 6) {
+                const p = enemyPositionAt(e, tick);
+                if (p.x >= b.c * TILE && p.x < (b.c + b.w) * TILE && p.y >= b.r * TILE && p.y < (b.r + b.h) * TILE)
+                  return true;
+              }
+              return false;
+            });
+            if (!guarded) continue;
+            checked++;
+            expect(
+              built.level.coins.some(
+                (c) => c.x >= b.c * TILE && c.x < (b.c + b.w) * TILE && c.y >= b.r * TILE && c.y < (b.r + b.h) * TILE,
+              ),
+              `level ${number}, seed ${seed}`,
+            ).toBe(true);
+          }
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+  }, 120_000);
 });
