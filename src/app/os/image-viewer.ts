@@ -40,10 +40,10 @@ import { segmentsOf, type ImageNode } from './node';
         </div>
       }
       @if (prev(); as p) {
-        <button type="button" class="vo-nav vo-prev" aria-label="Previous photo" (click)="go(p)">&lsaquo;</button>
+        <button type="button" class="vo-nav vo-prev" aria-label="Previous photo" (click)="go(p)"></button>
       }
       @if (next(); as n) {
-        <button type="button" class="vo-nav vo-next" aria-label="Next photo" (click)="go(n)">&rsaquo;</button>
+        <button type="button" class="vo-nav vo-next" aria-label="Next photo" (click)="go(n)"></button>
       }
     </dialog>
   `,

@@ -359,6 +359,37 @@ app-not-found {
   color: #555;
 }
 
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 12px 0;
+  color: #555;
+}
+
+.loading progress {
+  width: 160px;
+  height: 14px;
+}
+
+progress:indeterminate {
+  background: repeating-linear-gradient(135deg, #5aa6f2 0 10px, #a9d0fa 10px 20px) 0 0 / 28px 100%;
+  animation: loading-stripes 0.6s linear infinite;
+}
+
+@keyframes loading-stripes {
+  to {
+    background-position: 28px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  progress:indeterminate {
+    animation: none;
+  }
+}
+
 a.btn {
   display: inline-flex;
   align-items: center;
@@ -489,16 +520,34 @@ a.btn {
   top: 50%;
   width: 52px;
   height: 52px;
-  padding: 0 0 4px;
-  font: 34px/1 var(--font);
-  color: #fff;
-  text-shadow: 0 1px 3px rgb(0 0 0 / 0.7);
+  padding: 0;
+  display: grid;
+  place-items: center;
   background: linear-gradient(rgb(255 255 255 / 0.5), rgb(255 255 255 / 0.12));
   border: 1px solid rgb(255 255 255 / 0.7);
   border-radius: 50%;
   box-shadow: 0 4px 12px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.8);
   transform: translateY(-50%);
   cursor: pointer;
+}
+
+/* Chevron drawn with borders rather than a text glyph so it centres exactly in the bubble. */
+.vo-nav::before {
+  content: '';
+  width: 13px;
+  height: 13px;
+  border: solid #fff;
+  border-width: 4px 4px 0 0;
+  border-radius: 1px;
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.7));
+}
+
+.vo-prev::before {
+  transform: translateX(4px) rotate(-135deg);
+}
+
+.vo-next::before {
+  transform: translateX(-4px) rotate(45deg);
 }
 
 .vo-nav:hover {
@@ -656,3 +705,39 @@ a.btn {
 .te-page font[size='5'] { font-size: 18px; }
 .te-page font[size='6'] { font-size: 24px; }
 .te-page font[size='7'] { font-size: 36px; }
+
+/* Context menu */
+
+.context-menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 180px;
+  margin: 0;
+  padding: 3px;
+  list-style: none;
+  background: rgb(246 246 246 / 0.96);
+  border: 1px solid rgb(0 0 0 / 0.35);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.35);
+  font-size: 13px;
+}
+
+.context-menu button {
+  display: block;
+  width: 100%;
+  padding: 4px 18px 4px 12px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: #000;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.context-menu button:hover,
+.context-menu button:focus-visible {
+  outline: none;
+  color: #fff;
+  background: linear-gradient(#5aa0f0, #2a6fd0);
+}

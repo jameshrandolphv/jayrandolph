@@ -1,5 +1,5 @@
 import { Injectable, computed, effect, signal, untracked } from '@angular/core';
-import { ImageDecoderService } from './image-decoder.service';
+import { ImageDecoderService, SUPPORTED_EXTENSIONS } from './image-decoder.service';
 import type { LinearImage } from './raw-decoder.service';
 import { buildPreview, downscaleLinear, previewFromEncoded, type PreviewImage } from './preview';
 import { FilmEngineService, extractTile } from '../engine/film-engine.service';
@@ -400,7 +400,32 @@ export class SessionService {
     });
   }
 
+  private loadId = 0;
+
+  /** Downloads an image by URL and opens it, as if the user had picked the file. */
+  async openUrl(url: string, name: string): Promise<void> {
+    const id = ++this.loadId;
+    this.abort?.abort();
+    this.state.set('decoding');
+    this.fileName.set(name);
+    this.message.set(`Loading ${name}…`);
+    let file: File;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      file = new File([blob], withExtension(name, blob.type), { type: blob.type });
+    } catch {
+      if (id !== this.loadId) return;
+      this.state.set('error');
+      this.message.set(`Could not load ${name}.`);
+      return;
+    }
+    if (id === this.loadId) await this.open(file);
+  }
+
   async open(file: File): Promise<void> {
+    this.loadId++;
     this.abort?.abort();
     this.state.set('decoding');
     this.fileName.set(file.name);
@@ -509,4 +534,20 @@ function download(blob: Blob, name: string): void {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+const MIME_EXTENSIONS: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'image/heic': '.heic',
+  'image/heif': '.heif',
+  'image/tiff': '.tiff',
+};
+
+/** The decoder picks a format from the file extension, so make sure the name has one. */
+function withExtension(name: string, mime: string): string {
+  const lower = name.toLowerCase();
+  if (SUPPORTED_EXTENSIONS.some((ext) => lower.endsWith(ext))) return name;
+  return name + (MIME_EXTENSIONS[mime] ?? '.jpg');
 }

@@ -4,13 +4,14 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter, map } from 'rxjs';
 import { SoundSettings } from './core/sound-settings';
+import { ContextMenu } from './os/context-menu';
 import { Desktop } from './os/desktop';
 import { FileSystemService } from './os/filesystem.service';
 import { IconDefs, NodeIcon } from './ui/node-icon';
 
 @Component({
   selector: 'app-root',
-  imports: [DatePipe, Desktop, IconDefs, NodeIcon, RouterLink, RouterOutlet],
+  imports: [ContextMenu, DatePipe, Desktop, IconDefs, NodeIcon, RouterLink, RouterOutlet],
   templateUrl: './app.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

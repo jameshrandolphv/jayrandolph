@@ -1,6 +1,9 @@
+import { TestBed } from '@angular/core/testing';
+import type { Route, UrlSegment } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { environment } from '../../environments/environment';
 import type { AppDef } from './apps';
+import { fsNodeExists } from './fs-page';
 import { buildTree, FileSystemService, resolvePath, type PhotoManifest } from './filesystem.service';
 
 const apps: AppDef[] = [{ id: 'film-sim', name: 'Film Sim', icon: 'film', load: () => Promise.reject() }];
@@ -75,6 +78,74 @@ describe('filesystem', () => {
     ]);
   });
 
+  describe('nested albums', () => {
+    const img = (id: string) => ({ id, name: id.toUpperCase(), thumb: `t/${id}`, src: `s/${id}`, width: 3, height: 2 });
+    const album = (id: string, title: string, path: string[] | undefined, ...images: string[]) => ({
+      id,
+      title,
+      ...(path ? { path } : {}),
+      images: images.map(img),
+    });
+    const pictures = (albums: PhotoManifest['albums']) => {
+      const node = resolvePath(buildTree({ albums }, apps), ['pictures']);
+      if (node?.kind !== 'folder') throw new Error('no pictures folder');
+      return node;
+    };
+
+    it('nests albums by folder path, creating image-less intermediate folders', () => {
+      const tree = buildTree({ albums: [album('trip-day-1-deep', 'Deep', ['trip', 'Day 1', 'deep'], 'c')] }, apps);
+      expect(resolvePath(tree, ['pictures', 'trip'])).toMatchObject({ kind: 'folder', name: 'Trip' });
+      expect(resolvePath(tree, ['pictures', 'trip', 'day-1'])).toMatchObject({ kind: 'folder', name: 'Day 1' });
+      expect(resolvePath(tree, ['pictures', 'trip', 'day-1', 'deep'])).toMatchObject({ kind: 'folder', name: 'Deep' });
+      expect(resolvePath(tree, ['pictures', 'trip', 'day-1', 'deep', 'c'])).toMatchObject({
+        kind: 'image',
+        path: 'pictures/trip/day-1/deep/c',
+      });
+    });
+
+    it('lets a folder be both an album and a parent, listing subfolders before photos', () => {
+      const trip = resolvePath(
+        buildTree({ albums: [album('trip', 'Italy 2026', ['trip'], 'a'), album('trip-day-1', 'Day 1', ['trip', 'Day 1'], 'b')] }, apps),
+        ['pictures', 'trip'],
+      );
+      expect(trip).toMatchObject({ name: 'Italy 2026' });
+      expect(trip?.kind === 'folder' && trip.children.map((c) => [c.kind, c.name])).toEqual([
+        ['folder', 'Day 1'],
+        ['image', 'A'],
+      ]);
+    });
+
+    it('puts images from the upload root (empty path) directly in Pictures', () => {
+      const tree = pictures([album('pics', 'Pics', [], 'r'), album('trip', 'Trip', ['trip'], 'a')]);
+      expect(tree.children.map((c) => [c.kind, c.name])).toEqual([
+        ['folder', 'Trip'],
+        ['image', 'R'],
+      ]);
+    });
+
+    it('keeps similarly named sibling folders separate with unique URL ids', () => {
+      const tree = pictures([album('trip-day-1', 'Day 1', ['trip', 'Day 1'], 'a'), album('trip-day-1-2', 'Day One', ['trip', 'day-1'], 'b')]);
+      const trip = tree.children[0];
+      expect(trip.kind === 'folder' && trip.children.map((c) => [c.id, c.name])).toEqual([
+        ['day-1', 'Day 1'],
+        ['day-1-2', 'Day One'],
+      ]);
+    });
+
+    it('avoids folder ids that collide with a photo in the same folder', () => {
+      const trip = pictures([album('trip', 'Trip', ['trip'], 'sub'), album('trip-sub', 'Sub', ['trip', 'sub'], 'x')]).children[0];
+      expect(trip.kind === 'folder' && trip.children.map((c) => [c.kind, c.id])).toEqual([
+        ['folder', 'sub-2'],
+        ['image', 'sub'],
+      ]);
+    });
+
+    it('shows albums without a stored path as top-level folders under their id', () => {
+      const tree = buildTree({ albums: [album('iceland', 'Iceland Trip', undefined, 'a')] }, apps);
+      expect(resolvePath(tree, ['pictures', 'iceland'])).toMatchObject({ kind: 'folder', name: 'Iceland Trip' });
+    });
+  });
+
   it('returns null for unknown paths and for descending into leaves', () => {
     expect(resolvePath(root, ['nope'])).toBeNull();
     expect(resolvePath(root, ['pictures', 'iceland', 'a', 'x'])).toBeNull();
@@ -128,6 +199,51 @@ describe('FileSystemService.load', () => {
 
     await vi.advanceTimersByTimeAsync(60_000);
     expect(failing).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports loading until the first request settles, and not again on refresh', async () => {
+    let resolve!: (v: unknown) => void;
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise((r) => (resolve = r))));
+    const fs = new FileSystemService();
+    expect(fs.loading()).toBe(true);
+
+    const pending = fs.load();
+    expect(fs.loading()).toBe(true);
+    resolve({ ok: true, json: () => Promise.resolve({ ...manifest, expiresIn: 600 }) });
+    await pending;
+    expect(fs.loading()).toBe(false);
+
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => undefined)));
+    await vi.advanceTimersByTimeAsync(301_000);
+    expect(fs.loading()).toBe(false);
+  });
+
+  it('stops loading when the request fails', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+    const fs = new FileSystemService();
+    await fs.load();
+    expect(fs.loading()).toBe(false);
+  });
+
+  it('is not loading when no URL is configured', () => {
+    environment.photosApiUrl = '';
+    expect(new FileSystemService().loading()).toBe(false);
+  });
+
+  it('matches photo deep links while loading, but unknown paths only once loaded', async () => {
+    vi.stubGlobal('fetch', respond(manifest));
+    const fs = TestBed.inject(FileSystemService);
+    const matches = (...path: string[]) =>
+      TestBed.runInInjectionContext(() =>
+        fsNodeExists({} as Route, path.map((p) => ({ path: p }) as UrlSegment), undefined as never),
+      );
+
+    expect(matches('pictures', 'iceland', 'a')).toBe(true);
+    expect(matches('nope')).toBe(false);
+
+    await fs.load();
+    expect(matches('pictures', 'iceland', 'a')).toBe(true);
+    expect(matches('pictures', 'iceland', 'zzz')).toBe(false);
   });
 
   it('shows an empty library without calling the API when no URL is configured', async () => {

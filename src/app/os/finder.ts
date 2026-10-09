@@ -29,7 +29,12 @@ import { segmentsOf, type FolderNode } from './node';
         </nav>
       </div>
       <div class="finder-body">
-        @if (folder().children.length) {
+        @if (loading()) {
+          <div class="loading" role="status">
+            <progress aria-label="Loading photos"></progress>
+            <span>Loading photos&hellip;</span>
+          </div>
+        } @else if (folder().children.length) {
           <ul class="icons" role="list" [attr.aria-label]="folder().name">
             @for (child of folder().children; track child.id) {
               <li>
@@ -42,7 +47,11 @@ import { segmentsOf, type FolderNode } from './node';
         }
       </div>
       <footer class="statusbar" role="status">
-        {{ folder().children.length }} {{ folder().children.length === 1 ? 'item' : 'items' }}
+        @if (loading()) {
+          Loading&hellip;
+        } @else {
+          {{ folder().children.length }} {{ folder().children.length === 1 ? 'item' : 'items' }}
+        }
       </footer>
     </app-window-frame>
   `,
@@ -51,6 +60,8 @@ export class Finder {
   private readonly fs = inject(FileSystemService);
 
   readonly folder = input.required<FolderNode>();
+
+  protected readonly loading = computed(() => this.fs.loading() && this.folder().path.split('/')[0] === 'pictures');
 
   protected readonly parentHref = computed(() => {
     const parent = this.fs.parentOf(this.folder());

@@ -1,6 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
 import { Router } from '@angular/router';
+import { SessionService } from '../core/session.service';
 import { NodeIcon } from '../ui/node-icon';
+import { ContextMenuService } from './context-menu';
 import { hrefOf, type FsNode, type ImageNode } from './node';
 
 /** Icon or photo thumbnail plus label for one filesystem node. */
@@ -16,6 +18,7 @@ import { hrefOf, type FsNode, type ImageNode } from './node';
       [attr.href]="href()"
       (click)="onClick($event)"
       (dblclick)="open($event)"
+      (contextmenu)="onContextMenu($event)"
     >
       <span class="fs-glyph">
         @if (image(); as img) {
@@ -30,6 +33,8 @@ import { hrefOf, type FsNode, type ImageNode } from './node';
 })
 export class FsItem {
   private readonly router = inject(Router);
+  private readonly contextMenu = inject(ContextMenuService);
+  private readonly session = inject(SessionService);
 
   readonly node = input.required<FsNode>();
   readonly selected = input(false);
@@ -55,5 +60,24 @@ export class FsItem {
   protected open(event: MouseEvent): void {
     event.preventDefault();
     void this.router.navigateByUrl(this.href());
+  }
+
+  protected onContextMenu(event: MouseEvent): void {
+    const img = this.image();
+    if (!img) return;
+    event.preventDefault();
+    let { clientX: x, clientY: y } = event;
+    if (x === 0 && y === 0) {
+      // Keyboard invocation (menu key / Shift+F10) reports no pointer position.
+      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+      x = rect.left + rect.width / 2;
+      y = rect.top + rect.height / 2;
+    }
+    this.contextMenu.open(x, y, [{ label: 'Open in Film Sim', action: () => this.openInFilmSim(img) }]);
+  }
+
+  private openInFilmSim(img: ImageNode): void {
+    void this.session.openUrl(img.src, img.name);
+    void this.router.navigateByUrl('/film-sim');
   }
 }
