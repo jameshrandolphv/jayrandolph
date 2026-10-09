@@ -698,14 +698,6 @@ a.btn {
   cursor: text;
 }
 
-.te-page font[size='1'] { font-size: 9px; }
-.te-page font[size='2'] { font-size: 10px; }
-.te-page font[size='3'] { font-size: 12px; }
-.te-page font[size='4'] { font-size: 14px; }
-.te-page font[size='5'] { font-size: 18px; }
-.te-page font[size='6'] { font-size: 24px; }
-.te-page font[size='7'] { font-size: 36px; }
-
 /* Context menu */
 
 .context-menu {

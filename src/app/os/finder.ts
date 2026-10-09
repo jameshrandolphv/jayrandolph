@@ -11,7 +11,7 @@ import { segmentsOf, type FolderNode } from './node';
   imports: [RouterLink, WindowFrame, FsItem],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <app-window-frame [title]="folder().name" [closeLink]="parentHref()" compact>
+    <app-window-frame [title]="folder().name" compact>
       <div class="toolbar" role="toolbar" aria-label="Navigation">
         <a class="btn" [routerLink]="parentHref()">&lsaquo; Back</a>
         <nav class="path" aria-label="Location">

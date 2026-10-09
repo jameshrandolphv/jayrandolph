@@ -94,7 +94,7 @@ export const DEFAULT_SETTINGS: RenderSettings = {
   printEv: 0,
   labScan: true,
   punch: 0.2,
-  saturation: 0.06,
+  saturation: -0.04,
   whites: 0,
   highlights: 0,
   blacks: 0,

@@ -3,16 +3,8 @@ import { WindowFrame } from '../../ui/window-frame';
 
 const FONTS = ['Helvetica', 'Arial', 'Times New Roman', 'Courier New', 'Georgia', 'Lucida Grande', 'Monaco', 'Verdana', 'Trebuchet MS'];
 
-/** `size` is the execCommand fontSize step; os.css maps each step to `px`. */
-const SIZES = [
-  { size: 1, px: 9 },
-  { size: 2, px: 10 },
-  { size: 3, px: 12 },
-  { size: 4, px: 14 },
-  { size: 5, px: 18 },
-  { size: 6, px: 24 },
-  { size: 7, px: 36 },
-];
+/** Font sizes in px. execCommand only has seven keyword steps, so every size is applied as step 7 plus an inline px size. */
+const SIZES = [9, 10, 12, 14, 18, 24, 36, 48, 72];
 
 /** Each line is [x, width] in a 14 x 12 icon. */
 const ALIGNS = [
@@ -42,9 +34,9 @@ const toHex = (css: string): string | null => {
             <option [value]="f" [selected]="f === font()" [style.font-family]="f">{{ f }}</option>
           }
         </select>
-        <select aria-label="Size" (change)="run('fontSize', value($event))">
-          @for (s of sizes; track s.size) {
-            <option [value]="s.size" [selected]="s.size === size()">{{ s.px }}</option>
+        <select aria-label="Size" (change)="setSize(value($event))">
+          @for (px of sizes; track px) {
+            <option [value]="px" [selected]="px === size()">{{ px }}</option>
           }
         </select>
         <input type="color" class="te-color" aria-label="Text color" [value]="color()" (input)="run('foreColor', value($event))" />
@@ -77,7 +69,7 @@ const toHex = (css: string): string | null => {
           <span [style.left.px]="n * 72 + 6">{{ n }}</span>
         }
       </div>
-      <div #page class="te-page" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Document" spellcheck="false"></div>
+      <div #page class="te-page" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Document" spellcheck="false" (input)="onInput()"></div>
     </app-window-frame>
   `,
 })
@@ -93,7 +85,7 @@ export class TextEdit {
   protected readonly inches = Array.from({ length: 14 }, (_, i) => i);
 
   protected readonly font = signal('Helvetica');
-  protected readonly size = signal(3);
+  protected readonly size = signal(12);
   protected readonly color = signal('#000000');
   protected readonly bold = signal(false);
   protected readonly italic = signal(false);
@@ -103,6 +95,8 @@ export class TextEdit {
   private readonly page = viewChild.required<ElementRef<HTMLElement>>('page');
   // The toolbar controls steal focus, so the last selection inside the page is kept for them.
   private range: Range | null = null;
+  /** Size chosen at a bare caret: it lives in the browser's typing state, not the DOM, until the next keystroke. */
+  private pending: { px: number; node: Node | null; offset: number } | null = null;
 
   constructor() {
     afterNextRender(() => {
@@ -116,7 +110,7 @@ export class TextEdit {
     return (event.target as HTMLInputElement).value;
   }
 
-  protected run(command: string, value?: string): void {
+  private restoreSelection(): void {
     const range = this.range;
     this.page().nativeElement.focus();
     if (range) {
@@ -124,7 +118,43 @@ export class TextEdit {
       selection?.removeAllRanges();
       selection?.addRange(range);
     }
-    // Plain <font> output, which os.css maps to sizes; CSS spans would only offer keyword sizes.
+  }
+
+  protected setSize(value: string): void {
+    const px = Number(value);
+    this.size.set(px);
+    this.restoreSelection();
+    const selection = getSelection();
+    if (!selection?.rangeCount) return;
+    const page = this.page().nativeElement;
+    document.execCommand('styleWithCSS', false, 'false');
+    // Re-applying step 7 over text that already has it is a no-op, so move it off step 7 first.
+    if (!selection.isCollapsed && [...page.querySelectorAll('font[size="7"]')].some((f) => selection.containsNode(f, true))) {
+      document.execCommand('fontSize', false, '3');
+    }
+    document.execCommand('fontSize', false, '7');
+    // With a caret and no selection the font element only exists once typing starts; see onInput.
+    if (selection.isCollapsed) {
+      this.pending = { px, node: selection.anchorNode, offset: selection.anchorOffset };
+      return;
+    }
+    for (const font of page.querySelectorAll<HTMLElement>('font[size="7"]')) {
+      if (!selection.containsNode(font, false)) continue;
+      font.querySelectorAll<HTMLElement>('[style*="font-size"]').forEach((el) => el.style.removeProperty('font-size'));
+      font.style.fontSize = `${px}px`;
+    }
+  }
+
+  protected onInput(): void {
+    for (const font of this.page().nativeElement.querySelectorAll<HTMLElement>('font[size="7"]')) {
+      if (!font.style.fontSize) font.style.fontSize = `${this.pending?.px ?? this.size()}px`;
+    }
+    this.pending = null;
+  }
+
+  protected run(command: string, value?: string): void {
+    this.restoreSelection();
+    // Plain <font> output; setSize overrides font sizes with inline px.
     document.execCommand('styleWithCSS', false, 'false');
     document.execCommand(command, false, value);
   }
@@ -133,6 +163,7 @@ export class TextEdit {
     const selection = getSelection();
     if (!selection?.rangeCount || !this.page().nativeElement.contains(selection.anchorNode)) return;
     this.range = selection.getRangeAt(0).cloneRange();
+    const node = selection.anchorNode;
 
     this.bold.set(document.queryCommandState('bold'));
     this.italic.set(document.queryCommandState('italic'));
@@ -143,8 +174,14 @@ export class TextEdit {
     const font = FONTS.find((f) => f.toLowerCase() === family);
     if (font) this.font.set(font);
 
-    const size = Number(document.queryCommandValue('fontSize'));
-    if (SIZES.some((s) => s.size === size)) this.size.set(size);
+    // queryCommandValue('fontSize') only reports the nearest keyword step, so read the real size instead.
+    const pending = this.pending;
+    if (pending && (pending.node !== node || pending.offset !== selection.anchorOffset)) this.pending = null;
+    if (!this.pending) {
+      const element = node instanceof Element ? node : node?.parentElement;
+      const px = element ? Math.round(parseFloat(getComputedStyle(element).fontSize)) : NaN;
+      if (SIZES.includes(px)) this.size.set(px);
+    }
 
     const color = toHex(document.queryCommandValue('foreColor'));
     if (color) this.color.set(color);

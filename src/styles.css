@@ -62,7 +62,13 @@ body {
 }
 
 .titlebar h1 {
+  min-width: 0;
   margin: 0;
+  /* Keep clear of the traffic lights (left: 8px + 3 x 13px + 2 x 7px gaps) on both sides so the title stays centred. */
+  padding: 0 72px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 13px;
   font-weight: normal;
   text-shadow: 0 1px 0 rgb(255 255 255 / 0.7);

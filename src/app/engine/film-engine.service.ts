@@ -149,7 +149,9 @@ export class FilmEngineService {
       return halo;
     };
 
-    const n = Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 4) - 1));
+    // Each worker owns a WASM heap sized for a full tile plus halo, so phones get a small pool to stay under the OS memory limit.
+    const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+    const n = Math.max(1, Math.min(coarse ? 2 : 8, (navigator.hardwareConcurrency || 4) - 1));
     const pool: Worker1[] = [];
     await Promise.all(
       Array.from({ length: n }, () => {

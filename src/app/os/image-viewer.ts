@@ -18,8 +18,6 @@ import { segmentsOf, type ImageNode } from './node';
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '(document:keydown)': 'onKey($event)',
-    '(touchstart)': 'touchX = $event.changedTouches[0].clientX',
-    '(touchend)': 'onTouchEnd($event)',
   },
   template: `
     <dialog
@@ -54,8 +52,6 @@ export class ImageViewer {
 
   readonly image = input.required<ImageNode>();
   readonly siblings = input.required<readonly ImageNode[]>();
-
-  protected touchX = 0;
 
   protected readonly index = computed(() => this.siblings().findIndex((i) => i.id === this.image().id));
   protected readonly prev = computed(() => this.siblings()[this.index() - 1] ?? null);
@@ -95,12 +91,5 @@ export class ImageViewer {
         break;
       }
     }
-  }
-
-  protected onTouchEnd(event: TouchEvent): void {
-    const dx = event.changedTouches[0].clientX - this.touchX;
-    if (Math.abs(dx) < 60) return;
-    const target = dx > 0 ? this.prev() : this.next();
-    if (target) this.go(target);
   }
 }
