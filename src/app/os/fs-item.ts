@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
 import { Router } from '@angular/router';
 import { SessionService } from '../core/session.service';
+import { LongPress, type LongPressEvent } from '../ui/long-press';
 import { NodeIcon } from '../ui/node-icon';
 import { ContextMenuService, type ContextMenuItem } from './context-menu';
 import { hrefOf, type FsNode, type ImageNode } from './node';
@@ -9,7 +10,7 @@ import { WallpaperService } from './wallpaper.service';
 /** Icon or photo thumbnail plus label for one filesystem node. */
 @Component({
   selector: 'app-fs-item',
-  imports: [NodeIcon],
+  imports: [LongPress, NodeIcon],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <a
@@ -20,6 +21,9 @@ import { WallpaperService } from './wallpaper.service';
       (click)="onClick($event)"
       (dblclick)="open($event)"
       (contextmenu)="onContextMenu($event)"
+      appLongPress
+      [longPressFilter]="hasMenu"
+      (longPress)="onLongPress($event)"
     >
       <span class="fs-glyph">
         @if (image(); as img) {
@@ -44,6 +48,7 @@ export class FsItem {
   readonly openOnClick = input(true);
   readonly select = output<void>();
 
+  protected readonly hasMenu = (): boolean => this.image() !== null;
   protected readonly href = computed(() => hrefOf(this.node()));
   protected readonly image = computed<ImageNode | null>(() => {
     const node = this.node();
@@ -65,8 +70,7 @@ export class FsItem {
   }
 
   protected onContextMenu(event: MouseEvent): void {
-    const img = this.image();
-    if (!img) return;
+    if (!this.image()) return;
     event.preventDefault();
     let { clientX: x, clientY: y } = event;
     if (x === 0 && y === 0) {
@@ -75,6 +79,17 @@ export class FsItem {
       x = rect.left + rect.width / 2;
       y = rect.top + rect.height / 2;
     }
+    this.openMenu(x, y);
+  }
+
+  /** Touch screens: holding a finger on a photo opens the same menu as a right click. */
+  protected onLongPress({ x, y }: LongPressEvent): void {
+    this.openMenu(x, y);
+  }
+
+  private openMenu(x: number, y: number): void {
+    const img = this.image();
+    if (!img) return;
     const items: ContextMenuItem[] = [
       { label: 'Open in Film Sim', action: () => this.openInFilmSim(img) },
       { label: 'Use as Wallpaper', action: () => void this.wallpaper.setFromUrl(img.src, img.name) },

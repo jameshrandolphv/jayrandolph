@@ -263,6 +263,8 @@ app-not-found {
   border-radius: 6px;
   color: #000;
   text-decoration: none;
+  /* A long press opens our context menu, not the browser's link and image callout. */
+  -webkit-touch-callout: none;
 }
 
 .fs-item:focus-visible {

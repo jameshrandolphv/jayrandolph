@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, ElementRef, inject, signal } from '@angular/core';
+import { LongPress, type LongPressEvent } from '../ui/long-press';
 import { ContextMenuService } from './context-menu';
 import { FileSystemService } from './filesystem.service';
 import { FsItem } from './fs-item';
@@ -17,8 +18,10 @@ const DRAG_THRESHOLD = 3;
   selector: 'app-desktop',
   imports: [FsItem],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  hostDirectives: [{ directive: LongPress, outputs: ['longPress'] }],
   host: {
     class: 'desktop',
+    '(longPress)': 'onLongPress($event)',
     '(pointerdown)': 'onPointerDown($event)',
     '(contextmenu)': 'onContextMenu($event)',
     '(pointermove)': 'onPointerMove($event)',
@@ -49,6 +52,7 @@ export class Desktop {
   protected readonly fs = inject(FileSystemService);
   private readonly wallpaper = inject(WallpaperService);
   private readonly contextMenu = inject(ContextMenuService);
+  private readonly longPress = inject(LongPress, { self: true });
   protected readonly selected = signal<ReadonlySet<string>>(new Set());
   protected readonly band = signal<Box | null>(null);
 
@@ -56,6 +60,10 @@ export class Desktop {
   private origin = { x: 0, y: 0 };
   private dragging = false;
   private base: ReadonlySet<string> = new Set();
+
+  constructor() {
+    this.longPress.longPressFilter = this.hasMenu;
+  }
 
   protected selectOnly(id: string): void {
     this.selected.set(new Set([id]));
@@ -80,13 +88,21 @@ export class Desktop {
     this.host.setPointerCapture(event.pointerId);
   }
 
-  /** Only the bare desktop has a menu, and only once there is a chosen wallpaper to take off. */
   protected onContextMenu(event: MouseEvent): void {
-    if ((event.target as Element).closest('li') || !this.wallpaper.custom()) return;
-    event.preventDefault();
-    this.contextMenu.open(event.clientX, event.clientY, [
-      { label: 'Reset Wallpaper', action: () => void this.wallpaper.reset() },
-    ]);
+    if (this.openMenu(event.target as Element, event.clientX, event.clientY)) event.preventDefault();
+  }
+
+  protected onLongPress({ x, y, target }: LongPressEvent): void {
+    this.openMenu(target, x, y);
+  }
+
+  /** Only the bare desktop has a menu, and only once there is a chosen wallpaper to take off. */
+  private readonly hasMenu = (target: Element): boolean => !target.closest('li') && this.wallpaper.custom();
+
+  private openMenu(target: Element, x: number, y: number): boolean {
+    if (!this.hasMenu(target)) return false;
+    this.contextMenu.open(x, y, [{ label: 'Reset Wallpaper', action: () => void this.wallpaper.reset() }]);
+    return true;
   }
 
   protected onPointerMove(event: PointerEvent): void {
