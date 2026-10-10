@@ -122,6 +122,13 @@ describe('WallpaperService', () => {
     expect(second.cssImage()).toMatch(/^url\("blob:wall-\d+"\)$/);
   });
 
+  it('downloads the photo past the HTTP cache, where Safari keeps a copy without CORS headers', async () => {
+    serve();
+    const service = await create();
+    await service.setFromUrl('https://s3.example/a.jpg', 'A');
+    expect(fetch).toHaveBeenCalledWith('https://s3.example/a.jpg', { cache: 'no-store' });
+  });
+
   it('releases the previous image when the wallpaper changes', async () => {
     serve();
     const service = await create();

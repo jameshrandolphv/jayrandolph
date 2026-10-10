@@ -1,4 +1,5 @@
 import { Injectable, computed, signal } from '@angular/core';
+import { fetchPhoto } from '../core/fetch-photo';
 import { WALLPAPER_STORE, idbDelete, idbGet, idbPut, openAppDb } from '../games/app-db';
 
 const RECORD_ID = 'current';
@@ -148,7 +149,7 @@ export class WallpaperService {
     this.say('Setting wallpaper…', 0);
     let res: Response;
     try {
-      res = await fetch(src);
+      res = await fetchPhoto(src);
     } catch (error) {
       // No response at all: offline, or the photo server doesn't allow this site's address.
       console.warn('Wallpaper: the photo could not be downloaded', error);

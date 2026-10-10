@@ -1,3 +1,4 @@
+import { DOCUMENT } from '@angular/common';
 import { ChangeDetectionStrategy, Component, ElementRef, Injectable, effect, inject, signal, viewChild } from '@angular/core';
 
 export interface ContextMenuItem {
@@ -9,14 +10,16 @@ interface OpenMenu {
   x: number;
   y: number;
   items: readonly ContextMenuItem[];
+  /** Names what opened the menu, such as a menu bar title, so it can show itself as open. */
+  owner?: string;
 }
 
 @Injectable({ providedIn: 'root' })
 export class ContextMenuService {
   readonly menu = signal<OpenMenu | null>(null);
 
-  open(x: number, y: number, items: readonly ContextMenuItem[]): void {
-    this.menu.set({ x, y, items });
+  open(x: number, y: number, items: readonly ContextMenuItem[], owner?: string): void {
+    this.menu.set({ x, y, items, owner });
   }
 
   close(): void {
@@ -29,8 +32,7 @@ export class ContextMenuService {
   selector: 'app-context-menu',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
-    '(document:pointerdown)': 'onPointerDown($event)',
-    '(document:keydown.escape)': 'service.close()',
+    '(document:keydown.escape)': 'onEscape($event)',
     '(document:contextmenu)': 'onOtherContextMenu($event)',
     '(window:resize)': 'service.close()',
     '(window:blur)': 'service.close()',
@@ -60,6 +62,15 @@ export class ContextMenu {
   private readonly list = viewChild<ElementRef<HTMLElement>>('list');
 
   constructor() {
+    // Listened for only while a menu is open: a host listener on the document would run change detection
+    // for the whole page on every press anywhere, including each tap in a game.
+    const doc = inject(DOCUMENT);
+    effect((onCleanup) => {
+      if (!this.service.menu()) return;
+      const down = (event: PointerEvent): void => this.onPointerDown(event);
+      doc.addEventListener('pointerdown', down);
+      onCleanup(() => doc.removeEventListener('pointerdown', down));
+    });
     effect(() => {
       const el = this.list()?.nativeElement;
       if (!el) return;
@@ -79,7 +90,14 @@ export class ContextMenu {
     item.action();
   }
 
-  protected onPointerDown(event: PointerEvent): void {
+  /** Marks the key handled when it closed a menu, so whatever is beneath (such as the photo viewer) stays open. */
+  protected onEscape(event: Event): void {
+    if (!this.service.menu()) return;
+    event.preventDefault();
+    this.service.close();
+  }
+
+  private onPointerDown(event: PointerEvent): void {
     if (!(event.target as Element).closest('.context-menu')) this.service.close();
   }
 

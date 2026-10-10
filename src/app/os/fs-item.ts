@@ -1,11 +1,10 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
 import { Router } from '@angular/router';
-import { SessionService } from '../core/session.service';
 import { LongPress, type LongPressEvent } from '../ui/long-press';
 import { NodeIcon } from '../ui/node-icon';
-import { ContextMenuService, type ContextMenuItem } from './context-menu';
+import { ContextMenuService } from './context-menu';
+import { ImageActions } from './image-actions';
 import { hrefOf, type FsNode, type ImageNode } from './node';
-import { WallpaperService } from './wallpaper.service';
 
 /** Icon or photo thumbnail plus label for one filesystem node. */
 @Component({
@@ -39,8 +38,7 @@ import { WallpaperService } from './wallpaper.service';
 export class FsItem {
   private readonly router = inject(Router);
   private readonly contextMenu = inject(ContextMenuService);
-  private readonly session = inject(SessionService);
-  private readonly wallpaper = inject(WallpaperService);
+  private readonly imageActions = inject(ImageActions);
 
   readonly node = input.required<FsNode>();
   readonly selected = input(false);
@@ -90,16 +88,6 @@ export class FsItem {
   private openMenu(x: number, y: number): void {
     const img = this.image();
     if (!img) return;
-    const items: ContextMenuItem[] = [
-      { label: 'Open in Film Sim', action: () => this.openInFilmSim(img) },
-      { label: 'Use as Wallpaper', action: () => void this.wallpaper.setFromUrl(img.src, img.name, { width: img.width, height: img.height }) },
-    ];
-    if (this.wallpaper.custom()) items.push({ label: 'Reset Wallpaper', action: () => void this.wallpaper.reset() });
-    this.contextMenu.open(x, y, items);
-  }
-
-  private openInFilmSim(img: ImageNode): void {
-    void this.session.openUrl(img.src, img.name);
-    void this.router.navigateByUrl('/film-sim');
+    this.contextMenu.open(x, y, this.imageActions.menuItems(img));
   }
 }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.5.1
+- File menu in the menu bar while a photo is open; the menu bar shows Finder instead of long folder names
+- Fixed setting a photo you had already viewed as the wallpaper (or opening it in Film Sim) failing in Safari
+- Fixed a stutter when tapping in Flappy Cat; taller, higher arrow keys in World's Longest Game
+
 ## 1.5.0
 - Added Flights!, an air traffic control game with a new airfield every play
 

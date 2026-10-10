@@ -6,6 +6,19 @@
 
 <header class="menubar">
   <strong class="mb-app">{{ activeName() }}</strong>
+  @if (openImage(); as img) {
+    <button
+      type="button"
+      class="mb-menu"
+      aria-haspopup="menu"
+      [class.open]="fileMenuOpen()"
+      [attr.aria-expanded]="fileMenuOpen()"
+      (pointerdown)="onFileMenuDown($event, img)"
+      (click)="onFileMenuClick($event, img)"
+    >
+      File
+    </button>
+  }
   <span class="spacer"></span>
   @if (wallpaper.status(); as message) {
     <span class="mb-status" role="status">{{ message }}</span>

@@ -11,6 +11,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { Router } from '@angular/router';
+import { ContextMenuService } from './context-menu';
 import { segmentsOf, type ImageNode } from './node';
 
 @Component({
@@ -20,12 +21,7 @@ import { segmentsOf, type ImageNode } from './node';
     '(document:keydown)': 'onKey($event)',
   },
   template: `
-    <dialog
-      #dialog
-      class="viewer-overlay"
-      [attr.aria-label]="image().name"
-      (cancel)="$event.preventDefault(); close()"
-    >
+    <dialog #dialog class="viewer-overlay" [attr.aria-label]="image().name">
       <div class="vo-bar">
         <span class="vo-title">{{ image().name }}</span>
         <span class="vo-count">{{ index() + 1 }} of {{ siblings().length }}</span>
@@ -48,6 +44,7 @@ import { segmentsOf, type ImageNode } from './node';
 })
 export class ImageViewer {
   private readonly router = inject(Router);
+  private readonly contextMenu = inject(ContextMenuService);
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
 
   readonly image = input.required<ImageNode>();
@@ -59,7 +56,12 @@ export class ImageViewer {
 
   constructor() {
     const previouslyFocused = document.activeElement as HTMLElement | null;
-    afterNextRender(() => this.dialog().nativeElement.showModal());
+    // Not modal, so the menu bar above it (and its File menu) stays usable.
+    afterNextRender(() => {
+      const dialog = this.dialog().nativeElement;
+      dialog.show();
+      dialog.focus();
+    });
     inject(DestroyRef).onDestroy(() => previouslyFocused?.focus?.());
 
     effect(() => {
@@ -80,6 +82,10 @@ export class ImageViewer {
 
   protected onKey(event: KeyboardEvent): void {
     switch (event.key) {
+      case 'Escape':
+        // An Escape that closed an open menu goes no further.
+        if (!event.defaultPrevented && !this.contextMenu.menu()) this.close();
+        break;
       case 'ArrowLeft': {
         const p = this.prev();
         if (p) this.go(p);

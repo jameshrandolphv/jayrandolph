@@ -11,6 +11,7 @@ import {
   encodeTiff16,
   type ExportFormat,
 } from '../export/encoders';
+import { fetchPhoto } from './fetch-photo';
 
 export type FilmId =
   | 'kodachrome-64'
@@ -411,7 +412,7 @@ export class SessionService {
     this.message.set(`Loading ${name}…`);
     let file: File;
     try {
-      const res = await fetch(url);
+      const res = await fetchPhoto(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
       file = new File([blob], withExtension(name, blob.type), { type: blob.type });

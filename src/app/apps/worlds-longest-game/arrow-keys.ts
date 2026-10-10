@@ -30,7 +30,7 @@ export const keysVector = (held: ReadonlySet<ArrowKey>): StickVector => {
 
 /**
  * An inverted-T arrow cluster: left, down and right along the bottom with up above down. Left and right are
- * square; up and down are the same width but a little shorter, and all three share the bottom edge. Each finger is tracked on its own, so two keys together make a diagonal and a finger can
+ * a little taller than wide; up and down are the same width but a little shorter, and all three share the bottom edge. Each finger is tracked on its own, so two keys together make a diagonal and a finger can
  * slide from one key to another.
  */
 @Component({
@@ -68,6 +68,8 @@ export const keysVector = (held: ReadonlySet<ArrowKey>): StickVector => {
       /* Three equal columns; up and down are --short times the square key height, and the width is capped so both fit. */
       --gap: 6px;
       --short: 0.8;
+      /* Left and right are this much taller than they are wide. */
+      --tall: 1.1;
       --width: min(100cqw, (100cqh - var(--gap)) * 3 / (2 * var(--short)) + 2 * var(--gap), 480px);
       --key: calc((var(--width) - 2 * var(--gap)) / 3);
       display: grid;
@@ -92,11 +94,11 @@ export const keysVector = (held: ReadonlySet<ArrowKey>): StickVector => {
       pointer-events: none;
       transition: transform 40ms, box-shadow 40ms;
     }
-    /* The square keys are taller than their row, so they grow upward from the shared bottom edge. */
+    /* Left and right are taller than their row, so they grow upward from the shared bottom edge. */
     .key[data-key='left'],
     .key[data-key='right'] {
       align-self: end;
-      height: var(--key);
+      height: calc(var(--key) * var(--tall));
     }
     svg {
       width: clamp(12px, calc(var(--width) * 0.11), 44px);
