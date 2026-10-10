@@ -29,6 +29,10 @@ export interface GameSurface {
   readonly bounds: VisibleBounds;
   /** Draw here in logical pixels; it is scaled to the canvas and clipped to the logical bounds. */
   readonly root: Container;
+  /** The element the canvas fills, for games that track pointers beyond `press` (such as drags). */
+  readonly element: HTMLElement;
+  /** Converts a pointer position in client pixels to logical coordinates. */
+  toLogical(clientX: number, clientY: number): LogicalPoint;
 }
 
 export interface LogicalPoint {
@@ -115,11 +119,15 @@ export class GameCanvas {
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {
+    this.press.emit(this.toLogical(event.clientX, event.clientY));
+  };
+
+  private readonly toLogical = (clientX: number, clientY: number): LogicalPoint => {
     const rect = this.host().nativeElement.getBoundingClientRect();
-    this.press.emit({
-      x: (event.clientX - rect.left - this.offset.x) / this.scale,
-      y: (event.clientY - rect.top - this.offset.y) / this.scale,
-    });
+    return {
+      x: (clientX - rect.left - this.offset.x) / this.scale,
+      y: (clientY - rect.top - this.offset.y) / this.scale,
+    };
   };
 
   private async init(): Promise<void> {
@@ -165,7 +173,7 @@ export class GameCanvas {
     this.layout();
     this.observer = new ResizeObserver(() => this.layout());
     this.observer.observe(el);
-    this.ready.emit({ app, root, bounds: this.bounds });
+    this.ready.emit({ app, root, bounds: this.bounds, element: el, toLogical: this.toLogical });
   }
 
   private layout(): void {

@@ -116,6 +116,14 @@ app-not-found {
   margin: auto;
 }
 
+/* Same 28px chrome as portrait; 1.5 = 3 / 2. */
+.window.wide {
+  --game-w: min(100cqw - 2px, (100cqh - 28px) * 1.5);
+  width: calc(var(--game-w) + 2px);
+  height: calc(var(--game-w) / 1.5 + 28px);
+  margin: auto;
+}
+
 /* Maximised window: covers the menu bar and dock, leaving only its own title bar. */
 .window-maximized .workspace {
   inset: 0;
@@ -580,7 +588,8 @@ a.btn {
   }
 
   .window.compact,
-  .window.landscape {
+  .window.landscape,
+  .window.wide {
     width: 100%;
     height: 100%;
   }

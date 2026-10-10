@@ -1,6 +1,18 @@
 import type { SoundSettings } from '../core/sound-settings';
 
-export type SfxName = 'flap' | 'score' | 'hit' | 'fall' | 'click' | 'checkpoint' | 'clear';
+export type SfxName =
+  | 'flap'
+  | 'score'
+  | 'hit'
+  | 'fall'
+  | 'click'
+  | 'checkpoint'
+  | 'clear'
+  | 'pick'
+  | 'lock'
+  | 'land'
+  | 'alert'
+  | 'crash';
 
 interface Tone {
   from: number;
@@ -29,6 +41,24 @@ const TONES: Readonly<Record<SfxName, readonly Tone[]>> = {
     { from: 659, to: 659, seconds: 0.08, type: 'square', volume: 0.05, delay: 0.08 },
     { from: 784, to: 784, seconds: 0.08, type: 'square', volume: 0.05, delay: 0.16 },
     { from: 1047, to: 1047, seconds: 0.2, type: 'square', volume: 0.05, delay: 0.24 },
+  ],
+  pick: [{ from: 880, to: 990, seconds: 0.04, type: 'triangle', volume: 0.05 }],
+  lock: [
+    { from: 660, to: 660, seconds: 0.05, type: 'triangle', volume: 0.07 },
+    { from: 990, to: 990, seconds: 0.09, type: 'triangle', volume: 0.07, delay: 0.05 },
+  ],
+  land: [
+    { from: 784, to: 784, seconds: 0.08, type: 'triangle', volume: 0.08 },
+    { from: 1047, to: 1047, seconds: 0.08, type: 'triangle', volume: 0.08, delay: 0.08 },
+    { from: 1319, to: 1319, seconds: 0.16, type: 'triangle', volume: 0.08, delay: 0.16 },
+  ],
+  alert: [
+    { from: 1175, to: 1175, seconds: 0.07, type: 'square', volume: 0.035 },
+    { from: 1175, to: 1175, seconds: 0.07, type: 'square', volume: 0.035, delay: 0.12 },
+  ],
+  crash: [
+    { from: 260, to: 40, seconds: 0.55, type: 'sawtooth', volume: 0.09 },
+    { from: 130, to: 30, seconds: 0.7, type: 'square', volume: 0.05, delay: 0.05 },
   ],
 };
 

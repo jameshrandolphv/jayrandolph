@@ -10,3 +10,6 @@ Third-party material:
 - geotiff.js (https://github.com/geotiffjs/geotiff.js) (MIT), used to decode TIFF input.
 - heic2any (https://github.com/alexcorvi/heic2any) (MIT), bundling libheif (LGPL 3.0), used to
   decode HEIF input in browsers without native support.
+- Bangers (https://fonts.google.com/specimen/Bangers), Vernon Adams, and Pacifico
+  (https://fonts.google.com/specimen/Pacifico), Vernon Adams, Jacques Le Bailly, Botjo Nikoltchev and
+  Ani Petrova (SIL Open Font License 1.1), used for the text in Flights!. Latin subsets are in public/fonts.

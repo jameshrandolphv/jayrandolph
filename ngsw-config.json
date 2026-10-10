@@ -15,6 +15,7 @@
           "/*.js",
           "/icons/**",
           "/wallpaper.jpg",
+          "/fonts/**",
           "/engine/**"
         ]
       }

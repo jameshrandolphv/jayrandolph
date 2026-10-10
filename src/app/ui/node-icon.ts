@@ -159,6 +159,23 @@ export class IconDefs {}
           </g>
           <rect x="18" y="18" width="28" height="28" fill="#ff0000" stroke="#000" stroke-width="4" />
         }
+        @case ('plane') {
+          <!-- Flights!: a white jet banking across a striped blue tile, after the original's app icon. -->
+          <rect x="4" y="4" width="56" height="56" rx="13" fill="#1f64e0" stroke="#0f3a8f" />
+          <g clip-path="url(#ico-app-clip)">
+            <path d="M-8 30L30-8h9L-8 39zM-8 50L50-8h9L-8 59zM2 68L68 2v9L11 68zM22 68l46-46v9L31 68zM42 68l26-26v9L51 68z" fill="#3a82f2" />
+            <ellipse cx="32" cy="12" rx="34" ry="20" fill="url(#ico-gloss)" opacity="0.45" />
+          </g>
+          <g transform="rotate(-38 32 32)" stroke="#3a3a3a" stroke-width="1.6" stroke-linejoin="round">
+            <path d="M33 25l-19-8-2 3 12 9zM33 39l-19 8-2-3 12-9z" fill="#e4e6ea" />
+            <path d="M13 29l-4-5h-2l1 8-1 8h2l4-5z" fill="#e4e6ea" />
+            <rect x="22" y="17.5" width="7" height="4" rx="2" fill="#f6a01a" />
+            <rect x="22" y="42.5" width="7" height="4" rx="2" fill="#f6a01a" />
+            <path d="M8 32c0-3 4-5 10-5h26c6 0 12 2 13 5-1 3-7 5-13 5H18c-6 0-10-2-10-5z" fill="#fafafa" />
+            <path d="M51 30.5c1.5.3 3 .9 3.6 1.5-.6.6-2.1 1.2-3.6 1.5z" fill="#36506b" stroke="none" />
+            <path d="M14 31.2h30" stroke="#f6a01a" stroke-width="2" />
+          </g>
+        }
         @case ('write') {
           <rect x="6" y="14" width="34" height="44" rx="1.5" fill="url(#ico-note)" stroke="#a8923a" stroke-width="0.8" transform="rotate(-14 23 36)" />
           <g transform="rotate(-9 28 28)">

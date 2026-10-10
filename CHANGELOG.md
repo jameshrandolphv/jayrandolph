@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.5.0
+- Added Flights!, an air traffic control game with a new airfield every play
+
 ## 1.4.2
 - Can now set wallpaper from photos; World's Longest Game bug fixes
 

@@ -30,6 +30,12 @@ export const APPS: readonly AppDef[] = [
     load: () => import('../apps/worlds-longest-game/worlds-longest-game').then((m) => m.WorldsLongestGame),
   },
   {
+    id: 'flights',
+    name: 'Flights!',
+    icon: 'plane',
+    load: () => import('../apps/flights/flights').then((m) => m.Flights),
+  },
+  {
     id: 'write-stuff',
     name: 'Write Stuff',
     icon: 'write',

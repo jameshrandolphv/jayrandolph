@@ -7,6 +7,7 @@ Personal website styled as a Mac OS X Aqua / Frutiger Aero desktop. Built with A
 - Desktop at `/` with a Pictures folder and the Film Sim app.
 - Apps are registered in `src/app/os/apps.ts`; folders come from the filesystem service in `src/app/os/filesystem.service.ts`.
 - Film Sim (`/film-sim`) is a Rust/WebAssembly film simulator (see `engine/`).
+- Flights! (`/flights`) is an air traffic control game after Flight Control (2009); its airfields are generated at random in `src/app/apps/flights/airfield.ts`.
 
 ## Photographs
 
