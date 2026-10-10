@@ -14,7 +14,8 @@ import { attachPerfOverlay } from './perf-overlay';
 
 /**
  * The logical area currently on screen. Without `fill` this is just 0 to the logical size; with it, `left`,
- * `right` and `top` reach past the edges (`top` is negative) while `bottom` stays at the logical height.
+ * `right` and `top` reach past the edges (`top` is negative). `bottom` stays at the logical height unless
+ * `fillCentre` is set, when it reaches past it as well.
  */
 export interface VisibleBounds {
   left: number;
@@ -88,6 +89,8 @@ export class GameCanvas {
    * kept on the bottom of the host.
    */
   readonly fill = input(false);
+  /** With `fill`, shares extra height above and below the game instead of putting it all above. */
+  readonly fillCentre = input(false);
   /** Read once when the canvas is created. */
   readonly antialias = input(false);
   readonly ready = output<GameSurface>();
@@ -190,8 +193,8 @@ export class GameCanvas {
     this.scale = !this.integerScale() || fit * dpr < 1 ? fit : Math.floor(fit * dpr) / dpr;
     this.offset = {
       x: Math.floor(((w - this.logicalWidth() * this.scale) / 2) * dpr) / dpr,
-      // Filled canvases sit on the bottom edge so the extra height is all above the game.
-      y: Math.floor(((h - this.logicalHeight() * this.scale) / (this.fill() ? 1 : 2)) * dpr) / dpr,
+      // Filled canvases sit on the bottom edge so the extra height is all above the game, unless centred.
+      y: Math.floor(((h - this.logicalHeight() * this.scale) / (this.fill() && !this.fillCentre() ? 1 : 2)) * dpr) / dpr,
     };
     root.scale.set(this.scale);
     root.position.set(this.offset.x, this.offset.y);
@@ -201,6 +204,7 @@ export class GameCanvas {
     this.bounds.left = fill ? Math.floor(-this.offset.x / this.scale) : 0;
     this.bounds.right = fill ? Math.ceil((w - this.offset.x) / this.scale) : this.logicalWidth();
     this.bounds.top = fill ? Math.floor(-this.offset.y / this.scale) : 0;
+    this.bounds.bottom = fill && this.fillCentre() ? Math.ceil((h - this.offset.y) / this.scale) : this.logicalHeight();
     this.clip
       ?.clear()
       .rect(this.bounds.left, this.bounds.top, this.bounds.right - this.bounds.left, this.bounds.bottom - this.bounds.top)

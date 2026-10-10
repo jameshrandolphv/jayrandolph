@@ -1,6 +1,6 @@
 import { Container, Graphics, GraphicsContext, Text, type TextStyleOptions } from 'pixi.js';
 import { runwayEnd, type Airfield, type Box, type Helipad, type Runway } from './airfield';
-import { HEIGHT, WIDTH, type Kind, type Oval } from './constants';
+import { HEIGHT, SCENERY_EXTENT, WIDTH, type Kind, type Oval } from './constants';
 import { spline, type Point } from './geometry';
 
 export const HEADLINE_FONT = 'Bangers, Impact, "Arial Black", sans-serif';
@@ -245,7 +245,7 @@ const polyline = (g: Graphics, line: readonly Point[]): Graphics => {
 /** The sea's polygon: the shoreline closed off through the field corners on the sea side. */
 const seaPolygon = (field: Airfield): number[] => {
   const pts = field.water.flatMap((p) => [p.x, p.y]);
-  const pad = 60;
+  const pad = SCENERY_EXTENT;
   const corners: Record<Airfield['seaSide'], number[]> = {
     top: [WIDTH + pad, -pad, -pad, -pad],
     bottom: [WIDTH + pad, HEIGHT + pad, -pad, HEIGHT + pad],
@@ -257,9 +257,10 @@ const seaPolygon = (field: Airfield): number[] => {
 
 const drawGround = (g: Graphics, field: Airfield): void => {
   const cell = 80;
-  g.rect(-200, -200, WIDTH + 400, HEIGHT + 400).fill(COLORS.grassA);
-  for (let y = -cell * 3; y < HEIGHT + cell * 3; y += cell) {
-    for (let x = -cell * 3; x < WIDTH + cell * 3; x += cell)
+  const out = Math.ceil(SCENERY_EXTENT / cell) * cell;
+  g.rect(-out, -out, WIDTH + out * 2, HEIGHT + out * 2).fill(COLORS.grassA);
+  for (let y = -out; y < HEIGHT + out; y += cell) {
+    for (let x = -out; x < WIDTH + out; x += cell)
       if ((x / cell + y / cell) % 2 === 0) g.rect(x, y, cell, cell);
   }
   g.fill(COLORS.grassB);
@@ -445,15 +446,22 @@ export const zoneCentre = (zone: Runway | Helipad): Point => {
   return { x: (zone.x + end.x) / 2, y: (zone.y + end.y) / 2 };
 };
 
-/** The rounded grey bezel around the field, as in the original. */
-export const drawFrame = (): Graphics =>
-  new Graphics()
-    .rect(-400, -400, WIDTH + 800, HEIGHT + 800)
+/** Redraws the rounded grey bezel, as in the original, around whatever part of the field is on screen. */
+export const drawFrame = (
+  g: Graphics,
+  b: { left: number; top: number; right: number; bottom: number },
+): Graphics => {
+  const w = b.right - b.left;
+  const h = b.bottom - b.top;
+  return g
+    .clear()
+    .rect(b.left - 20, b.top - 20, w + 40, h + 40)
     .fill(COLORS.frame)
-    .roundRect(6, 6, WIDTH - 12, HEIGHT - 12, 22)
+    .roundRect(b.left + 6, b.top + 6, w - 12, h - 12, 22)
     .cut()
-    .roundRect(6, 6, WIDTH - 12, HEIGHT - 12, 22)
+    .roundRect(b.left + 6, b.top + 6, w - 12, h - 12, 22)
     .stroke({ width: 2, color: 0x000000, alpha: 0.25 });
+};
 
 // ---------------------------------------------------------------------------------------------------------------
 // Text and buttons.
@@ -676,222 +684,6 @@ export const milkshake = (): Graphics => {
   g.circle(-2, -122, 11).fill(COLORS.red).stroke({ width: 2.5, color: COLORS.ink });
   g.circle(-6, -126, 3.5).fill({ color: 0xffffff, alpha: 0.7 });
   return g;
-};
-
-const SKIN = 0xf8d4b8;
-const SKIN_SHADE = 0xe9b796;
-const HAIR = 0xf1c44c;
-const HAIR_SHADE = 0xd9a530;
-const UNIFORM = 0x3a6fb0;
-const UNIFORM_SHADE = 0x2b568f;
-
-/**
- * The stewardess from the original's menus, saluting: drawn from the waist up, about 330 wide and 520 tall,
- * with her head's top near (170, 0).
- */
-export const stewardess = (): Container => {
-  const c = new Container();
-  const ink = { width: 3, color: COLORS.ink, join: 'round' as const, cap: 'round' as const };
-
-  // Hair behind the head, falling to the shoulders in a flip.
-  const back = new Graphics()
-    .moveTo(98, 90)
-    .bezierCurveTo(78, 160, 84, 220, 104, 246)
-    .bezierCurveTo(124, 262, 150, 250, 160, 236)
-    .lineTo(200, 236)
-    .bezierCurveTo(214, 252, 244, 262, 260, 244)
-    .bezierCurveTo(276, 218, 278, 160, 252, 90)
-    .closePath()
-    .fill(HAIR)
-    .stroke(ink);
-  c.addChild(back);
-
-  // Body: jacket with lapels over a white blouse and a red neckerchief.
-  const body = new Graphics();
-  body
-    .moveTo(88, 300)
-    .bezierCurveTo(112, 272, 140, 264, 158, 262)
-    .lineTo(202, 262)
-    .bezierCurveTo(226, 266, 254, 276, 274, 300)
-    .bezierCurveTo(300, 330, 310, 420, 312, 540)
-    .lineTo(64, 540)
-    .bezierCurveTo(62, 430, 66, 336, 88, 300)
-    .closePath()
-    .fill(UNIFORM)
-    .stroke(ink);
-  body.poly([158, 262, 202, 262, 180, 340]).fill(0xffffff).stroke(ink);
-  body
-    .moveTo(158, 262)
-    .lineTo(130, 290)
-    .lineTo(150, 300)
-    .lineTo(138, 316)
-    .lineTo(180, 400)
-    .lineTo(222, 316)
-    .lineTo(210, 300)
-    .lineTo(230, 290)
-    .lineTo(202, 262)
-    .lineTo(180, 340)
-    .closePath()
-    .fill(UNIFORM_SHADE)
-    .stroke(ink);
-  body.poly([166, 270, 194, 270, 186, 290, 174, 290]).fill(COLORS.red).stroke(ink);
-  body.poly([174, 288, 186, 288, 196, 326, 180, 316, 164, 326]).fill(COLORS.red).stroke(ink);
-  for (const y of [420, 470])
-    body
-      .circle(180, y, 6)
-      .fill(COLORS.gold)
-      .stroke({ ...ink, width: 2 });
-  // Wings badge on the breast.
-  body
-    .moveTo(232, 352)
-    .quadraticCurveTo(248, 344, 266, 350)
-    .quadraticCurveTo(250, 356, 232, 356)
-    .fill(COLORS.gold)
-    .stroke({ ...ink, width: 2 });
-  c.addChild(body);
-
-  // Neck.
-  const neck = new Graphics()
-    .moveTo(158, 200)
-    .lineTo(158, 266)
-    .bezierCurveTo(170, 278, 190, 278, 202, 266)
-    .lineTo(202, 200)
-    .closePath()
-    .fill(SKIN)
-    .stroke(ink);
-  neck
-    .moveTo(160, 238)
-    .quadraticCurveTo(180, 252, 200, 238)
-    .stroke({ width: 3, color: SKIN_SHADE, cap: 'round' });
-  c.addChild(neck);
-
-  // Saluting arm: upper arm out to the elbow, forearm up to the brim of the cap.
-  const arm = new Graphics()
-    .moveTo(96, 296)
-    .bezierCurveTo(60, 300, 26, 290, 14, 262)
-    .bezierCurveTo(6, 238, 22, 222, 40, 210)
-    .lineTo(82, 150)
-    .lineTo(110, 168)
-    .lineTo(66, 240)
-    .bezierCurveTo(78, 252, 100, 254, 116, 252)
-    .closePath()
-    .fill(UNIFORM)
-    .stroke(ink);
-  arm
-    .moveTo(30, 262)
-    .quadraticCurveTo(48, 272, 70, 268)
-    .stroke({ width: 3, color: UNIFORM_SHADE, cap: 'round' });
-  c.addChild(arm);
-
-  // Head.
-  const head = new Graphics();
-  head.ellipse(270, 150, 12, 20).fill(SKIN).stroke(ink);
-  head.ellipse(180, 140, 82, 92).fill(SKIN).stroke(ink);
-  head.ellipse(132, 170, 16, 10).ellipse(228, 170, 16, 10).fill({ color: 0xf29a9a, alpha: 0.45 });
-  // Eyes looking out, with lashes; brows; nose; a red smile.
-  for (const [x, flip] of [
-    [148, 1],
-    [214, -1],
-  ] as const) {
-    head
-      .ellipse(x, 142, 10, 13)
-      .fill(0xffffff)
-      .stroke({ ...ink, width: 2.5 });
-    head.circle(x + 2, 145, 7).fill(0x3b6fa8);
-    head.circle(x + 2, 145, 3.5).fill(COLORS.ink);
-    head.circle(x + 4, 141, 2).fill(0xffffff);
-    head
-      .moveTo(x - 13, 135)
-      .quadraticCurveTo(x, 122, x + 13, 135)
-      .stroke({ ...ink, width: 4 });
-    head
-      .moveTo(x - 12 * flip, 130)
-      .lineTo(x - 18 * flip, 124)
-      .stroke({ ...ink, width: 2.5 });
-    head
-      .moveTo(x - 14, 110)
-      .quadraticCurveTo(x, 102, x + 14, 108)
-      .stroke({ width: 3.5, color: HAIR_SHADE, cap: 'round' });
-  }
-  head
-    .moveTo(182, 150)
-    .quadraticCurveTo(176, 170, 186, 176)
-    .stroke({ width: 3, color: SKIN_SHADE, cap: 'round' });
-  head
-    .moveTo(156, 196)
-    .quadraticCurveTo(182, 216, 208, 194)
-    .quadraticCurveTo(182, 204, 156, 196)
-    .closePath()
-    .fill(COLORS.red)
-    .stroke({ ...ink, width: 2.5 });
-  c.addChild(head);
-
-  // Fringe swept across the forehead under the cap, and the curls by the ears.
-  const fringe = new Graphics()
-    .moveTo(96, 132)
-    .bezierCurveTo(100, 80, 150, 58, 200, 62)
-    .bezierCurveTo(240, 64, 266, 92, 264, 134)
-    .bezierCurveTo(250, 110, 228, 96, 206, 96)
-    .bezierCurveTo(196, 112, 172, 120, 148, 118)
-    .bezierCurveTo(128, 116, 112, 120, 96, 132)
-    .closePath()
-    .fill(HAIR)
-    .stroke(ink);
-  fringe
-    .moveTo(150, 82)
-    .quadraticCurveTo(190, 92, 210, 80)
-    .stroke({ width: 3, color: HAIR_SHADE, cap: 'round' });
-  c.addChild(fringe);
-
-  // The cap, tilted, with its gold badge.
-  const cap = new Graphics()
-    .moveTo(100, 84)
-    .bezierCurveTo(104, 40, 150, 14, 200, 14)
-    .bezierCurveTo(240, 16, 262, 40, 266, 70)
-    .bezierCurveTo(220, 66, 150, 74, 100, 84)
-    .closePath()
-    .fill(UNIFORM)
-    .stroke(ink);
-  cap
-    .moveTo(100, 84)
-    .bezierCurveTo(150, 72, 220, 64, 266, 70)
-    .lineTo(268, 82)
-    .bezierCurveTo(220, 76, 150, 84, 98, 96)
-    .closePath()
-    .fill(UNIFORM_SHADE)
-    .stroke(ink);
-  cap
-    .circle(180, 44, 10)
-    .fill(COLORS.gold)
-    .stroke({ ...ink, width: 2 });
-  cap
-    .moveTo(160, 46)
-    .quadraticCurveTo(170, 38, 172, 46)
-    .moveTo(200, 46)
-    .quadraticCurveTo(190, 38, 188, 46)
-    .stroke({ width: 3, color: COLORS.gold, cap: 'round' });
-  c.addChild(cap);
-
-  // White-gloved hand, fingers together along the brim.
-  const hand = new Graphics()
-    .moveTo(70, 160)
-    .bezierCurveTo(70, 132, 92, 104, 118, 84)
-    .bezierCurveTo(134, 72, 148, 76, 140, 90)
-    .bezierCurveTo(132, 104, 120, 116, 112, 130)
-    .bezierCurveTo(108, 146, 110, 166, 96, 176)
-    .bezierCurveTo(84, 180, 72, 172, 70, 160)
-    .closePath()
-    .fill(0xffffff)
-    .stroke(ink);
-  hand
-    .moveTo(100, 104)
-    .lineTo(132, 82)
-    .moveTo(94, 116)
-    .lineTo(124, 96)
-    .stroke({ width: 2, color: 0xc9cfd6, cap: 'round' });
-  hand.moveTo(72, 170).lineTo(100, 182).lineTo(108, 164).stroke(ink);
-  c.addChild(hand);
-  return c;
 };
 
 /** A small diagram for the how-to-play card: an aircraft, a dashed path and the zone it lands on. */

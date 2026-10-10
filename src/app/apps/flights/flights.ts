@@ -44,13 +44,16 @@ const loadFonts = async (): Promise<void> => {
     '(window:blur)': 'game?.autoPause()',
   },
   template: `
-    <app-window-frame title="Flights!" wide>
+    <!-- Fills the window: the airfield stays in the middle and the grass reaches out to the edges. -->
+    <app-window-frame title="Flights!">
       <app-game-canvas
         [logicalWidth]="width"
         [logicalHeight]="height"
         background="#7c8183"
         [integerScale]="false"
         [antialias]="true"
+        [fill]="true"
+        [fillCentre]="true"
         label="Flights!"
         (ready)="onReady($event)"
       />
@@ -82,7 +85,11 @@ export class Flights {
     const game = new FlightsGame(this.scores, new Sfx(this.sound));
     const view = new FlightsView(root, game);
     this.game = game;
-    app.ticker.add((ticker) => view.update(game.frame(ticker.deltaMS), ticker.deltaMS));
+    // The canvas updates its bounds in place on resize, so the sim and view always see the current field.
+    game.sim.bounds = surface.bounds;
+    app.ticker.add((ticker) =>
+      view.update(game.frame(ticker.deltaMS), ticker.deltaMS, surface.bounds),
+    );
     this.detach = this.trackPointer(surface, game);
   }
 

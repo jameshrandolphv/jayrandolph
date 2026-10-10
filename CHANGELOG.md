@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.5.2
+- Flights! fills its window and can be maximized, with a flash where a flight path snaps onto its runway, centred score counters and a redrawn stewardess
+
 ## 1.5.1
 - File menu in the menu bar while a photo is open; the menu bar shows Finder instead of long folder names
 - Fixed setting a photo you had already viewed as the wallpaper (or opening it in Film Sim) failing in Safari

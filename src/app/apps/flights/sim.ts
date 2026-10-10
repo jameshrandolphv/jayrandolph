@@ -17,6 +17,7 @@ import {
   KIND_SPECS,
   LANDINGS_PER_EXTRA,
   LAND_TICKS,
+  LOCK_FLASH_TICKS,
   MAX_AIRCRAFT,
   MAX_AIRCRAFT_START,
   PATH_MAX,
@@ -30,6 +31,7 @@ import {
   STREAK_TICKS,
   WARN_GAP,
   WIDTH,
+  type Bounds,
   type Kind,
 } from './constants';
 import { angleDiff, type Point } from './geometry';
@@ -81,6 +83,17 @@ export interface Arrival {
   ticks: number;
 }
 
+/** The flash where a path snapped onto a landing zone. */
+export interface LockFlash {
+  id: number;
+  kind: Kind;
+  zone: Zone;
+  /** Where the path met the zone. */
+  x: number;
+  y: number;
+  ticks: number;
+}
+
 export interface Praise {
   id: number;
   text: string;
@@ -118,6 +131,7 @@ export class FlightsSim {
   aircraft: Aircraft[] = [];
   arrivals: Arrival[] = [];
   praise: Praise[] = [];
+  locks: LockFlash[] = [];
   /** Where the collision happened and which aircraft were involved. */
   crash: { x: number; y: number; ids: [number, number] } | null = null;
   /** The aircraft whose path is being drawn. */
@@ -127,6 +141,11 @@ export class FlightsSim {
   clock = 0;
   /** Ticks of play, so fast-forward counts double. */
   playTicks = 0;
+  /**
+   * The field on screen. It always contains the 960 x 640 area the airfield is laid out in, and reaches past it
+   * when the window is wider or taller; aircraft arrive from and turn back at its edges.
+   */
+  bounds: Bounds = { left: 0, top: 0, right: WIDTH, bottom: HEIGHT };
 
   private events: SimEvent[] = [];
   private nextId = 1;
@@ -205,8 +224,9 @@ export class FlightsSim {
   extendPath(x: number, y: number): void {
     const a = this.drawingAircraft();
     if (!a || a.target) return;
-    x = Math.max(4, Math.min(WIDTH - 4, x));
-    y = Math.max(4, Math.min(HEIGHT - 4, y));
+    const b = this.bounds;
+    x = Math.max(b.left + 4, Math.min(b.right - 4, x));
+    y = Math.max(b.top + 4, Math.min(b.bottom - 4, y));
     let last: Point = a.path[a.path.length - 1] ?? a;
     let gap = Math.hypot(x - last.x, y - last.y);
     // Long pointer moves are split, so the path stays evenly spaced and the zone test sees every stretch.
@@ -220,6 +240,14 @@ export class FlightsSim {
         a.target = hit;
         this.drawing = null;
         this.events.push('lock');
+        this.locks.push({
+          id: this.nextId++,
+          kind: a.kind,
+          zone: hit.zone,
+          x: p.x,
+          y: p.y,
+          ticks: 0,
+        });
         return;
       }
       last = p;
@@ -266,6 +294,8 @@ export class FlightsSim {
     this.aircraft = this.aircraft.filter(
       (a) => a.state !== 'landing' || a.landTicks < landTicks(a),
     );
+    for (const l of this.locks) l.ticks++;
+    this.locks = this.locks.filter((l) => l.ticks < LOCK_FLASH_TICKS);
     for (const p of this.praise) p.ticks++;
     this.praise = this.praise.filter((p) => p.ticks < PRAISE_TICKS);
     this.checkTraffic();
@@ -298,21 +328,28 @@ export class FlightsSim {
       a.y += Math.sin(a.heading) * budget;
     }
     const r = a.radius;
-    if (!a.entered && a.x > r && a.x < WIDTH - r && a.y > r && a.y < HEIGHT - r) a.entered = true;
+    const b = this.bounds;
+    if (
+      !a.entered &&
+      a.x > b.left + r &&
+      a.x < b.right - r &&
+      a.y > b.top + r &&
+      a.y < b.bottom - r
+    ) {
+      a.entered = true;
+    }
   }
 
   /** Steers back in when heading off the field, turning steadily so it reads as a banked turn. */
   private turnAtEdge(a: Aircraft): void {
     let vx = Math.cos(a.heading);
     let vy = Math.sin(a.heading);
-    const out =
-      (a.x < EDGE_MARGIN && vx < 0) ||
-      (a.x > WIDTH - EDGE_MARGIN && vx > 0) ||
-      (a.y < EDGE_MARGIN && vy < 0) ||
-      (a.y > HEIGHT - EDGE_MARGIN && vy > 0);
-    if (!out) return;
-    if ((a.x < EDGE_MARGIN && vx < 0) || (a.x > WIDTH - EDGE_MARGIN && vx > 0)) vx = -vx;
-    if ((a.y < EDGE_MARGIN && vy < 0) || (a.y > HEIGHT - EDGE_MARGIN && vy > 0)) vy = -vy;
+    const b = this.bounds;
+    const outX = (a.x < b.left + EDGE_MARGIN && vx < 0) || (a.x > b.right - EDGE_MARGIN && vx > 0);
+    const outY = (a.y < b.top + EDGE_MARGIN && vy < 0) || (a.y > b.bottom - EDGE_MARGIN && vy > 0);
+    if (!outX && !outY) return;
+    if (outX) vx = -vx;
+    if (outY) vy = -vy;
     const diff = angleDiff(a.heading, Math.atan2(vy, vx));
     a.heading += Math.sign(diff) * Math.min(Math.abs(diff), EDGE_TURN);
   }
@@ -412,15 +449,16 @@ export class FlightsSim {
     const fast = this.rng() < fastChance;
     for (let tries = 0; tries < 12; tries++) {
       // A point on the edge, weighted by edge length, out of the corners where the HUD and buttons sit.
-      const across = WIDTH - CORNER_X * 2;
-      const down = HEIGHT - CORNER_Y * 2;
+      const b = this.bounds;
+      const across = b.right - b.left - CORNER_X * 2;
+      const down = b.bottom - b.top - CORNER_Y * 2;
       const edge = this.rng() * (across + down) * 2;
       let x: number;
       let y: number;
-      if (edge < across) [x, y] = [CORNER_X + edge, 0];
-      else if (edge < across * 2) [x, y] = [CORNER_X + edge - across, HEIGHT];
-      else if (edge < across * 2 + down) [x, y] = [0, CORNER_Y + edge - across * 2];
-      else [x, y] = [WIDTH, CORNER_Y + edge - across * 2 - down];
+      if (edge < across) [x, y] = [b.left + CORNER_X + edge, b.top];
+      else if (edge < across * 2) [x, y] = [b.left + CORNER_X + edge - across, b.bottom];
+      else if (edge < across * 2 + down) [x, y] = [b.left, b.top + CORNER_Y + edge - across * 2];
+      else [x, y] = [b.right, b.top + CORNER_Y + edge - across * 2 - down];
       const crowded =
         this.aircraft.some((a) => Math.hypot(a.x - x, a.y - y) < ARRIVAL_SPACING) ||
         this.arrivals.some((a) => Math.hypot(a.x - x, a.y - y) < ARRIVAL_SPACING);
@@ -430,8 +468,8 @@ export class FlightsSim {
       const heading = Math.atan2(aimY - y, aimX - x);
       const inset = 26;
       return {
-        x: Math.max(inset, Math.min(WIDTH - inset, x)),
-        y: Math.max(inset, Math.min(HEIGHT - inset, y)),
+        x: Math.max(b.left + inset, Math.min(b.right - inset, x)),
+        y: Math.max(b.top + inset, Math.min(b.bottom - inset, y)),
         kind,
         fast,
         heading,
@@ -454,8 +492,9 @@ export class FlightsSim {
   private launch(arrival: Arrival): void {
     const spec = KIND_SPECS[arrival.kind];
     // Starts out of sight behind its marker, on the line it flies in along.
-    const edgeX = arrival.x < 30 ? 0 : arrival.x > WIDTH - 30 ? WIDTH : arrival.x;
-    const edgeY = arrival.y < 30 ? 0 : arrival.y > HEIGHT - 30 ? HEIGHT : arrival.y;
+    const b = this.bounds;
+    const edgeX = arrival.x < b.left + 30 ? b.left : arrival.x > b.right - 30 ? b.right : arrival.x;
+    const edgeY = arrival.y < b.top + 30 ? b.top : arrival.y > b.bottom - 30 ? b.bottom : arrival.y;
     const x = edgeX - Math.cos(arrival.heading) * SPAWN_OUTSIDE;
     const y = edgeY - Math.sin(arrival.heading) * SPAWN_OUTSIDE;
     this.aircraft.push({
@@ -493,6 +532,7 @@ export class FlightsSim {
     this.aircraft = [];
     this.arrivals = [];
     this.praise = [];
+    this.locks = [];
     this.crash = null;
     this.drawing = null;
     this.paused = false;

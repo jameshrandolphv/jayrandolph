@@ -3,16 +3,16 @@ import type { Sfx, SfxName } from '../../games/sfx';
 import type { ScoreResult, ScoreStore } from '../../games/score.service';
 import {
   BACK_BUTTON,
-  FAST_BUTTON,
   HELP_BUTTON,
   MENU_BUTTON,
-  PAUSE_BUTTON,
   PLAY_BUTTON,
   QUIT_BUTTON,
   RESUME_BUTTON,
   RETRY_BUTTON,
   inOval,
+  fastButton,
   inRect,
+  pauseButton,
 } from './constants';
 import { FlightsSim, type SimEvent } from './sim';
 
@@ -75,10 +75,10 @@ export class FlightsGame {
         if (sim.paused) {
           if (inOval(RESUME_BUTTON, x, y)) this.resume();
           else if (inOval(QUIT_BUTTON, x, y)) this.quit();
-        } else if (inRect(PAUSE_BUTTON, x, y)) {
+        } else if (inRect(pauseButton(sim.bounds), x, y)) {
           this.sfx.play('click');
           sim.setPaused(true);
-        } else if (inRect(FAST_BUTTON, x, y)) {
+        } else if (inRect(fastButton(sim.bounds), x, y)) {
           this.sfx.play('click');
           sim.toggleFast();
         } else {

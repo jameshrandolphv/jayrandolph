@@ -2,6 +2,14 @@
 export const WIDTH = 960;
 export const HEIGHT = 640;
 
+/**
+ * How far past the 960 x 640 core the scenery reaches. The game fills its window, so on a wide or tall screen
+ * the grass, water and trees show beyond the core, where the airfield itself always sits.
+ */
+export const SCENERY_EXTENT = 1200;
+/** Trees and swirls are scattered this far past the core; further out the grass is plain. */
+export const DECOR_EXTENT = { x: 480, y: 360 };
+
 export type Kind = 'jet' | 'light' | 'heli';
 export const KINDS: readonly Kind[] = ['jet', 'light', 'heli'];
 
@@ -62,6 +70,8 @@ export const HELI_LAND_TICKS = 72;
 /** Landings within this many ticks of each other build a streak for the praise text. */
 export const STREAK_TICKS = 210;
 export const PRAISE_TICKS = 100;
+/** How long the flash lasts where a path snaps onto its landing zone. */
+export const LOCK_FLASH_TICKS = 32;
 
 /** Ticks the collision is shown before the game-over card. */
 export const CRASH_TICKS = 130;
@@ -78,9 +88,22 @@ export interface Rect {
 export const inRect = (r: Rect, x: number, y: number): boolean =>
   x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
 
-/** Corner buttons during play, kept clear of the field edge decoration. */
-export const FAST_BUTTON: Rect = { x: 10, y: HEIGHT - 58, w: 48, h: 48 };
-export const PAUSE_BUTTON: Rect = { x: WIDTH - 58, y: HEIGHT - 58, w: 48, h: 48 };
+/** The part of the field on screen; see `FlightsSim.bounds`. */
+export interface Bounds {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/** Corner buttons during play, in the bottom corners of whatever part of the field is on screen. */
+export const fastButton = (b: Bounds): Rect => ({ x: b.left + 10, y: b.bottom - 58, w: 48, h: 48 });
+export const pauseButton = (b: Bounds): Rect => ({
+  x: b.right - 58,
+  y: b.bottom - 58,
+  w: 48,
+  h: 48,
+});
 
 /** Oval buttons on the cards. `x`/`y` is the centre; hit testing uses the bounding ellipse. */
 export interface Oval {

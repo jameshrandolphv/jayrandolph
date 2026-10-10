@@ -7,6 +7,7 @@ import {
   COLORS,
   cornerButton,
   drawAirfield,
+  KIND_COLORS,
   drawFrame,
   fastIcon,
   howToRow,
@@ -20,20 +21,22 @@ import {
   rotorContext,
   SCRIPT_FONT,
   spinnerOffset,
-  stewardess,
   warningContext,
   zoneCentre,
   zoneGlow,
 } from './art';
 import {
   BACK_BUTTON,
-  FAST_BUTTON,
   HEIGHT,
   HELP_BUTTON,
+  LOCK_FLASH_TICKS,
   MENU_BUTTON,
-  PAUSE_BUTTON,
   PLAY_BUTTON,
   PRAISE_TICKS,
+  SCENERY_EXTENT,
+  fastButton,
+  pauseButton,
+  type Bounds,
   QUIT_BUTTON,
   RESUME_BUTTON,
   RETRY_BUTTON,
@@ -42,6 +45,7 @@ import {
 import type { FlightsGame } from './game';
 import { angleDiff, lerpAngle, type Point } from './geometry';
 import { landProgress, type Aircraft } from './sim';
+import { stewardess } from './stewardess';
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 const easeOut = (t: number): number => 1 - (1 - Math.min(1, Math.max(0, t))) ** 3;
@@ -63,6 +67,16 @@ interface AircraftView {
 
 const pad = (n: number): string => String(Math.min(n, 99999)).padStart(5, '0');
 
+/** A five-digit counter: white digits in a black box, each centred in its own cell like an odometer. */
+interface Counter {
+  box: Container;
+  cells: Text[];
+}
+
+const COUNTER = { w: 108, h: 36, digits: 5 };
+/** Bangers' line box sits its digits low; this centres the ink rather than the box. */
+const DIGIT_DROP = -3;
+
 /** Draws a FlightsSim; nothing here changes game state. */
 export class FlightsView {
   private readonly world = new Container();
@@ -80,14 +94,20 @@ export class FlightsView {
   private readonly gameOver = new Container();
   private readonly paused = new Container();
   private readonly dim = new Graphics()
-    .rect(-400, -400, WIDTH + 800, HEIGHT + 800)
+    .rect(-SCENERY_EXTENT, -SCENERY_EXTENT, WIDTH + SCENERY_EXTENT * 2, HEIGHT + SCENERY_EXTENT * 2)
     .fill({ color: 0x000000, alpha: 0.3 });
+  private readonly frame = new Graphics();
+  private readonly flashes = new Graphics();
+  /** HUD halves, pinned to the left and right edges of the screen. */
+  private readonly hudLeft = new Container();
+  private readonly hudRight = new Container();
+  private shownBounds = '';
 
   private readonly views = new Map<number, AircraftView>();
   private readonly praiseViews = new Map<number, Text>();
   private readonly titleBest: Text;
-  private readonly landedText: Text;
-  private readonly bestText: Text;
+  private readonly landedText: Counter;
+  private readonly bestText: Counter;
   private readonly fastButton: Container;
   private readonly pauseButton: Container;
   private readonly overCard = new Container();
@@ -107,34 +127,27 @@ export class FlightsView {
   ) {
     this.crashRing.visible = false;
 
-    this.landedText = this.digits();
-    this.bestText = this.digits();
+    this.landedText = this.counter();
+    this.bestText = this.counter();
     const landed = label('AIRCRAFT LANDED:', 28, COLORS.ink, {
       stroke: { color: 0xffffff, width: 5, join: 'round' },
       letterSpacing: 1,
     });
     landed.anchor.set(0, 0.5);
     landed.position.set(28, 34);
-    this.landedText.parent!.position.set(landed.x + landed.width + 64, 34);
+    this.landedText.box.position.set(landed.x + landed.width + 64, 34);
     const best = label('HI SCORE:', 28, COLORS.ink, {
       stroke: { color: 0xffffff, width: 5, join: 'round' },
       letterSpacing: 1,
     });
     best.anchor.set(1, 0.5);
     best.position.set(WIDTH - 140, 34);
-    this.bestText.parent!.position.set(WIDTH - 82, 34);
+    this.bestText.box.position.set(WIDTH - 82, 34);
     this.fastButton = cornerButton(fastIcon);
-    this.fastButton.position.set(FAST_BUTTON.x, FAST_BUTTON.y);
     this.pauseButton = cornerButton(pauseIcon);
-    this.pauseButton.position.set(PAUSE_BUTTON.x, PAUSE_BUTTON.y);
-    this.hud.addChild(
-      landed,
-      this.landedText.parent!,
-      best,
-      this.bestText.parent!,
-      this.fastButton,
-      this.pauseButton,
-    );
+    this.hudLeft.addChild(landed, this.landedText.box);
+    this.hudRight.addChild(best, this.bestText.box);
+    this.hud.addChild(this.hudLeft, this.hudRight, this.fastButton, this.pauseButton);
 
     this.titleBest = label('0', 64, COLORS.ink, {});
     this.buildTitle();
@@ -148,6 +161,7 @@ export class FlightsView {
     root.addChild(
       this.world,
       this.glows,
+      this.flashes,
       this.paths,
       this.shadows,
       this.warnings,
@@ -155,7 +169,7 @@ export class FlightsView {
       this.crashRing,
       this.markers,
       this.praises,
-      drawFrame(),
+      this.frame,
       this.hud,
       this.dim,
       this.title,
@@ -165,8 +179,9 @@ export class FlightsView {
     );
   }
 
-  update(alpha: number, deltaMs: number): void {
+  update(alpha: number, deltaMs: number, bounds: Bounds = this.game.sim.bounds): void {
     const { sim } = this.game;
+    this.fitScreen(bounds);
     if (sim.field !== this.field) this.loadField(sim.field);
     const phase = sim.phase;
     const inPlay = phase === 'playing' || phase === 'crashed';
@@ -174,6 +189,7 @@ export class FlightsView {
     this.syncAircraft(sim.aircraft, alpha, deltaMs);
     this.drawPaths(sim.aircraft, alpha);
     this.syncGlows();
+    this.syncFlashes();
     this.syncMarkers();
     this.syncPraise();
     this.syncCrash();
@@ -191,8 +207,9 @@ export class FlightsView {
     this.dim.visible = !inPlay || sim.paused;
     this.dim.alpha = phase === 'gameOver' ? Math.min(1, sim.phaseTicks / 20) : 1;
 
+    // Cards rise in from below the bottom of the screen.
     const slide = (c: Container): void => {
-      c.y = (1 - easeOut(sim.phaseTicks / 22)) * (HEIGHT + 40);
+      c.y = (1 - easeOut(sim.phaseTicks / 22)) * (bounds.bottom - CARD.y + 20);
     };
     if (this.title.visible) {
       slide(this.title);
@@ -206,6 +223,20 @@ export class FlightsView {
       slide(this.gameOver);
       this.updateGameOver();
     }
+  }
+
+  /** Pins the frame, HUD and corner buttons to the edges of the screen when its shape changes. */
+  private fitScreen(b: Bounds): void {
+    const key = `${b.left},${b.top},${b.right},${b.bottom}`;
+    if (key === this.shownBounds) return;
+    this.shownBounds = key;
+    drawFrame(this.frame, b);
+    this.hudLeft.position.set(b.left, b.top);
+    this.hudRight.position.set(b.right - WIDTH, b.top);
+    const fast = fastButton(b);
+    const pause = pauseButton(b);
+    this.fastButton.position.set(fast.x, fast.y);
+    this.pauseButton.position.set(pause.x, pause.y);
   }
 
   private loadField(field: Airfield): void {
@@ -332,7 +363,7 @@ export class FlightsView {
     g.stroke({ width: 4.5, color: 0xffffff, alpha: 0.95, cap: 'round' });
   }
 
-  /** Shows where the aircraft being steered can land. */
+  /** Shows where the aircraft being steered can land, and lights a zone up as a path snaps onto it. */
   private syncGlows(): void {
     const { sim } = this.game;
     const drawing =
@@ -340,9 +371,38 @@ export class FlightsView {
     const pulse = 0.55 + 0.25 * Math.sin(sim.clock * 0.15);
     this.field?.zones.forEach((zone, i) => {
       const glow = this.glowViews[i]!;
-      glow.visible = !!drawing && drawing.kind === zone.kind;
-      glow.alpha = pulse;
+      // The newest flash on this zone has the fewest ticks.
+      const ticks = Math.min(
+        ...sim.locks.filter((l) => l.zone === zone).map((l) => l.ticks),
+        LOCK_FLASH_TICKS,
+      );
+      const flash = 1 - ticks / LOCK_FLASH_TICKS;
+      const hint = !!drawing && drawing.kind === zone.kind ? pulse : 0;
+      glow.visible = flash > 0 || hint > 0;
+      // Full strength the moment the path snaps on, easing back down.
+      glow.alpha = Math.max(hint, Math.min(1, flash * 1.6));
     });
+  }
+
+  /** A burst of the aircraft's colour where its path met the landing zone. */
+  private syncFlashes(): void {
+    const g = this.flashes.clear();
+    for (const lock of this.game.sim.locks) {
+      const t = lock.ticks / LOCK_FLASH_TICKS;
+      const color = KIND_COLORS[lock.kind].light;
+      const fade = 1 - t;
+      g.circle(lock.x, lock.y, 14 + 18 * easeOut(t)).fill({ color, alpha: 0.75 * fade * fade });
+      g.circle(lock.x, lock.y, 18 + 46 * easeOut(t)).stroke({
+        width: 5 * fade + 1,
+        color,
+        alpha: fade,
+      });
+      g.circle(lock.x, lock.y, 10 + 30 * easeOut(t)).stroke({
+        width: 2,
+        color: 0xffffff,
+        alpha: fade,
+      });
+    }
   }
 
   private syncMarkers(): void {
@@ -407,32 +467,37 @@ export class FlightsView {
       .stroke({ width: 2, color: 0xffffff, alpha: 0.6 });
   }
 
-  /** A five-digit counter: white digits in a black box, its centre at the container's origin. */
-  private digits(): Text {
+  /** Its centre is at the box's origin. */
+  private counter(): Counter {
     const box = new Container();
-    box.addChild(
-      new Graphics()
-        .roundRect(-54, -18, 108, 36, 6)
-        .fill(0x1e1e1e)
-        .stroke({ width: 2, color: 0xffffff, alpha: 0.9 }),
-    );
-    const t = label('00000', 30, 0xffffff, { letterSpacing: 5 });
-    t.y = 1;
-    box.addChild(t);
-    return t;
+    const { w, h, digits } = COUNTER;
+    const g = new Graphics().roundRect(-w / 2, -h / 2, w, h, 6).fill(0x1e1e1e);
+    const cell = (w - 8) / digits;
+    // Faint dividers between the digit cells, like the original's counter.
+    for (let i = 1; i < digits; i++) g.rect(-w / 2 + 4 + cell * i - 0.5, -h / 2 + 5, 1, h - 10);
+    g.fill({ color: 0xffffff, alpha: 0.18 });
+    g.roundRect(-w / 2, -h / 2, w, h, 6).stroke({ width: 2, color: 0xffffff, alpha: 0.9 });
+    box.addChild(g);
+    const cells = Array.from({ length: digits }, (_, i) => {
+      const t = label('0', 30, 0xffffff, {});
+      t.position.set(-w / 2 + 4 + cell * (i + 0.5), DIGIT_DROP);
+      box.addChild(t);
+      return t;
+    });
+    return { box, cells };
   }
 
-  private setCount(t: Text, n: number, key: 'shownLanded' | 'shownBest'): void {
+  private setCount(counter: Counter, n: number, key: 'shownLanded' | 'shownBest'): void {
     if (this[key] === n) return;
     this[key] = n;
-    t.text = pad(n);
+    [...pad(n)].forEach((digit, i) => (counter.cells[i]!.text = digit));
   }
 
   private card(layer: Container, withLady: boolean): void {
     layer.addChild(paperCard(CARD.x, CARD.y, CARD.w, CARD.h));
     if (!withLady) return;
     const lady = stewardess();
-    lady.position.set(580, 92);
+    lady.position.set(536, 60);
     const mask = new Graphics().roundRect(CARD.x, CARD.y, CARD.w, CARD.h, 24).fill(0xffffff);
     lady.mask = mask;
     layer.addChild(mask, lady);

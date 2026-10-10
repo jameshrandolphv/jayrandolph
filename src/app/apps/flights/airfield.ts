@@ -1,4 +1,4 @@
-import { HEIGHT, WIDTH, type Kind } from './constants';
+import { DECOR_EXTENT, HEIGHT, SCENERY_EXTENT, WIDTH, type Kind } from './constants';
 import { distToPolyline, distToSegment, segmentDistance, spline, type Point } from './geometry';
 
 export interface Runway {
@@ -158,7 +158,16 @@ const makeWater = (
       const across = base + range(rng, -40, 40);
       controls.push(horizontal ? { x: along, y: across } : { x: across, y: along });
     }
-    return { water: spline(controls, 10), waterWidth: 0, seaSide };
+    // Runs on straight past both ends so the coast carries on however wide the window is.
+    const first = controls[0]!;
+    const last = controls[controls.length - 1]!;
+    const out = SCENERY_EXTENT;
+    const water = [
+      horizontal ? { x: first.x - out, y: first.y } : { x: first.x, y: first.y - out },
+      ...spline(controls, 10),
+      horizontal ? { x: last.x + out, y: last.y } : { x: last.x, y: last.y + out },
+    ];
+    return { water, waterWidth: 0, seaSide };
   }
   if (theme === 'river') {
     // Enters on one side and leaves on the opposite one, bending through the middle.
@@ -171,9 +180,26 @@ const makeWater = (
         i === 0 || i === 4 ? range(rng, 0.1, 0.9) * span : range(rng, 0.15, 0.85) * span;
       controls.push(horizontal ? { x: along, y: across } : { x: across, y: along });
     }
-    return { water: spline(controls, 12), waterWidth: range(rng, 38, 54), seaSide };
+    return {
+      water: extendEnds(spline(controls, 12), SCENERY_EXTENT),
+      waterWidth: range(rng, 38, 54),
+      seaSide,
+    };
   }
   return { water: [], waterWidth: 0, seaSide };
+};
+
+/** Continues a line straight on past both ends, in the direction it was heading. */
+const extendEnds = (line: Point[], by: number): Point[] => {
+  const ahead = (a: Point, b: Point): Point => {
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    return { x: b.x + ((b.x - a.x) / len) * by, y: b.y + ((b.y - a.y) / len) * by };
+  };
+  return [
+    ahead(line[1]!, line[0]!),
+    ...line,
+    ahead(line[line.length - 2]!, line[line.length - 1]!),
+  ];
 };
 
 /** Every point along a zone, plus a margin around it, has to be dry land. */
@@ -333,13 +359,20 @@ const placeBuildings = (rng: () => number, apron: Box): Box[] => {
 
 const scatterTrees = (rng: () => number, field: Omit<Airfield, 'trees' | 'swirls'>): Tree[] => {
   const trees: Tree[] = [];
-  const target = 14 + Math.floor(rng() * 14);
-  for (let tries = 0; tries < 400 && trees.length < target; tries++) {
+  // About 14-28 on the core field, and as many again in proportion on the scenery around it.
+  const target = 50 + Math.floor(rng() * 40);
+  const area = {
+    x0: -DECOR_EXTENT.x,
+    x1: WIDTH + DECOR_EXTENT.x,
+    y0: -DECOR_EXTENT.y,
+    y1: HEIGHT + DECOR_EXTENT.y,
+  };
+  for (let tries = 0; tries < 1600 && trees.length < target; tries++) {
     // Trees grow in little clumps.
     const seed = trees.length > 0 && rng() < 0.55 ? trees[Math.floor(rng() * trees.length)]! : null;
     const t: Tree = seed
       ? { x: seed.x + range(rng, -30, 30), y: seed.y + range(rng, -30, 30), r: range(rng, 9, 15) }
-      : { x: range(rng, 20, WIDTH - 20), y: range(rng, 50, HEIGHT - 20), r: range(rng, 9, 16) };
+      : { x: range(rng, area.x0, area.x1), y: range(rng, area.y0, area.y1), r: range(rng, 9, 16) };
     if (wet(field, t, t.r + 4)) continue;
     if (field.zones.some((z) => footprintDistance(t, z) < t.r + 22)) continue;
     if (
@@ -401,9 +434,9 @@ export function generateAirfield(rng: () => number): Airfield {
     const apron = placeApron(rng, withZones);
     const buildings = apron ? placeBuildings(rng, apron) : [];
     const trees = scatterTrees(rng, { ...withZones, apron, buildings });
-    const swirls = Array.from({ length: 3 + Math.floor(rng() * 3) }, () => ({
-      x: range(rng, 0, WIDTH),
-      y: range(rng, 0, HEIGHT),
+    const swirls = Array.from({ length: 8 + Math.floor(rng() * 5) }, () => ({
+      x: range(rng, -DECOR_EXTENT.x, WIDTH + DECOR_EXTENT.x),
+      y: range(rng, -DECOR_EXTENT.y, HEIGHT + DECOR_EXTENT.y),
       scale: range(rng, 0.7, 1.2),
       flip: rng() < 0.5,
     }));

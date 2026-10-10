@@ -8,7 +8,7 @@ import { RouterLink } from '@angular/router';
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { style: 'display: contents' },
   template: `
-    <div class="window" [class.compact]="compact()" [class.portrait]="portrait()" [class.landscape]="landscape()" [class.wide]="wide()">
+    <div class="window" [class.compact]="compact()" [class.portrait]="portrait()" [class.landscape]="landscape()">
       <header class="titlebar">
         <span class="lights">
           <a class="l-close" [routerLink]="closeLink()" aria-label="Close window"></a>
@@ -42,8 +42,6 @@ export class WindowFrame {
   readonly portrait = input(false, { transform: booleanAttribute });
   /** Window sized to a 4:3 content area; fills the workspace on small screens. */
   readonly landscape = input(false, { transform: booleanAttribute });
-  /** Window sized to a 3:2 content area; fills the workspace on small screens. */
-  readonly wide = input(false, { transform: booleanAttribute });
 
   constructor() {
     // The menu bar and dock sit outside the window, so the maximised state is a class on the page root.

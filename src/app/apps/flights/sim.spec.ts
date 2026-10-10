@@ -6,6 +6,7 @@ import {
   HEIGHT,
   KIND_SPECS,
   LAND_TICKS,
+  LOCK_FLASH_TICKS,
   SPAWN_WARNING,
   WIDTH,
   type Kind,
@@ -134,6 +135,46 @@ describe('FlightsSim', () => {
     expect(sim.drainEvents()).toContain('land');
     ticks(sim, LAND_TICKS);
     expect(sim.aircraft).not.toContain(a);
+  });
+
+  it('flashes where a path snaps onto its zone, then lets the flash fade', () => {
+    const sim = playing();
+    const r = jetRunway(sim);
+    const ux = Math.cos(r.angle);
+    const uy = Math.sin(r.angle);
+    const a = place(sim, 'jet', r.x - ux * 120, r.y - uy * 120, r.angle);
+    draw(sim, a, [[r.x + ux * 40, r.y + uy * 40]]);
+    expect(sim.locks).toHaveLength(1);
+    expect(sim.locks[0]).toMatchObject({ kind: 'jet', zone: r });
+    expect(Math.hypot(sim.locks[0]!.x - r.x, sim.locks[0]!.y - r.y)).toBeLessThan(r.length / 2);
+    ticks(sim, LOCK_FLASH_TICKS);
+    expect(sim.locks).toEqual([]);
+  });
+
+  it('uses the whole screen when it is wider than the airfield', () => {
+    const sim = playing();
+    sim.bounds = { left: -300, top: -100, right: WIDTH + 300, bottom: HEIGHT + 100 };
+    const a = place(sim, 'jet', WIDTH + 200, 300, 0);
+    let furthest = 0;
+    for (let i = 0; i < 1500; i++) {
+      sim.step();
+      furthest = Math.max(furthest, a.x);
+      expect(a.x).toBeLessThan(WIDTH + 300);
+    }
+    // Flew on past the airfield's own edge before turning back at the screen's.
+    expect(furthest).toBeGreaterThan(WIDTH + 240);
+
+    const arrivals = new FlightsSim(seededRng(9));
+    arrivals.bounds = sim.bounds;
+    arrivals.start();
+    for (let t = 0; t < 3000 && arrivals.arrivals.length === 0; t++) arrivals.step();
+    const m = arrivals.arrivals[0]!;
+    const onEdge =
+      Math.abs(m.x - (-300 + 26)) < 1 ||
+      Math.abs(m.x - (WIDTH + 300 - 26)) < 1 ||
+      Math.abs(m.y - (-100 + 26)) < 1 ||
+      Math.abs(m.y - (HEIGHT + 100 - 26)) < 1;
+    expect(onEdge).toBe(true);
   });
 
   it("won't land an aircraft on another kind's zone", () => {
