@@ -92,7 +92,7 @@ export class FsItem {
     if (!img) return;
     const items: ContextMenuItem[] = [
       { label: 'Open in Film Sim', action: () => this.openInFilmSim(img) },
-      { label: 'Use as Wallpaper', action: () => void this.wallpaper.setFromUrl(img.src, img.name) },
+      { label: 'Use as Wallpaper', action: () => void this.wallpaper.setFromUrl(img.src, img.name, { width: img.width, height: img.height }) },
     ];
     if (this.wallpaper.custom()) items.push({ label: 'Reset Wallpaper', action: () => void this.wallpaper.reset() });
     this.contextMenu.open(x, y, items);

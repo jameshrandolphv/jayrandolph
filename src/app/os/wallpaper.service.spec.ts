@@ -45,6 +45,32 @@ describe('WallpaperStore', () => {
 });
 
 describe('fitWithin', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const bitmap = (width: number, height: number) => ({ width, height, close: vi.fn() });
+
+  it('asks the decoder for the small version directly when the size is known', async () => {
+    const create = vi.fn().mockResolvedValue(bitmap(2560, 1699));
+    vi.stubGlobal('createImageBitmap', create);
+    const draw = vi.fn();
+    const toBlob = vi.fn((cb: BlobCallback) => cb(imageBlob([7])));
+    vi.spyOn(document, 'createElement').mockReturnValue({ getContext: () => ({ drawImage: draw }), toBlob } as unknown as HTMLCanvasElement);
+
+    const result = await fitWithin(imageBlob(), 2560, { width: 10424, height: 6918 });
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0][1]).toMatchObject({ resizeWidth: 2560, resizeHeight: 1699 });
+    expect(await bytesOf(result)).toEqual([7]);
+    vi.restoreAllMocks();
+  });
+
+  it('falls back to a plain decode when resizing while decoding is not supported', async () => {
+    const create = vi.fn().mockRejectedValueOnce(new Error('unsupported')).mockResolvedValueOnce(bitmap(100, 50));
+    vi.stubGlobal('createImageBitmap', create);
+    const blob = imageBlob();
+    expect(await fitWithin(blob, 2560, { width: 10424, height: 6918 })).toBe(blob);
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps the image as it is when it cannot be decoded here', async () => {
     const blob = imageBlob();
     expect(await fitWithin(blob, 100)).toBe(blob);
@@ -118,10 +144,25 @@ describe('WallpaperService', () => {
   });
 
   it('keeps the current wallpaper and says so when the image cannot be fetched', async () => {
-    serve(false);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }));
     const service = await create();
     await service.setFromUrl('https://s3.example/a.jpg', 'A');
     expect(service.custom()).toBe(false);
-    expect(service.status()).toBe("Couldn't set the wallpaper");
+    expect(service.status()).toBe("Couldn't download the photo");
+  });
+
+  it('says when the photo link has expired', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 403 }));
+    const service = await create();
+    await service.setFromUrl('https://s3.example/a.jpg', 'A');
+    expect(service.status()).toBe('Photo link expired, reload');
+  });
+
+  it('says when the photo server refuses the download outright, as a cross-origin block does', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+    const service = await create();
+    await service.setFromUrl('https://s3.example/a.jpg', 'A');
+    expect(service.custom()).toBe(false);
+    expect(service.status()).toBe("Couldn't download the photo");
   });
 });

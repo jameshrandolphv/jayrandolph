@@ -71,13 +71,39 @@ export class WallpaperStore {
   }
 }
 
-/** Shrinks an image so its longest edge is at most `maxEdge`; one that is already small, or can't be decoded here, is kept as it is. */
-export async function fitWithin(blob: Blob, maxEdge: number): Promise<Blob> {
+export interface ImageSize {
+  width: number;
+  height: number;
+}
+
+/**
+ * Shrinks an image so its longest edge is at most `maxEdge`; one that is already small, or can't be decoded
+ * here, is kept as it is. When the size is known the decoder is asked for the small version directly, since
+ * decoding a 70 megapixel scan in full can exhaust a phone's memory.
+ */
+export async function fitWithin(blob: Blob, maxEdge: number, size?: ImageSize): Promise<Blob> {
   if (typeof createImageBitmap === 'undefined' || typeof document === 'undefined') return blob;
+  const decode = async (): Promise<{ bitmap: ImageBitmap; resized: boolean }> => {
+    const scale = size ? maxEdge / Math.max(size.width, size.height) : 1;
+    if (size && scale < 1) {
+      try {
+        const bitmap = await createImageBitmap(blob, {
+          resizeWidth: Math.max(1, Math.round(size.width * scale)),
+          resizeHeight: Math.max(1, Math.round(size.height * scale)),
+          resizeQuality: 'high',
+        });
+        return { bitmap, resized: true };
+      } catch {
+        // Resizing while decoding isn't supported everywhere.
+      }
+    }
+    return { bitmap: await createImageBitmap(blob), resized: false };
+  };
   try {
-    const bitmap = await createImageBitmap(blob);
+    const { bitmap, resized } = await decode();
     const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
-    if (scale === 1) {
+    // Already small enough and untouched: the original file is the best copy.
+    if (!resized && scale === 1) {
       bitmap.close();
       return blob;
     }
@@ -116,19 +142,32 @@ export class WallpaperService {
     void this.restore();
   }
 
-  /** Makes the image at `src` the wallpaper and remembers it. */
-  async setFromUrl(src: string, name: string): Promise<void> {
+  /** Makes the image at `src` the wallpaper and remembers it. `size` is the image's own size, if known. */
+  async setFromUrl(src: string, name: string, size?: ImageSize): Promise<void> {
     const request = ++this.request;
     this.say('Setting wallpaper…', 0);
+    let res: Response;
     try {
-      const res = await fetch(src);
-      if (!res.ok) throw new Error(`Image request failed: ${res.status}`);
-      const blob = await fitWithin(await res.blob(), WALLPAPER_MAX_EDGE);
+      res = await fetch(src);
+    } catch (error) {
+      // No response at all: offline, or the photo server doesn't allow this site's address.
+      console.warn('Wallpaper: the photo could not be downloaded', error);
+      if (request === this.request) this.say("Couldn't download the photo", STATUS_MS);
+      return;
+    }
+    try {
+      if (!res.ok) {
+        console.warn('Wallpaper: the photo request failed with', res.status);
+        if (request === this.request) this.say(res.status === 403 ? 'Photo link expired, reload' : "Couldn't download the photo", STATUS_MS);
+        return;
+      }
+      const blob = await fitWithin(await res.blob(), WALLPAPER_MAX_EDGE, size);
       if (request !== this.request) return;
       this.show(blob);
       this.say(null);
       await this.store.save(name, blob);
-    } catch {
+    } catch (error) {
+      console.warn('Wallpaper: could not be set', error);
       if (request === this.request) this.say("Couldn't set the wallpaper", STATUS_MS);
     }
   }

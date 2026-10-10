@@ -41,11 +41,16 @@ import { LongestView } from './view';
     </app-window-frame>
   `,
   styles: `
+    /* Film Sim's global .stage gives it a margin, border and shadow; the game runs right to the window's edges. */
     .stage {
       position: relative;
       display: flex;
       flex: 1 1 0;
       min-height: 0;
+      margin: 0;
+      border: 0;
+      border-radius: 0;
+      box-shadow: none;
       background: #000;
     }
     .screen {
@@ -71,7 +76,7 @@ import { LongestView } from './view';
       }
     }
     @media (max-width: 760px) and (orientation: portrait) {
-      /* Phones in portrait: the 4:3 game on top, solid arrow keys filling the space below, for resting the phone on a desk. */
+      /* Phones in portrait: the 4:3 game on top, solid arrow keys at the bottom of the space below, for resting the phone on a desk. */
       .stage {
         flex-direction: column;
         background: #1c1c24;

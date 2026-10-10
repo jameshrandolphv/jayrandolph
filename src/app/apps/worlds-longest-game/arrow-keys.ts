@@ -58,7 +58,8 @@ export const keysVector = (held: ReadonlySet<ArrowKey>): StickVector => {
   styles: `
     :host {
       display: grid;
-      place-items: center;
+      /* Sits on the bottom edge of whatever room it is given. */
+      place-items: end center;
       width: 100%;
       height: 100%;
       container-type: size;
