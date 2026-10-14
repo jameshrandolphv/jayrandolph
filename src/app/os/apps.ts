@@ -36,6 +36,12 @@ export const APPS: readonly AppDef[] = [
     load: () => import('../apps/flights/flights').then((m) => m.Flights),
   },
   {
+    id: 'chaos-park',
+    name: 'Chaos Park',
+    icon: 'park',
+    load: () => import('../apps/chaos-park/chaos-park').then((m) => m.ChaosPark),
+  },
+  {
     id: 'write-stuff',
     name: 'Write Stuff',
     icon: 'write',

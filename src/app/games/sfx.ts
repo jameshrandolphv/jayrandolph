@@ -12,7 +12,8 @@ export type SfxName =
   | 'lock'
   | 'land'
   | 'alert'
-  | 'crash';
+  | 'crash'
+  | 'slip';
 
 interface Tone {
   from: number;
@@ -59,6 +60,10 @@ const TONES: Readonly<Record<SfxName, readonly Tone[]>> = {
   crash: [
     { from: 260, to: 40, seconds: 0.55, type: 'sawtooth', volume: 0.09 },
     { from: 130, to: 30, seconds: 0.7, type: 'square', volume: 0.05, delay: 0.05 },
+  ],
+  slip: [
+    { from: 1400, to: 500, seconds: 0.18, type: 'triangle', volume: 0.06 },
+    { from: 900, to: 1300, seconds: 0.12, type: 'sine', volume: 0.04, delay: 0.14 },
   ],
 };
 

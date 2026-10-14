@@ -176,6 +176,29 @@ export class IconDefs {}
             <path d="M14 31.2h30" stroke="#f6a01a" stroke-width="2" />
           </g>
         }
+        @case ('park') {
+          <!-- Chaos Park: the loop round a park from above, with a pond, trees and a taxi on the drive. -->
+          <rect x="4" y="4" width="56" height="56" rx="13" fill="#4f9a34" stroke="#2f6a20" />
+          <g clip-path="url(#ico-app-clip)">
+            <rect x="9" y="12" width="46" height="40" rx="17" fill="none" stroke="#c9c3b6" stroke-width="12" />
+            <rect x="9" y="12" width="46" height="40" rx="17" fill="none" stroke="#5d5b60" stroke-width="9" />
+            <rect x="9" y="12" width="46" height="40" rx="17" fill="none" stroke="#fff" stroke-width="0.9" stroke-dasharray="2.5 2.5" />
+            <rect x="15.5" y="18.5" width="33" height="27" rx="11" fill="#93d465" />
+            <ellipse cx="38" cy="29" rx="7.5" ry="5" fill="#5ab6e4" stroke="#8fb36a" stroke-width="1.2" />
+            <ellipse cx="36" cy="27.5" rx="4" ry="2" fill="#8fd0f0" />
+            <g stroke="#2e6a24" stroke-width="0.7">
+              <circle cx="22" cy="26" r="3.6" fill="#5fa83b" /><circle cx="25" cy="36" r="3.2" fill="#6cb544" />
+              <circle cx="20" cy="39" r="2.6" fill="#f3a0bf" /><circle cx="41" cy="39" r="3" fill="#5fa83b" />
+            </g>
+            <ellipse cx="32" cy="32" rx="34" ry="22" fill="url(#ico-gloss)" opacity="0.25" transform="translate(0 -18)" />
+          </g>
+          <g transform="translate(38 12)" stroke="#2e2a2c" stroke-width="0.9">
+            <rect x="-6" y="-3.6" width="12" height="7.2" rx="2.2" fill="#f7c531" />
+            <rect x="-2.5" y="-2.6" width="5" height="5.2" rx="1" fill="#37506b" stroke="none" />
+          </g>
+          <circle cx="12" cy="40" r="2.6" fill="#ff8a00" stroke="#2e2a2c" stroke-width="0.8" />
+          <circle cx="12.4" cy="36.4" r="1.7" fill="#3b2a20" stroke="#2e2a2c" stroke-width="0.6" />
+        }
         @case ('write') {
           <rect x="6" y="14" width="34" height="44" rx="1.5" fill="url(#ico-note)" stroke="#a8923a" stroke-width="0.8" transform="rotate(-14 23 36)" />
           <g transform="rotate(-9 28 28)">
