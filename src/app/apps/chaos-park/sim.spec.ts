@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { CRASH_TICKS, GAME_OVER_LOCKOUT, KIND_SPECS, LANES, type Kind } from './constants';
-import { screenToPark } from './game';
+import { BOOST, CRASH_TICKS, GAME_OVER_LOCKOUT, KIND_SPECS, LANES, type Kind } from './constants';
+import { ChaosParkGame, screenToPark } from './game';
 import { generatePark, laneOffset, pose, seededRng, wrap } from './park';
 import { ChaosParkSim, laneOverlap, lapsLeft, maxMovers, type Mover } from './sim';
 
@@ -42,6 +42,8 @@ const put = (
     width: spec.width,
     len: spec.len,
     speed: spec.speed,
+    baseSpeed: spec.speed,
+    boosted: false,
     dir: 1,
     state: 'track',
     s,
@@ -73,6 +75,7 @@ const put = (
     onIce: new Set(),
     ...options,
   };
+  m.baseSpeed = m.speed;
   sim.movers.push(m);
   return m;
 };
@@ -298,6 +301,94 @@ describe('ChaosParkSim', () => {
     expect(laneOverlap(0, 1, 1, 1)).toBe(0);
     expect(laneOverlap(0, 2, 1, 1)).toBe(1);
     expect(laneOverlap(0.5, 1, 1, 2)).toBe(0.5);
+  });
+});
+
+describe('speed swipes', () => {
+  it('speeds a mover up and back down to its usual speed', () => {
+    const sim = playing();
+    const m = put(sim, 'runner', 100, 1);
+    expect(sim.setBoost(m.id, true)).toBe(true);
+    expect(m.speed).toBeCloseTo(KIND_SPECS.runner.speed * BOOST);
+    expect(sim.setBoost(m.id, true)).toBe(false);
+    expect(sim.setBoost(m.id, false)).toBe(true);
+    expect(m.speed).toBeCloseTo(KIND_SPECS.runner.speed);
+    expect(sim.drainEvents()).toEqual(['boost', 'bump', 'brake']);
+  });
+
+  it('lets a boosted mover outrun one that would have caught it', () => {
+    const sim = playing();
+    const walker = put(sim, 'walker', 160, 1);
+    // A slightly quicker walker behind would catch it unboosted.
+    const behind = put(sim, 'walker', 100, 1, { speed: KIND_SPECS.walker.speed * 1.08 });
+    sim.setBoost(walker.id, true);
+    ticks(sim, 600);
+    expect(sim.phase).toBe('playing');
+    expect(walker.s - behind.s).toBeGreaterThan(60);
+  });
+
+  it('finishes laps sooner while boosted', () => {
+    const sim = playing();
+    const m = put(sim, 'biker', 0, 0, { laps: 5 });
+    sim.setBoost(m.id, true);
+    ticks(sim, Math.ceil(sim.park.track.length / (m.baseSpeed * BOOST)) + 2);
+    expect(sim.score).toBe(1);
+  });
+
+  it('can rear-end something when boosted into it', () => {
+    const sim = playing();
+    put(sim, 'runner', 160, 1);
+    const behind = put(sim, 'runner', 100, 1);
+    sim.setBoost(behind.id, true);
+    while (sim.phase === 'playing' && sim.playTicks < 300) sim.step();
+    expect(sim.phase).toBe('crashed');
+  });
+});
+
+describe('ChaosParkGame swipes', () => {
+  const setup = () => {
+    const scores = { getBest: async () => 0, submit: async () => ({ best: 0, isNewBest: false }) };
+    const sfx = { play() {}, unlock() {}, dispose() {} };
+    const game = new ChaosParkGame(scores as never, sfx as never, seededRng(3));
+    game.sim.start();
+    game.sim.movers = [];
+    game.sim.park = { ...game.sim.park, shortcuts: [], ice: [] };
+    (game.sim as unknown as { spawn: () => void }).spawn = () => undefined;
+    const m = put(game.sim, 'runner', 100, 1);
+    return { game, m };
+  };
+  const swipe = (game: ChaosParkGame, m: Mover, dx: number, dy: number) => {
+    game.pointerDown(1, m.x, m.y);
+    game.pointerMove(1, m.x + dx, m.y + dy);
+    game.pointerUp(1);
+  };
+
+  it('changes lane on a swipe across the road', () => {
+    const { game, m } = setup();
+    const out = game.sim.outward(m);
+    swipe(game, m, out.x * 30, out.y * 30);
+    expect(m.target).toBe(2);
+    expect(m.boosted).toBe(false);
+  });
+
+  it('boosts on a swipe forward and slows on a swipe back', () => {
+    const { game, m } = setup();
+    const ahead = game.sim.forward(m);
+    swipe(game, m, ahead.x * 30, ahead.y * 30);
+    expect(m.boosted).toBe(true);
+    expect(m.target).toBe(1);
+    swipe(game, m, -ahead.x * 30, -ahead.y * 30);
+    expect(m.boosted).toBe(false);
+  });
+
+  it('treats forward as the way a wrong-way mover is going', () => {
+    const { game, m } = setup();
+    m.dir = -1;
+    const ahead = game.sim.forward(m);
+    const t = game.sim.park.track.tangents[Math.round(m.s / game.sim.park.track.step)]!;
+    expect(ahead.x).toBeCloseTo(-t.x);
+    swipe(game, m, ahead.x * 30, ahead.y * 30);
+    expect(m.boosted).toBe(true);
   });
 });
 

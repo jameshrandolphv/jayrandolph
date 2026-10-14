@@ -1,4 +1,5 @@
 import {
+  BOOST,
   CARS_FROM_SCORE,
   COLLIDE_FACTOR,
   CRASH_TICKS,
@@ -43,7 +44,7 @@ import {
 } from './park';
 
 export type Phase = 'title' | 'help' | 'playing' | 'crashed' | 'gameOver';
-export type SimEvent = 'lap' | 'alert' | 'crash' | 'slip' | 'shift' | 'bump';
+export type SimEvent = 'lap' | 'alert' | 'crash' | 'slip' | 'shift' | 'bump' | 'boost' | 'brake';
 
 /**
  * Where a mover is: walking in from the street, on the loop, cutting across the park, or heading out. Only movers on
@@ -56,7 +57,11 @@ export interface Mover {
   kind: Kind;
   width: 1 | 2;
   len: number;
+  /** Its speed now: `baseSpeed`, or faster while boosted. */
   speed: number;
+  baseSpeed: number;
+  /** Swiped forward to go faster; swiping back returns it to `baseSpeed`. */
+  boosted: boolean;
   /** 1 counterclockwise (the right way round), -1 the wrong way. */
   dir: 1 | -1;
   state: MoverState;
@@ -222,6 +227,29 @@ export class ChaosParkSim {
     }
     m.target = next;
     this.events.push('shift');
+    return true;
+  }
+
+  /** The direction a mover is travelling at its spot, for telling a forward swipe from a backward one. */
+  forward(m: Mover): Point {
+    const { track } = this.park;
+    const t =
+      track.tangents[Math.round(wrap(m.s, track.length) / track.step) % track.tangents.length]!;
+    return { x: t.x * m.dir, y: t.y * m.dir };
+  }
+
+  /** Speeds a mover up (`true`) or returns it to its usual speed (`false`). */
+  setBoost(id: number, on: boolean): boolean {
+    if (this.phase !== 'playing' || this.paused) return false;
+    const m = this.movers.find((o) => o.id === id && o.state === 'track');
+    if (!m) return false;
+    if (m.boosted === on) {
+      this.events.push('bump');
+      return false;
+    }
+    m.boosted = on;
+    m.speed = m.baseSpeed * (on ? BOOST : 1);
+    this.events.push(on ? 'boost' : 'brake');
     return true;
   }
 
@@ -569,12 +597,15 @@ export class ChaosParkSim {
     const laps = Number.isFinite(lo)
       ? lo + Math.floor(this.rng() ** 1.6 * (hi - lo + 1))
       : Infinity;
+    const speed = spec.speed * (1 + (this.rng() * 2 - 1) * SPEED_SPREAD);
     return {
       id: this.nextId++,
       kind,
       width: spec.width,
       len: spec.len,
-      speed: spec.speed * (1 + (this.rng() * 2 - 1) * SPEED_SPREAD),
+      speed,
+      baseSpeed: speed,
+      boosted: false,
       dir: 1,
       state: 'track',
       s: 0,
