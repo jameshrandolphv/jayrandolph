@@ -906,6 +906,28 @@ export const moverShadow = (kind: Kind, width: number, len: number): Graphics =>
   return g;
 };
 
+/** White speed lines trailing behind a boosted mover, drawn facing +x like the mover. */
+export const speedStreaks = (width: number, len: number): Graphics => {
+  const g = new Graphics();
+  const half = (width * LANE_W) / 2 - 4;
+  const back = -len / 2 - 3;
+  for (const [y, l] of [
+    [-half * 0.7, 10],
+    [0, 15],
+    [half * 0.7, 10],
+  ] as const)
+    g.moveTo(back, y).lineTo(back - l, y);
+  g.stroke({ width: 4, color: COLORS.ink, alpha: 0.35, cap: 'round' });
+  for (const [y, l] of [
+    [-half * 0.7, 10],
+    [0, 15],
+    [half * 0.7, 10],
+  ] as const)
+    g.moveTo(back, y).lineTo(back - l, y);
+  g.stroke({ width: 2.2, color: 0xffffff, cap: 'round' });
+  return g;
+};
+
 /** The red ring round a mover about to collide. */
 export const warnRing = (width: number, len: number): Graphics => {
   const w = width * LANE_W + 4;

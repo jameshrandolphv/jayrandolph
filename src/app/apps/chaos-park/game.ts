@@ -28,11 +28,15 @@ const SOUNDS: Readonly<Record<SimEvent, SfxName>> = {
   slip: 'slip',
   shift: 'pick',
   bump: 'click',
+  boost: 'boost',
+  brake: 'brake',
 };
 
-/** A swipe has to travel this far (screen logical px) to count, and mostly across the road rather than along it. */
+/**
+ * A swipe has to travel this far (screen logical px) to count. Mostly across the road changes lane; mostly along it
+ * speeds up (forward) or slows back down (backward).
+ */
 const SWIPE_MIN = 12;
-const SWIPE_ACROSS = 0.4;
 
 /** The park is landscape; on a portrait screen it is turned a quarter clockwise. */
 export const isPortrait = (size: LogicalSize): boolean => size.height > size.width;
@@ -126,7 +130,10 @@ export class ChaosParkGame {
     }
   }
 
-  /** One lane per swipe: the first time a drag goes far enough across the road, the mover shifts that way. */
+  /**
+   * One action per swipe, decided the first time a drag goes far enough: across the road shifts a lane that way,
+   * along it in the direction of travel speeds the mover up, and back against it returns it to its usual speed.
+   */
   pointerMove(pointer: number, x: number, y: number): void {
     const swipe = this.swipes.get(pointer);
     if (!swipe || swipe.used) return;
@@ -141,11 +148,12 @@ export class ChaosParkGame {
     }
     const dir = screenDirToPark(this.size, dx, dy);
     const out = this.sim.outward(mover);
+    const ahead = this.sim.forward(mover);
     const across = (dir.x * out.x + dir.y * out.y) / len;
-    // A drag along the road is ignored until it bends across it.
-    if (Math.abs(across) < SWIPE_ACROSS) return;
+    const along = (dir.x * ahead.x + dir.y * ahead.y) / len;
     swipe.used = true;
-    this.sim.shift(mover.id, across > 0 ? 1 : -1);
+    if (Math.abs(across) >= Math.abs(along)) this.sim.shift(mover.id, across > 0 ? 1 : -1);
+    else this.sim.setBoost(mover.id, along > 0);
   }
 
   pointerUp(pointer: number): void {

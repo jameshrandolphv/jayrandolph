@@ -27,6 +27,7 @@ import {
   moverShadow,
   roadStrip,
   sample,
+  speedStreaks,
   warnRing,
   type Look,
 } from './art';
@@ -60,6 +61,8 @@ interface MoverView {
   root: Container;
   shadow: Graphics;
   limbs: Graphics;
+  /** Speed lines behind it while boosted. */
+  streaks: Graphics;
   warn: Graphics;
   badge: Container;
   /** What the badge shows now, so it is only rebuilt when that changes. */
@@ -278,6 +281,9 @@ export class ChaosParkView {
       v.root.position.set(x, y);
       v.root.rotation = v.angle + wobble;
       v.root.alpha = m.alpha;
+      v.streaks.visible = m.boosted;
+      // The lines flicker and trail a little further as it goes.
+      if (m.boosted) v.streaks.x = -2 - ((sim.clock + alpha) % 6);
       v.shadow.position.set(x + SHADOW.x, y + SHADOW.y);
       v.shadow.rotation = v.root.rotation;
       v.shadow.alpha = 0.22 * m.alpha;
@@ -307,7 +313,9 @@ export class ChaosParkView {
     const look: Look = { kind: m.kind, look: m.look, season: this.game.sim.park.season };
     const root = new Container();
     const limbs = new Graphics();
-    root.addChild(limbs, moverBody(look));
+    const streaks = speedStreaks(m.width, m.len);
+    streaks.visible = false;
+    root.addChild(streaks, limbs, moverBody(look));
     const shadow = moverShadow(m.kind, m.width, m.len);
     const warn = warnRing(m.width, m.len);
     warn.visible = false;
@@ -322,6 +330,7 @@ export class ChaosParkView {
       root,
       shadow,
       limbs,
+      streaks,
       warn,
       badge,
       badgeKey: '',
@@ -553,15 +562,15 @@ export class ChaosParkView {
       layer.addChild(icon, caption);
     });
     const body = label(
-      'SWIPE ANYONE IN OR OUT TO CHANGE LANE.\nONE COLLISION AND IT’S GAME OVER!',
-      23,
+      'SWIPE IN OR OUT TO CHANGE LANE,\nFORWARD TO SPEED UP AND BACK TO SLOW DOWN.\nONE COLLISION AND IT’S GAME OVER!',
+      21,
       COLORS.ink,
       {
-        lineHeight: 32,
+        lineHeight: 27,
         letterSpacing: 1,
       },
     );
-    body.position.set(0, 132);
+    body.position.set(0, 120);
     layer.addChild(body, ovalButton(BACK_BUTTON, 'red', 32));
   }
 

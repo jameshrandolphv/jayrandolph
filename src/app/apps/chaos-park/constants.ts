@@ -64,6 +64,9 @@ export const WRONG_WAY_FROM_SCORE = 3;
 export const WRONG_WAY_CHANCE = 0.1;
 export const WRONG_WAY_MAX_CHANCE = 0.2;
 
+/** How much faster a mover goes after a forward swipe, until swiped back. */
+export const BOOST = 1.6;
+
 /** Lanes per tick a mover slides sideways when changing lane. */
 export const LANE_RATE = 0.09;
 
