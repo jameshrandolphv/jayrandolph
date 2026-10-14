@@ -34,6 +34,16 @@ export interface GameSurface {
   readonly element: HTMLElement;
   /** Converts a pointer position in client pixels to logical coordinates. */
   toLogical(clientX: number, clientY: number): LogicalPoint;
+  /**
+   * The logical size in use, updated in place. It is the logical width and height, swapped while `rotate` is set
+   * and the host is the other way round (see `GameCanvas.rotate`).
+   */
+  readonly size: LogicalSize;
+}
+
+export interface LogicalSize {
+  width: number;
+  height: number;
 }
 
 export interface LogicalPoint {
@@ -91,6 +101,11 @@ export class GameCanvas {
   readonly fill = input(false);
   /** With `fill`, shares extra height above and below the game instead of putting it all above. */
   readonly fillCentre = input(false);
+  /**
+   * Swap the logical width and height whenever that lets the game be drawn larger, so a landscape game turns
+   * on its side on a portrait screen. The game reads the size in use from `GameSurface.size`.
+   */
+  readonly rotate = input(false);
   /** Read once when the canvas is created. */
   readonly antialias = input(false);
   readonly ready = output<GameSurface>();
@@ -101,6 +116,7 @@ export class GameCanvas {
   private root?: Container;
   private clip?: Graphics;
   private readonly bounds: VisibleBounds = { left: 0, right: 0, top: 0, bottom: 0 };
+  private readonly size: LogicalSize = { width: 0, height: 0 };
   private observer?: ResizeObserver;
   private destroyed = false;
   private touchTarget?: HTMLElement;
@@ -176,7 +192,7 @@ export class GameCanvas {
     this.layout();
     this.observer = new ResizeObserver(() => this.layout());
     this.observer.observe(el);
-    this.ready.emit({ app, root, bounds: this.bounds, element: el, toLogical: this.toLogical });
+    this.ready.emit({ app, root, bounds: this.bounds, element: el, toLogical: this.toLogical, size: this.size });
   }
 
   private layout(): void {
@@ -188,13 +204,19 @@ export class GameCanvas {
     const dpr = app.renderer.resolution;
     app.renderer.resize(w, h);
 
-    const fit = Math.min(w / this.logicalWidth(), h / this.logicalHeight());
+    let lw = this.logicalWidth();
+    let lh = this.logicalHeight();
+    if (this.rotate() && Math.min(w / lh, h / lw) > Math.min(w / lw, h / lh)) [lw, lh] = [lh, lw];
+    this.size.width = lw;
+    this.size.height = lh;
+
+    const fit = Math.min(w / lw, h / lh);
     // Whole device pixels per logical pixel keep the art crisp; tiny viewports fall back to a fraction.
     this.scale = !this.integerScale() || fit * dpr < 1 ? fit : Math.floor(fit * dpr) / dpr;
     this.offset = {
-      x: Math.floor(((w - this.logicalWidth() * this.scale) / 2) * dpr) / dpr,
+      x: Math.floor(((w - lw * this.scale) / 2) * dpr) / dpr,
       // Filled canvases sit on the bottom edge so the extra height is all above the game, unless centred.
-      y: Math.floor(((h - this.logicalHeight() * this.scale) / (this.fill() && !this.fillCentre() ? 1 : 2)) * dpr) / dpr,
+      y: Math.floor(((h - lh * this.scale) / (this.fill() && !this.fillCentre() ? 1 : 2)) * dpr) / dpr,
     };
     root.scale.set(this.scale);
     root.position.set(this.offset.x, this.offset.y);
@@ -202,9 +224,9 @@ export class GameCanvas {
     // Whole logical pixels, so the clip edge never lands mid-pixel.
     const fill = this.fill();
     this.bounds.left = fill ? Math.floor(-this.offset.x / this.scale) : 0;
-    this.bounds.right = fill ? Math.ceil((w - this.offset.x) / this.scale) : this.logicalWidth();
+    this.bounds.right = fill ? Math.ceil((w - this.offset.x) / this.scale) : lw;
     this.bounds.top = fill ? Math.floor(-this.offset.y / this.scale) : 0;
-    this.bounds.bottom = fill && this.fillCentre() ? Math.ceil((h - this.offset.y) / this.scale) : this.logicalHeight();
+    this.bounds.bottom = fill && this.fillCentre() ? Math.ceil((h - this.offset.y) / this.scale) : lh;
     this.clip
       ?.clear()
       .rect(this.bounds.left, this.bounds.top, this.bounds.right - this.bounds.left, this.bounds.bottom - this.bounds.top)

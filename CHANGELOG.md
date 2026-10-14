@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.6.0
+- Added Chaos Park, a lane-swiping traffic game on a randomly generated park loop, with a random season every play (and ice in winter)
+
 ## 1.5.2
 - Flights! fills its window and can be maximized, with a flash where a flight path snaps onto its runway, centred score counters and a redrawn stewardess
 

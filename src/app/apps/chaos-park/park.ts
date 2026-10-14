@@ -1,0 +1,766 @@
+import {
+  FRAME_H,
+  FRAME_MARGIN,
+  FRAME_W,
+  LANE_W,
+  LANES,
+  ROAD_HALF,
+  STREET_WIDTH,
+  TRACK_SAMPLES,
+  WALL_INSET,
+  WALL_RADIUS,
+  type Rect,
+} from './constants';
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
+export type Season = 'spring' | 'summer' | 'autumn' | 'winter';
+export const SEASONS: readonly Season[] = ['spring', 'summer', 'autumn', 'winter'];
+
+/**
+ * The loop's centre line, evenly sampled. Distance along it (`s`) grows counterclockwise on screen, the way traffic
+ * goes round; lateral offsets are measured outward from it.
+ */
+export interface Track {
+  points: Point[];
+  /** Unit vectors in the direction of increasing `s`. */
+  tangents: Point[];
+  /** Unit vectors pointing out of the park's middle. */
+  normals: Point[];
+  /** Total length of the centre line. */
+  length: number;
+  /** Distance between samples. */
+  step: number;
+}
+
+export interface Pose {
+  x: number;
+  y: number;
+  /** Direction of increasing `s`, radians. */
+  angle: number;
+}
+
+export interface Entrance {
+  id: number;
+  /** Where on the loop it joins. */
+  s: number;
+  /** Across the street, where movers appear; the gate in the wall; and the mouth of the road just off the loop. */
+  street: Point;
+  gate: Point;
+  throat: Point;
+}
+
+/** A path across the middle of the park between two points on the loop's inner edge. */
+export interface Shortcut {
+  id: number;
+  /** Ends on the loop, and the path between them, from the `a` end to the `b` end. */
+  a: number;
+  b: number;
+  path: Point[];
+}
+
+export interface Water {
+  kind: 'reservoir' | 'lake';
+  outline: Point[];
+  centre: Point;
+  /** Rough size, for keeping other things clear of it. */
+  radius: number;
+}
+
+export interface Field {
+  x: number;
+  y: number;
+  rx: number;
+  ry: number;
+  diamond: boolean;
+}
+
+export interface Tree {
+  x: number;
+  y: number;
+  r: number;
+  /** 0 to 1, picks a shade (or blossom) for the season. */
+  tone: number;
+  evergreen: boolean;
+}
+
+/** A slick patch on the road in winter; anything crossing it slides a lane. */
+export interface Ice {
+  id: number;
+  s: number;
+  lane: number;
+  width: number;
+  len: number;
+}
+
+export interface Building extends Rect {
+  /** Index into the roof colours. */
+  tone: number;
+  tower: boolean;
+}
+
+export interface Park {
+  season: Season;
+  track: Track;
+  entrances: Entrance[];
+  shortcuts: Shortcut[];
+  water: Water[];
+  fields: Field[];
+  /** Footpaths drawn for show; nobody uses them but the short cuts. */
+  paths: Point[][];
+  trees: Tree[];
+  ice: Ice[];
+  wall: Rect;
+  /** City blocks round the park, and the buildings on them. */
+  blocks: Rect[];
+  buildings: Building[];
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Geometry.
+
+/** A small deterministic generator (mulberry32), for tests and repeatable parks. */
+export const seededRng = (seed: number): (() => number) => {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
+export const wrap = (s: number, length: number): number => ((s % length) + length) % length;
+
+/** Signed shortest distance from `from` to `to` around the loop, in (-length/2, length/2]. */
+export const loopDelta = (from: number, to: number, length: number): number => {
+  const d = wrap(to - from, length);
+  return d > length / 2 ? d - length : d;
+};
+
+/** The point `d` px outward of the centre line at `s`, and the direction of travel there. */
+export const pose = (track: Track, s: number, d = 0): Pose => {
+  const { points, normals, tangents, step } = track;
+  const n = points.length;
+  const f = wrap(s, track.length) / step;
+  const i = Math.floor(f) % n;
+  const j = (i + 1) % n;
+  const t = f - Math.floor(f);
+  const nx = normals[i]!.x + (normals[j]!.x - normals[i]!.x) * t;
+  const ny = normals[i]!.y + (normals[j]!.y - normals[i]!.y) * t;
+  const nl = Math.hypot(nx, ny) || 1;
+  const tx = tangents[i]!.x + (tangents[j]!.x - tangents[i]!.x) * t;
+  const ty = tangents[i]!.y + (tangents[j]!.y - tangents[i]!.y) * t;
+  return {
+    x: points[i]!.x + (points[j]!.x - points[i]!.x) * t + (nx / nl) * d,
+    y: points[i]!.y + (points[j]!.y - points[i]!.y) * t + (ny / nl) * d,
+    angle: Math.atan2(ty, tx),
+  };
+};
+
+/** Offset from the centre line to the middle of a span of lanes starting at lane `p` (0 innermost). */
+export const laneOffset = (p: number, width: number): number =>
+  (p + width / 2 - LANES / 2) * LANE_W;
+
+/** The whole edge of the loop `d` px out from the centre line, as a closed outline. */
+export const edge = (track: Track, d: number): Point[] =>
+  track.points.map((p, i) => ({
+    x: p.x + track.normals[i]!.x * d,
+    y: p.y + track.normals[i]!.y * d,
+  }));
+
+export const insidePolygon = (poly: readonly Point[], x: number, y: number): boolean => {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i]!;
+    const b = poly[j]!;
+    if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+};
+
+const segmentDistance = (p: Point, a: Point, b: Point): number => {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = dx * dx + dy * dy;
+  const t = len ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len)) : 0;
+  return Math.hypot(p.x - a.x - dx * t, p.y - a.y - dy * t);
+};
+
+export const polylineDistance = (line: readonly Point[], p: Point, closed = false): number => {
+  let best = Infinity;
+  const n = line.length;
+  for (let i = 0; i < n - (closed ? 0 : 1); i++)
+    best = Math.min(best, segmentDistance(p, line[i]!, line[(i + 1) % n]!));
+  return best;
+};
+
+export const polylineLength = (line: readonly Point[]): number => {
+  let total = 0;
+  for (let i = 1; i < line.length; i++)
+    total += Math.hypot(line[i]!.x - line[i - 1]!.x, line[i]!.y - line[i - 1]!.y);
+  return total;
+};
+
+const cubic = (a: Point, b: Point, c: Point, d: Point, steps: number): Point[] =>
+  Array.from({ length: steps + 1 }, (_, i) => {
+    const t = i / steps;
+    const u = 1 - t;
+    return {
+      x: u * u * u * a.x + 3 * u * u * t * b.x + 3 * u * t * t * c.x + t * t * t * d.x,
+      y: u * u * u * a.y + 3 * u * u * t * b.y + 3 * u * t * t * c.y + t * t * t * d.y,
+    };
+  });
+
+// ---------------------------------------------------------------------------------------------------------------
+// The loop.
+
+/** Raw samples of a rounded-rectangle loop with a few gentle bends, counterclockwise on screen. */
+const loopOutline = (rng: () => number): Point[] => {
+  const cx = FRAME_W / 2;
+  const cy = FRAME_H / 2;
+  const a = 270 + rng() * 26;
+  const b = 150 + rng() * 22;
+  // 2 is an ellipse; higher squares the ends off, like the park's drive.
+  const n = 2.2 + rng() * 1.1;
+  const waves = [2, 3, 4, 5].map((k) => ({
+    k,
+    amp: ((rng() * 2 - 1) * 0.05) / (k - 1.2),
+    phase: rng() * Math.PI * 2,
+  }));
+  const raw: Point[] = [];
+  const m = 2400;
+  for (let j = 0; j < m; j++) {
+    // Decreasing angle runs counterclockwise with y pointing down.
+    const th = (-j / m) * Math.PI * 2;
+    const c = Math.cos(th);
+    const s = Math.sin(th);
+    const f = 1 + waves.reduce((sum, w) => sum + w.amp * Math.sin(w.k * th + w.phase), 0);
+    raw.push({
+      x: cx + Math.sign(c) * Math.abs(c) ** (2 / n) * a * f,
+      y: cy + Math.sign(s) * Math.abs(s) ** (2 / n) * b * f,
+    });
+  }
+  return raw;
+};
+
+/** Resamples a closed outline to evenly spaced points and works out its directions. */
+export const buildTrack = (raw: readonly Point[], samples = TRACK_SAMPLES): Track => {
+  const lengths = [0];
+  for (let i = 1; i <= raw.length; i++) {
+    const a = raw[i - 1]!;
+    const b = raw[i % raw.length]!;
+    lengths.push(lengths[i - 1]! + Math.hypot(b.x - a.x, b.y - a.y));
+  }
+  const length = lengths[raw.length]!;
+  const step = length / samples;
+  const points: Point[] = [];
+  let k = 0;
+  for (let i = 0; i < samples; i++) {
+    const at = i * step;
+    while (lengths[k + 1]! < at) k++;
+    const t = (at - lengths[k]!) / (lengths[k + 1]! - lengths[k]! || 1);
+    const a = raw[k]!;
+    const b = raw[(k + 1) % raw.length]!;
+    points.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  }
+  const tangents = points.map((_, i) => {
+    const a = points[(i - 1 + samples) % samples]!;
+    const b = points[(i + 1) % samples]!;
+    const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    return { x: (b.x - a.x) / l, y: (b.y - a.y) / l };
+  });
+  const centre = points.reduce((c, p) => ({ x: c.x + p.x / samples, y: c.y + p.y / samples }), {
+    x: 0,
+    y: 0,
+  });
+  // Whichever side of the tangent faces away from the middle at the rightmost point is outward everywhere.
+  let right = 0;
+  points.forEach((p, i) => p.x > points[right]!.x && (right = i));
+  const flip = tangents[right]!.y * (points[right]!.x - centre.x) < 0 ? -1 : 1;
+  const normals = tangents.map((t) => ({ x: t.y * flip, y: -t.x * flip }));
+  return { points, tangents, normals, length, step };
+};
+
+/** Largest curvature anywhere on the loop, so the lanes can be checked for kinks. */
+export const maxCurvature = (track: Track): number => {
+  const { tangents, step } = track;
+  let most = 0;
+  for (let i = 0; i < tangents.length; i++) {
+    const a = tangents[i]!;
+    const b = tangents[(i + 1) % tangents.length]!;
+    most = Math.max(most, Math.abs(a.x * b.y - a.y * b.x) / step);
+  }
+  return most;
+};
+
+const fits = (track: Track): boolean =>
+  maxCurvature(track) * (ROAD_HALF + 16) < 0.85 &&
+  edge(track, ROAD_HALF + 4).every(
+    (p) =>
+      p.x > FRAME_MARGIN &&
+      p.x < FRAME_W - FRAME_MARGIN &&
+      p.y > FRAME_MARGIN &&
+      p.y < FRAME_H - FRAME_MARGIN,
+  );
+
+const makeTrack = (rng: () => number): Track => {
+  for (let tries = 0; tries < 60; tries++) {
+    const track = buildTrack(loopOutline(rng));
+    if (fits(track)) return track;
+  }
+  // A plain rounded oval always fits.
+  const raw: Point[] = [];
+  for (let j = 0; j < 1200; j++) {
+    const th = (-j / 1200) * Math.PI * 2;
+    raw.push({ x: FRAME_W / 2 + Math.cos(th) * 280, y: FRAME_H / 2 + Math.sin(th) * 160 });
+  }
+  return buildTrack(raw);
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// Entrances and short cuts.
+
+export const WALL: Rect = {
+  x: WALL_INSET,
+  y: WALL_INSET,
+  w: FRAME_W - WALL_INSET * 2,
+  h: FRAME_H - WALL_INSET * 2,
+};
+
+const makeEntrances = (track: Track, rng: () => number): Entrance[] => {
+  const count = rng() < 0.5 ? 3 : 4;
+  const { normals, step, length } = track;
+  const corner = WALL_RADIUS + 34;
+  // Only where the loop faces a side of the wall squarely, so each gate opens straight onto a street.
+  const candidates: number[] = [];
+  normals.forEach((nrm, i) => {
+    if (Math.abs(nrm.x) < 0.94 && Math.abs(nrm.y) < 0.94) return;
+    const t = pose(track, i * step, ROAD_HALF + 12);
+    const vertical = Math.abs(nrm.y) > Math.abs(nrm.x);
+    const along = vertical ? t.x : t.y;
+    const span = vertical ? FRAME_W : FRAME_H;
+    if (along > WALL_INSET + corner && along < span - WALL_INSET - corner) candidates.push(i);
+  });
+  let best: number[] = [];
+  let bestGap = -1;
+  for (let tries = 0; tries < 300 && candidates.length >= count; tries++) {
+    const pick = Array.from(
+      { length: count },
+      () => candidates[Math.floor(rng() * candidates.length)]!,
+    ).sort((a, b) => a - b);
+    let gap = Infinity;
+    for (let i = 0; i < count; i++) {
+      const a = pick[i]! * step;
+      const b = (i + 1 < count ? pick[i + 1]! : pick[0]! + normals.length) * step;
+      gap = Math.min(gap, b - a);
+    }
+    if (gap > bestGap) {
+      bestGap = gap;
+      best = pick;
+    }
+    if (gap > length / count - 60) break;
+  }
+  return best.map((i, id) => {
+    const s = i * step;
+    const nrm = normals[i]!;
+    const throat = pose(track, s, ROAD_HALF + 12);
+    let gate: Point;
+    let street: Point;
+    // Movers appear on the far pavement and cross the street to the gate.
+    const out = CITY_SETBACK - 4;
+    if (Math.abs(nrm.y) > Math.abs(nrm.x)) {
+      const top = nrm.y < 0;
+      gate = { x: throat.x, y: top ? WALL.y : WALL.y + WALL.h };
+      street = { x: throat.x, y: gate.y + (top ? -out : out) };
+    } else {
+      const left = nrm.x < 0;
+      gate = { x: left ? WALL.x : WALL.x + WALL.w, y: throat.y };
+      street = { x: gate.x + (left ? -out : out), y: throat.y };
+    }
+    return { id, s, street, gate, throat };
+  });
+};
+
+/** One or two paths across the short way, from the top of the loop to the bottom. */
+const makeShortcuts = (
+  track: Track,
+  entrances: readonly Entrance[],
+  rng: () => number,
+): Shortcut[] => {
+  const { normals, step, length } = track;
+  const tops: number[] = [];
+  const bottoms: number[] = [];
+  // Through the middle stretch only, so a short cut skips a good part of the loop.
+  normals.forEach((n, i) => {
+    if (Math.abs(track.points[i]!.x - FRAME_W / 2) > 170) return;
+    if (n.y < -0.85) tops.push(i);
+    else if (n.y > 0.85) bottoms.push(i);
+  });
+  const want = rng() < 0.55 ? 2 : 1;
+  const out: Shortcut[] = [];
+  const ends: number[] = entrances.map((e) => e.s);
+  for (let tries = 0; tries < 200 && out.length < want && tops.length && bottoms.length; tries++) {
+    const a = tops[Math.floor(rng() * tops.length)]! * step;
+    const pa = pose(track, a, -ROAD_HALF - 2);
+    // The bottom end within a little of straight across.
+    const near = bottoms.filter((i) => Math.abs(track.points[i]!.x - pa.x) < 110);
+    if (!near.length) continue;
+    const b = near[Math.floor(rng() * near.length)]! * step;
+    const clear = (s: number): boolean =>
+      ends.every((e) => Math.abs(loopDelta(e, s, length)) > 90) &&
+      out.every(
+        (c) =>
+          Math.abs(loopDelta(c.a, s, length)) > 120 && Math.abs(loopDelta(c.b, s, length)) > 120,
+      );
+    if (!clear(a) || !clear(b)) continue;
+    const pb = pose(track, b, -ROAD_HALF - 2);
+    const na = normals[Math.round(a / step) % normals.length]!;
+    const nb = normals[Math.round(b / step) % normals.length]!;
+    const bend = (rng() * 2 - 1) * 70;
+    const path = cubic(
+      pa,
+      { x: pa.x - na.x * 70 + bend, y: pa.y - na.y * 70 },
+      { x: pb.x - nb.x * 70 + bend, y: pb.y - nb.y * 70 },
+      pb,
+      28,
+    );
+    out.push({ id: out.length, a, b, path });
+  }
+  return out;
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// The middle of the park.
+
+interface Interior {
+  inner: Point[];
+  box: Rect;
+}
+
+const blob = (cx: number, cy: number, r: number, rng: () => number, stretch: number): Point[] => {
+  const waves = [2, 3, 5].map((k) => ({ k, amp: rng() * 0.16, phase: rng() * Math.PI * 2 }));
+  return Array.from({ length: 48 }, (_, i) => {
+    const th = (i / 48) * Math.PI * 2;
+    const f = 1 + waves.reduce((sum, w) => sum + w.amp * Math.sin(w.k * th + w.phase), 0);
+    return { x: cx + Math.cos(th) * r * f * stretch, y: cy + Math.sin(th) * r * f };
+  });
+};
+
+const ellipse = (cx: number, cy: number, rx: number, ry: number): Point[] =>
+  Array.from({ length: 40 }, (_, i) => {
+    const th = (i / 40) * Math.PI * 2;
+    return { x: cx + Math.cos(th) * rx, y: cy + Math.sin(th) * ry };
+  });
+
+/** Every point of `outline` is inside the area and at least `margin` from its edge. */
+const wellInside = (area: readonly Point[], outline: readonly Point[], margin: number): boolean =>
+  outline.every((p) => insidePolygon(area, p.x, p.y) && polylineDistance(area, p, true) > margin);
+
+const makeWater = (
+  inside: Interior,
+  shortcuts: readonly Shortcut[],
+  rng: () => number,
+): Water[] => {
+  const out: Water[] = [];
+  const kinds: Water['kind'][] = rng() < 0.7 ? ['reservoir', 'lake'] : ['lake'];
+  for (const kind of kinds) {
+    for (let tries = 0; tries < 80; tries++) {
+      const r = kind === 'reservoir' ? 40 + rng() * 16 : 30 + rng() * 18;
+      const stretch = kind === 'reservoir' ? 1.3 + rng() * 0.3 : 1 + rng() * 0.6;
+      const cx = inside.box.x + rng() * inside.box.w;
+      const cy = inside.box.y + rng() * inside.box.h;
+      const outline =
+        kind === 'reservoir' ? ellipse(cx, cy, r * stretch, r) : blob(cx, cy, r, rng, stretch);
+      if (!wellInside(inside.inner, outline, 22)) continue;
+      if (shortcuts.some((c) => outline.some((p) => polylineDistance(c.path, p) < 18))) continue;
+      if (shortcuts.some((c) => c.path.some((p) => insidePolygon(outline, p.x, p.y)))) continue;
+      const radius = r * Math.max(stretch, 1) * 1.15;
+      if (out.some((w) => Math.hypot(w.centre.x - cx, w.centre.y - cy) < w.radius + radius + 34))
+        continue;
+      out.push({ kind, outline, centre: { x: cx, y: cy }, radius });
+      break;
+    }
+  }
+  return out;
+};
+
+const inField = (f: Field, x: number, y: number, grow = 1): boolean =>
+  ((x - f.x) / (f.rx * grow)) ** 2 + ((y - f.y) / (f.ry * grow)) ** 2 <= 1;
+
+const makeFields = (
+  inside: Interior,
+  water: readonly Water[],
+  shortcuts: readonly Shortcut[],
+  rng: () => number,
+): Field[] => {
+  const out: Field[] = [];
+  const want = 1 + (rng() < 0.6 ? 1 : 0);
+  for (let tries = 0; tries < 120 && out.length < want; tries++) {
+    const f: Field = {
+      x: inside.box.x + rng() * inside.box.w,
+      y: inside.box.y + rng() * inside.box.h,
+      rx: 42 + rng() * 34,
+      ry: 28 + rng() * 18,
+      diamond: rng() < 0.5,
+    };
+    if (!wellInside(inside.inner, ellipse(f.x, f.y, f.rx, f.ry), 14)) continue;
+    if (
+      water.some(
+        (w) =>
+          Math.hypot(w.centre.x - f.x, w.centre.y - f.y) < w.radius + Math.max(f.rx, f.ry) + 14,
+      )
+    )
+      continue;
+    if (shortcuts.some((c) => c.path.some((p) => inField(f, p.x, p.y, 1.2)))) continue;
+    if (
+      out.some(
+        (o) => Math.hypot(o.x - f.x, o.y - f.y) < Math.max(o.rx, o.ry) + Math.max(f.rx, f.ry) + 16,
+      )
+    )
+      continue;
+    out.push(f);
+  }
+  return out;
+};
+
+/** A jogging track round the reservoir and a winding walk or two. */
+const makePaths = (
+  track: Track,
+  inside: Interior,
+  water: readonly Water[],
+  fields: readonly Field[],
+  rng: () => number,
+): Point[][] => {
+  const out: Point[][] = [];
+  for (const w of water) {
+    if (w.kind !== 'reservoir') continue;
+    const ring = w.outline.map((p) => {
+      const dx = p.x - w.centre.x;
+      const dy = p.y - w.centre.y;
+      const l = Math.hypot(dx, dy) || 1;
+      return { x: p.x + (dx / l) * 9, y: p.y + (dy / l) * 9 };
+    });
+    out.push([...ring, ring[0]!]);
+  }
+  const want = 1 + Math.floor(rng() * 2);
+  for (let tries = 0; tries < 60 && out.length < want + water.length; tries++) {
+    const a = rng() * track.length;
+    const b = a + track.length * (0.3 + rng() * 0.4);
+    const pa = pose(track, a, -ROAD_HALF - 2);
+    const pb = pose(track, b, -ROAD_HALF - 2);
+    const c1 = { x: inside.box.x + rng() * inside.box.w, y: inside.box.y + rng() * inside.box.h };
+    const c2 = { x: inside.box.x + rng() * inside.box.w, y: inside.box.y + rng() * inside.box.h };
+    const line = cubic(pa, c1, c2, pb, 36);
+    if (!line.slice(2, -2).every((p) => insidePolygon(inside.inner, p.x, p.y))) continue;
+    if (
+      line.some((p) =>
+        water.some((w) => Math.hypot(p.x - w.centre.x, p.y - w.centre.y) < w.radius + 10),
+      )
+    )
+      continue;
+    if (line.some((p) => fields.some((f) => inField(f, p.x, p.y, 1.1)))) continue;
+    out.push(line);
+  }
+  return out;
+};
+
+const makeTrees = (
+  track: Track,
+  inside: Interior,
+  entrances: readonly Entrance[],
+  shortcuts: readonly Shortcut[],
+  water: readonly Water[],
+  fields: readonly Field[],
+  paths: readonly Point[][],
+  season: Season,
+  rng: () => number,
+): Tree[] => {
+  const out: Tree[] = [];
+  const outer = edge(track, ROAD_HALF + 6);
+  const p1 = rng() * 10;
+  const p2 = rng() * 10;
+  const clump = (x: number, y: number): number =>
+    Math.sin(x * 0.024 + p1) * Math.sin(y * 0.031 + p2);
+  const lanes = entrances.map((e) => [e.street, e.gate, e.throat]);
+  const step = 15;
+  for (let y = WALL.y + 8; y < WALL.y + WALL.h - 8; y += step) {
+    for (let x = WALL.x + 8; x < WALL.x + WALL.w - 8; x += step) {
+      const tx = x + (rng() - 0.5) * 9;
+      const ty = y + (rng() - 0.5) * 9;
+      const r = 8 + rng() * 5.5;
+      const p = { x: tx, y: ty };
+      const middle = insidePolygon(inside.inner, tx, ty);
+      let chance: number;
+      if (middle) {
+        if (polylineDistance(inside.inner, p, true) < r + 2) continue;
+        if (
+          water.some(
+            (w) => insidePolygon(w.outline, tx, ty) || polylineDistance(w.outline, p, true) < r + 5,
+          )
+        )
+          continue;
+        if (fields.some((f) => inField(f, tx, ty, 1.08 + r / Math.min(f.rx, f.ry)))) continue;
+        if (paths.some((l) => polylineDistance(l, p) < r + 5)) continue;
+        if (shortcuts.some((c) => polylineDistance(c.path, p) < r + 6)) continue;
+        chance = 0.42 + 0.42 * clump(tx, ty);
+      } else {
+        if (insidePolygon(outer, tx, ty) || polylineDistance(outer, p, true) < r + 3) continue;
+        // Clear of the wall, which is rounded at the corners.
+        const cx = Math.max(WALL.x + WALL_RADIUS, Math.min(WALL.x + WALL.w - WALL_RADIUS, tx));
+        const cy = Math.max(WALL.y + WALL_RADIUS, Math.min(WALL.y + WALL.h - WALL_RADIUS, ty));
+        if (cx !== tx && cy !== ty && Math.hypot(tx - cx, ty - cy) > WALL_RADIUS - r - 6) continue;
+        if (
+          tx < WALL.x + r + 5 ||
+          tx > WALL.x + WALL.w - r - 5 ||
+          ty < WALL.y + r + 5 ||
+          ty > WALL.y + WALL.h - r - 5
+        )
+          continue;
+        if (lanes.some((l) => polylineDistance(l, p) < r + LANE_W + 6)) continue;
+        chance = 0.62 + 0.3 * clump(tx, ty);
+      }
+      if (rng() > chance) continue;
+      const evergreen = rng() < (season === 'winter' ? 0.3 : 0.12);
+      out.push({ x: tx, y: ty, r, tone: rng(), evergreen });
+    }
+  }
+  // Drawn top to bottom so lower trees overlap the ones behind them.
+  return out.sort((a, b) => a.y - b.y);
+};
+
+const makeIce = (
+  track: Track,
+  entrances: readonly Entrance[],
+  shortcuts: readonly Shortcut[],
+  rng: () => number,
+) => {
+  const out: Ice[] = [];
+  const want = 4 + Math.floor(rng() * 3);
+  const avoid = [...entrances.map((e) => e.s), ...shortcuts.flatMap((c) => [c.a, c.b])];
+  for (let tries = 0; tries < 200 && out.length < want; tries++) {
+    const s = rng() * track.length;
+    if (avoid.some((a) => Math.abs(loopDelta(a, s, track.length)) < 60)) continue;
+    if (out.some((o) => Math.abs(loopDelta(o.s, s, track.length)) < 110)) continue;
+    const width = rng() < 0.4 ? 2 : 1;
+    const lane = Math.floor(rng() * (LANES - width + 1));
+    out.push({ id: out.length, s, lane, width, len: 26 + rng() * 18 });
+  }
+  return out;
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// The city round about.
+
+/** Buildings reach this far past the frame; further out is drawn as plain blocks. */
+const CITY_EXTENT = 720;
+const BLOCK = { w: 150, h: 96, street: 24 };
+/** From the wall out to where the buildings start: pavement, street, pavement. */
+export const CITY_SETBACK = 6 + STREET_WIDTH + 8;
+
+const makeCity = (rng: () => number): { blocks: Rect[]; buildings: Building[] } => {
+  const out: Building[] = [];
+  const blocks: Rect[] = [];
+  const free: Rect = {
+    x: WALL.x - CITY_SETBACK,
+    y: WALL.y - CITY_SETBACK,
+    w: WALL.w + CITY_SETBACK * 2,
+    h: WALL.h + CITY_SETBACK * 2,
+  };
+  const x0 = free.x - Math.ceil((free.x + CITY_EXTENT) / BLOCK.w) * BLOCK.w;
+  const y0 = free.y - Math.ceil((free.y + CITY_EXTENT) / BLOCK.h) * BLOCK.h;
+  for (let gy = y0; gy < FRAME_H + CITY_EXTENT; gy += BLOCK.h) {
+    for (let gx = x0; gx < FRAME_W + CITY_EXTENT; gx += BLOCK.w) {
+      let b: Rect = {
+        x: gx + BLOCK.street,
+        y: gy + BLOCK.street,
+        w: BLOCK.w - BLOCK.street,
+        h: BLOCK.h - BLOCK.street,
+      };
+      const overX = b.x < free.x + free.w && b.x + b.w > free.x;
+      const overY = b.y < free.y + free.h && b.y + b.h > free.y;
+      if (overX && overY) {
+        // Beside the park: trim the block back to the pavement on whichever side it pokes in from.
+        const fromLeft = free.x - b.x;
+        const fromRight = b.x + b.w - (free.x + free.w);
+        const fromTop = free.y - b.y;
+        const fromBottom = b.y + b.h - (free.y + free.h);
+        const best = Math.max(fromLeft, fromRight, fromTop, fromBottom);
+        if (best === fromLeft) b = { ...b, w: free.x - b.x };
+        else if (best === fromRight)
+          b = { ...b, x: free.x + free.w, w: b.x + b.w - (free.x + free.w) };
+        else if (best === fromTop) b = { ...b, h: free.y - b.y };
+        else b = { ...b, y: free.y + free.h, h: b.y + b.h - (free.y + free.h) };
+        if (b.w < 26 || b.h < 26) continue;
+      }
+      blocks.push(b);
+      // Split into lots along the block, some split again across.
+      const lots = 2 + Math.floor(rng() * 3);
+      let at = 0;
+      for (let i = 0; i < lots; i++) {
+        const share = i === lots - 1 ? b.w - at : Math.round((b.w / lots) * (0.7 + rng() * 0.6));
+        const across = rng() < 0.4 && b.h > 50;
+        const cut = across ? Math.round(b.h * (0.4 + rng() * 0.2)) : b.h;
+        for (const [yy, hh] of across
+          ? [
+              [0, cut],
+              [cut, b.h - cut],
+            ]
+          : [[0, b.h]]) {
+          out.push({
+            x: b.x + at,
+            y: b.y + yy!,
+            w: share,
+            h: hh!,
+            tone: Math.floor(rng() * 6),
+            tower: share * hh! > 1500 && rng() < 0.35,
+          });
+        }
+        at += share;
+        if (at >= b.w) break;
+      }
+    }
+  }
+  return { blocks, buildings: out };
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+
+export const generatePark = (rng: () => number = Math.random, season?: Season): Park => {
+  const chosen = season ?? SEASONS[Math.floor(rng() * SEASONS.length)]!;
+  const track = makeTrack(rng);
+  const inner = edge(track, -ROAD_HALF - 6);
+  const xs = inner.map((p) => p.x);
+  const ys = inner.map((p) => p.y);
+  const box = {
+    x: Math.min(...xs),
+    y: Math.min(...ys),
+    w: Math.max(...xs) - Math.min(...xs),
+    h: Math.max(...ys) - Math.min(...ys),
+  };
+  const inside: Interior = { inner, box };
+  const entrances = makeEntrances(track, rng);
+  const shortcuts = makeShortcuts(track, entrances, rng);
+  const water = makeWater(inside, shortcuts, rng);
+  const fields = makeFields(inside, water, shortcuts, rng);
+  const paths = makePaths(track, inside, water, fields, rng);
+  const trees = makeTrees(track, inside, entrances, shortcuts, water, fields, paths, chosen, rng);
+  const ice = chosen === 'winter' ? makeIce(track, entrances, shortcuts, rng) : [];
+  return {
+    season: chosen,
+    track,
+    entrances,
+    shortcuts,
+    water,
+    fields,
+    paths,
+    trees,
+    ice,
+    wall: WALL,
+    ...makeCity(rng),
+  };
+};
