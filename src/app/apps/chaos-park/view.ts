@@ -455,8 +455,12 @@ export class ChaosParkView {
     layer.addChild(paperCard(-CARD.w / 2, -CARD.h / 2, CARD.w, CARD.h));
   }
 
+  /** Empties a card for rebuilding, keeping the text objects the view holds on to and updates. */
   private clear(layer: Container): void {
-    layer.removeChildren().forEach((c) => c.destroy({ children: true }));
+    const kept = new Set<Container>([this.titleBest, this.overCount, this.overHeadline]);
+    layer.removeChildren().forEach((c) => {
+      if (!kept.has(c)) c.destroy({ children: true });
+    });
   }
 
   /** Rebuilt for each park, since it shows the season. */
