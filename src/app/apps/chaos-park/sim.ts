@@ -27,6 +27,8 @@ import {
   RAT_LURK,
   RAT_SPEED,
   ROAD_HALF,
+  SHOUT_COOLDOWN,
+  SHOUT_TICKS,
   SECOND_CARRIAGE_SCORE,
   SHORTCUT_CHANCE,
   SLIP_TICKS,
@@ -134,6 +136,9 @@ export interface Mover {
   crowd: number;
   /** Ticks left standing still after a rat bite. */
   daze: number;
+  /** Ticks left of a biker's "Out of my way!", and when it last shouted. */
+  shout: number;
+  shoutAt: number;
 }
 
 /**
@@ -173,8 +178,9 @@ export const maxMovers = (score: number): number =>
 /** How fast a mover is actually going: nothing while dazed. */
 export const pace = (m: Pick<Mover, 'speed' | 'daze'>): number => (m.daze > 0 ? 0 : m.speed);
 
-/** People a rat goes for. */
+/** People a rat goes for, and who a biker shouts at. */
 const BITEABLE: ReadonlySet<Kind> = new Set(['walker', 'runner', 'dog']);
+const ON_FOOT = BITEABLE;
 
 /** How much of each lane span [p, p + w) overlaps, in lanes. */
 export const laneOverlap = (p1: number, w1: number, p2: number, w2: number): number =>
@@ -332,6 +338,7 @@ export class ChaosParkSim {
     for (const m of this.movers) {
       m.age++;
       if (m.slip > 0) m.slip--;
+      if (m.shout > 0) m.shout--;
       if (m.state === 'track') this.moveOnTrack(m);
       else if (this.moveOnRoute(m)) gone.add(m);
     }
@@ -511,6 +518,18 @@ export class ChaosParkSim {
     }
   }
 
+  /** A biker bearing down on someone on foot tells them to get out of the way. */
+  private shoutIfBiker(a: Mover, b: Mover): void {
+    const [biker, other] = a.kind === 'biker' ? [a, b] : b.kind === 'biker' ? [b, a] : [null, null];
+    if (!biker || !other || !ON_FOOT.has(other.kind)) return;
+    // Only when the person is ahead of the biker, the way it is going.
+    const ahead = wrap((other.s - biker.s) * biker.dir, this.park.track.length);
+    if (ahead > this.park.track.length / 2) return;
+    if (this.playTicks - biker.shoutAt < SHOUT_COOLDOWN) return;
+    biker.shout = SHOUT_TICKS;
+    biker.shoutAt = this.playTicks;
+  }
+
   /** Whether a mover waiting at the end of its route can join the loop without anything about to run into it. */
   canJoin(m: Mover): boolean {
     if (!m.join) return true;
@@ -570,7 +589,10 @@ export class ChaosParkSim {
           a.warning = b.warning = true;
           const key = `${a.id}:${b.id}`;
           pairs.add(key);
-          if (!this.warnedPairs.has(key)) this.events.push('alert');
+          if (!this.warnedPairs.has(key)) {
+            this.events.push('alert');
+            this.shoutIfBiker(a, b);
+          }
         }
       }
     }
@@ -729,6 +751,8 @@ export class ChaosParkSim {
       onPatch: new Set(),
       crowd,
       daze: 0,
+      shout: 0,
+      shoutAt: -Infinity,
     };
   }
 

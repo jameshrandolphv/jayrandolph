@@ -86,6 +86,8 @@ const put = (
     onPatch: new Set(),
     crowd: 1,
     daze: 0,
+    shout: 0,
+    shoutAt: -Infinity,
     ...options,
   };
   m.baseSpeed = m.speed;
@@ -471,6 +473,49 @@ describe('rats', () => {
     expect(sim.rats[0]!.state).toBe('flee');
     ticks(sim, 60);
     expect(sim.rats).toHaveLength(0);
+  });
+});
+
+describe('bikers', () => {
+  it('shout when they close in on someone on foot', () => {
+    for (const kind of ['walker', 'runner', 'dog'] as const) {
+      const sim = playing();
+      put(sim, kind, 200, 1);
+      const bike = put(sim, 'biker', 60, 1);
+      let shouted = false;
+      while (sim.phase === 'playing' && !shouted && sim.playTicks < 300) {
+        sim.step();
+        shouted = bike.shout > 0;
+      }
+      expect(shouted, kind).toBe(true);
+      expect(sim.phase).toBe('playing');
+    }
+  });
+
+  it('keep quiet for others and for people behind them', () => {
+    const sim = playing();
+    const bike = put(sim, 'biker', 100, 1);
+    put(sim, 'car', 0, 0);
+    const behind = put(sim, 'walker', 60, 1, { dir: -1 });
+    put(sim, 'biker', 260, 1, { speed: KIND_SPECS.biker.speed * 0.5 });
+    ticks(sim, 30);
+    expect(behind.s).toBeLessThan(bike.s);
+    expect(bike.shout).toBe(0);
+  });
+
+  it('shout once per close call, and not again straight away', () => {
+    const sim = playing();
+    const bike = put(sim, 'biker', 60, 1);
+    put(sim, 'walker', 200, 1);
+    while (bike.shout === 0 && sim.playTicks < 300) sim.step();
+    const first = bike.shoutAt;
+    expect(bike.shout).toBeGreaterThan(0);
+    // Dodge, then come up behind someone else soon after.
+    sim.shift(bike.id, 1);
+    ticks(sim, 40);
+    put(sim, 'runner', bike.s + 60, 2, { speed: KIND_SPECS.runner.speed * 0.5 });
+    ticks(sim, 60);
+    expect(bike.shoutAt).toBe(first);
   });
 });
 
