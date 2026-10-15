@@ -196,8 +196,38 @@ describe('straight-running enemies', () => {
 
 describe('open areas', () => {
   it.each([1, 2, 5, 10, 20, 40])('level %i has nowhere in the chambers that enemies never reach', (n) => {
-    for (const seed of SEEDS) expect(openAreas(generateLevel(n, seed), 4)).toEqual([]);
+    for (const seed of SEEDS) expect(openAreas(generateLevel(n, seed), difficultyFor(n).openCells)).toEqual([]);
   });
+
+  it('leaves early levels a little breathing room, and none once the game is under way', () => {
+    expect(difficultyFor(1).openCells).toBeGreaterThan(difficultyFor(10).openCells);
+    expect(difficultyFor(10).openCells).toBe(4);
+  });
+});
+
+describe('stationary enemies', () => {
+  const still = (e: LevelDef['enemies'][number]): boolean =>
+    e.kind === 'sweep' && e.ax === e.bx && e.ay === e.by;
+
+  it('are kept out of the first levels', () => {
+    for (let n = 1; n < 10; n++)
+      for (const seed of SEEDS) expect(generateLevel(n, seed).enemies.filter(still)).toEqual([]);
+  }, 60000);
+
+  it('never stand within two squares of a safe zone', () => {
+    for (const n of [10, 12, 15, 17, 20, 30])
+      for (const seed of SEEDS) {
+        const level = generateLevel(n, seed);
+        for (const e of level.enemies.filter(still)) {
+          if (e.kind !== 'sweep') continue;
+          for (const z of level.zones) {
+            const dx = Math.max(z.c * TILE - e.ax, 0, e.ax - (z.c + z.w) * TILE);
+            const dy = Math.max(z.r * TILE - e.ay, 0, e.ay - (z.r + z.h) * TILE);
+            expect(Math.hypot(dx, dy)).toBeGreaterThanOrEqual(2 * TILE);
+          }
+        }
+      }
+  }, 120000);
 });
 
 describe('isSolvable', () => {
