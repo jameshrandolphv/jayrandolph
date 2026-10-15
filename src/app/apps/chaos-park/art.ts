@@ -3,6 +3,7 @@ import { COLORS, label } from '../flights/art';
 import {
   FRAME_H,
   FRAME_W,
+  GROUP_ROW,
   LANES,
   LANE_W,
   ROAD_HALF,
@@ -15,7 +16,6 @@ import {
   laneOffset,
   pose,
   type Entrance,
-  type Ice,
   type Park,
   type Point,
   type Season,
@@ -458,38 +458,97 @@ const drawRoad = (g: Graphics, park: Park, pal: Palette): void => {
   }
 };
 
-const drawIce = (g: Graphics, park: Park): void => {
-  for (const ice of park.ice) iceShape(g, park.track, ice);
+/** A lumpy oval `rx` by `ry` round the origin; `seed` keeps each patch's shape steady. */
+const blob = (rx: number, ry: number, seed: number, wobble = 0.16): number[] => {
+  const pts: number[] = [];
+  for (let i = 0; i < 40; i++) {
+    const a = (i / 40) * Math.PI * 2;
+    const f = 1 + wobble * Math.sin(a * 3 + seed * 5.1) * Math.cos(a * 2 + seed * 2.3);
+    pts.push(Math.cos(a) * rx * f, Math.sin(a) * ry * f);
+  }
+  return pts;
 };
 
-const iceShape = (g: Graphics, track: Track, ice: Ice): void => {
-  const inner = laneOffset(ice.lane, ice.width) - (ice.width * LANE_W) / 2 + 3;
-  const outer = inner + ice.width * LANE_W - 6;
-  const left: number[] = [];
-  const right: number[] = [];
-  const steps = 16;
-  for (let k = 0; k <= steps; k++) {
-    const s = ice.s - ice.len / 2 + (ice.len * k) / steps;
-    // Rounded ends: narrower toward each end.
-    const pinch = Math.sin((k / steps) * Math.PI) ** 0.5;
-    const mid = (inner + outer) / 2;
-    const half = ((outer - inner) / 2) * pinch;
-    const a = pose(track, s, mid - half);
-    const b = pose(track, s, mid + half);
-    left.push(a.x, a.y);
-    right.unshift(b.x, b.y);
+/**
+ * A slippery patch for the season, drawn facing +x (along the road) round the origin: ice in winter, a puddle in
+ * spring, mud in summer and a pile of leaves in autumn.
+ */
+export const patchGraphic = (season: Season, len: number, seed = 0.37): Graphics => {
+  const g = new Graphics();
+  const rx = len / 2;
+  const ry = LANE_W / 2 - 2.5;
+  switch (season) {
+    case 'winter':
+      g.poly(blob(rx, ry, seed))
+        .fill({ color: 0xd6efff, alpha: 0.95 })
+        .stroke({ width: 1.4, color: 0xffffff, join: 'round' });
+      g.moveTo(-rx * 0.55, -1.5)
+        .lineTo(rx * 0.1, -3.5)
+        .moveTo(rx * 0.25, 2.5)
+        .lineTo(rx * 0.6, 1.5)
+        .stroke({ width: 1.6, color: 0xffffff, cap: 'round' });
+      break;
+    case 'spring':
+      g.poly(blob(rx + 1.5, ry + 1.5, seed)).fill({ color: 0x3e4a55, alpha: 0.45 });
+      g.poly(blob(rx, ry, seed)).fill({ color: 0x6f9ec2, alpha: 0.95 });
+      g.ellipse(-rx * 0.25, -ry * 0.3, rx * 0.45, ry * 0.28).fill({ color: 0xbfe0f5, alpha: 0.7 });
+      g.ellipse(rx * 0.3, ry * 0.2, 3.2, 2).stroke({ width: 1, color: 0xe6f4fc, alpha: 0.9 });
+      g.ellipse(rx * 0.3, ry * 0.2, 5.6, 3.6).stroke({ width: 0.8, color: 0xe6f4fc, alpha: 0.5 });
+      break;
+    case 'summer':
+      g.poly(blob(rx + 1.5, ry + 1, seed, 0.2)).fill({ color: 0x4a3018, alpha: 0.55 });
+      g.poly(blob(rx, ry - 0.5, seed, 0.2)).fill(0x6e4a2a);
+      // Darker wet ruts, and the shine of water standing on top.
+      for (const [x, y, w] of [
+        [rx * 0.25, ry * 0.2, rx * 0.5],
+        [-rx * 0.4, ry * 0.3, rx * 0.3],
+      ] as const)
+        g.ellipse(x, y, w, ry * 0.22).fill({ color: 0x553820, alpha: 0.85 });
+      g.ellipse(-rx * 0.2, -ry * 0.38, rx * 0.42, 1.3).fill({ color: 0xd9b48a, alpha: 0.7 });
+      // Splatter round the edge.
+      for (const [x, y] of [
+        [-rx - 2.5, -ry * 0.4],
+        [rx + 2, ry * 0.5],
+        [rx * 0.4, -ry - 2],
+      ] as const)
+        g.circle(x, y, 1.3).fill(0x6a4629);
+      break;
+    case 'autumn': {
+      g.poly(blob(rx, ry, seed)).fill({ color: 0x7a3f1c, alpha: 0.35 });
+      const leaves = [0xe07a2c, 0xd4552b, 0xf0b23a, 0xb84a2a, 0xe89a30, 0x9aa53c];
+      for (let i = 0; i < 16; i++) {
+        const a = i * 2.39996 + seed * 7;
+        const d = Math.sqrt((i + 0.5) / 16);
+        const x = Math.cos(a) * rx * 0.85 * d;
+        const y = Math.sin(a) * ry * 0.85 * d;
+        const ang = a * 1.7;
+        const ux = Math.cos(ang) * 3.2;
+        const uy = Math.sin(ang) * 3.2;
+        const color = leaves[i % leaves.length]!;
+        // A pointed leaf: two curves meeting at the tips.
+        g.moveTo(x - ux, y - uy)
+          .quadraticCurveTo(x - uy * 0.7, y + ux * 0.7, x + ux, y + uy)
+          .quadraticCurveTo(x + uy * 0.7, y - ux * 0.7, x - ux, y - uy)
+          .fill(color)
+          .stroke({ width: 0.7, color: 0x5a2a12, alpha: 0.7 });
+      }
+      break;
+    }
   }
-  g.poly([...left, ...right])
-    .fill({ color: 0xd6efff, alpha: 0.9 })
-    .stroke({ width: 1.4, color: 0xffffff, alpha: 0.95, join: 'round' });
-  const c = pose(track, ice.s, laneOffset(ice.lane, ice.width));
-  const ux = Math.cos(c.angle);
-  const uy = Math.sin(c.angle);
-  g.moveTo(c.x - ux * 6 - uy * 2, c.y - uy * 6 + ux * 2)
-    .lineTo(c.x + ux * 2 - uy * 2, c.y + uy * 2 + ux * 2)
-    .moveTo(c.x + ux * 5 + uy * 3, c.y + uy * 5 - ux * 3)
-    .lineTo(c.x + ux * 8 + uy * 3, c.y + uy * 8 - ux * 3)
-    .stroke({ width: 1.6, color: 0xffffff, cap: 'round' });
+  return g;
+};
+
+/** The season's patches, laid on the road where they sit. */
+const drawPatches = (park: Park): Container => {
+  const c = new Container();
+  for (const p of park.patches) {
+    const g = patchGraphic(park.season, p.len, p.id + p.s * 0.01);
+    const at = pose(park.track, p.s, laneOffset(p.lane, p.width));
+    g.position.set(at.x, at.y);
+    g.rotation = at.angle;
+    c.addChild(g);
+  }
+  return c;
 };
 
 /** Stone pillars either side of each gate. */
@@ -592,11 +651,10 @@ export const drawPark = (park: Park): Container => {
   for (const w of park.water) drawWater(ground, w, pal, rng);
   const road = new Graphics();
   drawRoad(road, park, pal);
-  drawIce(road, park);
   drawGates(road, park);
   const trees = new Graphics();
   drawTrees(trees, park.trees, pal);
-  c.addChild(city, ground, road, trees);
+  c.addChild(city, ground, road, drawPatches(park), trees);
   return c;
 };
 
@@ -626,6 +684,7 @@ export const KIND_COLORS: Readonly<Record<Kind, number>> = {
   biker: 0x3f6fb2,
   car: 0xc98a12,
   carriage: 0x8a5cc2,
+  group: 0xd6336c,
 };
 export const WRONG_WAY_COLOR = COLORS.red;
 
@@ -633,14 +692,51 @@ export interface Look {
   kind: Kind;
   look: readonly [number, number, number];
   season: Season;
+  /** Runners in a run group. */
+  crowd?: number;
 }
 
+interface Member {
+  x: number;
+  y: number;
+  top: number;
+  hair: number;
+  /** Offsets each runner's stride so the pack doesn't move in lockstep. */
+  phase: number;
+}
+
+const BLACK_KIT = 0x26262b;
+
+/** A run group's runners, two abreast from the front back, all in black or each in a bright colour. */
+const groupMembers = (crowd: number, look: Look['look']): Member[] => {
+  const black = look[0] < 0.5;
+  const rows = Math.ceil(crowd / 2);
+  const front = ((rows - 1) * GROUP_ROW) / 2;
+  const jitter = (i: number, k: number) =>
+    Math.sin(i * 12.9898 + k * 78.233 + look[1] * 43.7) * 1.6;
+  return Array.from({ length: crowd }, (_, i) => {
+    const row = Math.floor(i / 2);
+    const alone = i === crowd - 1 && crowd % 2 === 1;
+    const t = (Math.sin(i * 3.1 + look[2] * 9) + 1) / 2;
+    return {
+      x: front - row * GROUP_ROW + jitter(i, 1),
+      y: alone ? jitter(i, 2) : (i % 2 ? 1 : -1) * (LANE_W / 2) + jitter(i, 2),
+      top: black ? BLACK_KIT : pick(SPORT, (t + i * 0.37) % 1),
+      hair: pick(HAIR, (t * 7.3) % 1),
+      phase: i * 1.9,
+    };
+  });
+};
+
 /** The body of a mover, which doesn't change as it moves. */
-export const moverBody = ({ kind, look, season }: Look): Graphics => {
+export const moverBody = ({ kind, look, season, crowd = 1 }: Look): Graphics => {
   const g = new Graphics();
   const winter = season === 'winter';
   const [a, b, c] = look;
   switch (kind) {
+    case 'group':
+      for (const m of groupMembers(crowd, look)) person(g, m.x, m.y, m.top, m.hair, false, 0, true);
+      break;
     case 'walker':
       person(g, 0, 0, winter ? pick(COATS, a) : pick(SHIRTS, a), pick(HAIR, b), winter, c);
       break;
@@ -817,16 +913,20 @@ const person = (
  * Arms and legs, redrawn each frame: a walking stride, a running one, or pedalling. `phase` advances with distance
  * covered, so faster movers' legs go faster.
  */
-export const drawLimbs = (g: Graphics, { kind, look, season }: Look, phase: number): void => {
+export const drawLimbs = (
+  g: Graphics,
+  { kind, look, season, crowd = 1 }: Look,
+  phase: number,
+): void => {
   g.clear();
   const skin = pick(SKIN, look[2]);
   const shoe = 0x2e2a2c;
   const sleeve = season === 'winter';
-  const stride = (x: number, y: number, reach: number, arm: number) => {
-    const s = Math.sin(phase);
+  const stride = (x: number, y: number, reach: number, arm: number, offset = 0, kit?: number) => {
+    const s = Math.sin(phase + offset);
     g.ellipse(x + s * reach * K, y - 2.6 * K, 2.2 * K, 1.6 * K).fill(shoe);
     g.ellipse(x - s * reach * K, y + 2.6 * K, 2.2 * K, 1.6 * K).fill(shoe);
-    const armColor = sleeve ? pick(COATS, look[0]) : skin;
+    const armColor = kit ?? (sleeve ? pick(COATS, look[0]) : skin);
     g.circle(x - s * arm * K, y - 5.6 * K, 1.6 * K)
       .fill(armColor)
       .stroke({ width: 0.9, color: INK, alpha: 0.6 });
@@ -835,6 +935,10 @@ export const drawLimbs = (g: Graphics, { kind, look, season }: Look, phase: numb
       .stroke({ width: 0.9, color: INK, alpha: 0.6 });
   };
   switch (kind) {
+    case 'group':
+      for (const m of groupMembers(crowd, look))
+        stride(m.x, m.y, 5, 3, m.phase, m.top === BLACK_KIT ? BLACK_KIT : undefined);
+      break;
     case 'walker':
       stride(0, 0, 3, 1.8);
       break;
@@ -895,6 +999,82 @@ export const STRIDE: Readonly<Record<Kind, number>> = {
   biker: 0.12,
   car: 0,
   carriage: 0.2,
+  group: 0.24,
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// Rats and dazed people.
+
+const RAT = 0x7d736b;
+const RAT_DARK = 0x5a514b;
+const RAT_PINK = 0xf2a3b3;
+
+/** A rat from above, facing +x, redrawn each frame so its tail and feet move. `phase` advances as it runs. */
+export const drawRat = (g: Graphics, phase: number, running: boolean): void => {
+  g.clear();
+  const wag = Math.sin(phase * (running ? 1.2 : 0.35));
+  // Tail: a long pink curve behind it.
+  g.moveTo(-6, 0)
+    .bezierCurveTo(-11, wag * 3, -15, -wag * 4, -20, wag * 2.5)
+    .stroke({ width: 1.6, color: RAT_PINK, cap: 'round' });
+  g.ellipse(1, 2, 7.5, 3.2).fill({ color: 0x000000, alpha: 0.2 });
+  // Feet, scurrying when it runs.
+  const f = running ? Math.sin(phase * 2) * 2 : 0;
+  for (const [x, y, d] of [
+    [3.5, -3.6, f],
+    [3.5, 3.6, -f],
+    [-3.5, -3.8, -f],
+    [-3.5, 3.8, f],
+  ] as const)
+    g.ellipse(x + d, y, 1.4, 1).fill(RAT_PINK);
+  g.ellipse(-0.5, 0, 7, 3.9).fill(RAT).stroke({ width: 1.3, color: INK, join: 'round' });
+  g.ellipse(-1.5, -1.2, 3.8, 1.3).fill({ color: 0xffffff, alpha: 0.2 });
+  g.moveTo(4, -3)
+    .quadraticCurveTo(11, -1.5, 11.5, 0)
+    .quadraticCurveTo(11, 1.5, 4, 3)
+    .closePath()
+    .fill(RAT_DARK)
+    .stroke({ width: 1.2, color: INK, join: 'round' });
+  for (const y of [-3, 3])
+    g.circle(4.6, y, 2).fill(RAT_PINK).stroke({ width: 1, color: INK, alpha: 0.8 });
+  g.circle(11.6, 0, 1.1).fill(RAT_PINK);
+  for (const y of [-1.4, 1.4]) g.circle(8, y, 0.8).fill(0x111111);
+  // Whiskers.
+  g.moveTo(10, -1)
+    .lineTo(13.5, -3)
+    .moveTo(10, 1)
+    .lineTo(13.5, 3)
+    .stroke({ width: 0.6, color: INK, alpha: 0.6 });
+};
+
+/** A red "!" in a white disc, over a rat about to dart out. */
+export const ratAlert = (): Graphics =>
+  new Graphics()
+    .circle(1, 1.5, 8)
+    .fill({ color: 0x000000, alpha: 0.25 })
+    .circle(0, 0, 8)
+    .fill(0xffffff)
+    .stroke({ width: 2.4, color: COLORS.red })
+    .roundRect(-1.4, -5, 2.8, 6.4, 1.4)
+    .fill(COLORS.red)
+    .circle(0, 3.6, 1.5)
+    .fill(COLORS.red);
+
+/** Stars circling over someone a rat has bitten; `t` turns them. */
+export const drawDaze = (g: Graphics, t: number): void => {
+  g.clear();
+  for (let i = 0; i < 3; i++) {
+    const a = t * 0.12 + (i / 3) * Math.PI * 2;
+    const x = Math.cos(a) * 13;
+    const y = Math.sin(a) * 5;
+    const pts: number[] = [];
+    for (let k = 0; k < 10; k++) {
+      const ang = -Math.PI / 2 + (k * Math.PI) / 5;
+      const r = k % 2 ? 2 : 4.8;
+      pts.push(x + Math.cos(ang) * r, y + Math.sin(ang) * r);
+    }
+    g.poly(pts).fill(COLORS.gold).stroke({ width: 1, color: INK, join: 'round' });
+  }
 };
 
 /** A soft shadow under a mover, the shape of its footprint. */
@@ -1045,5 +1225,3 @@ export const sample = (
   c.addChild(shadow, legs, moverBody({ kind, look, season }));
   return c;
 };
-
-export { iceShape };

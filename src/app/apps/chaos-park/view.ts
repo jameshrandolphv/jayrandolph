@@ -18,6 +18,9 @@ import {
   STRIDE,
   WRONG_WAY_COLOR,
   badgeDisc,
+  drawDaze,
+  drawRat,
+  ratAlert,
   badgeNumber,
   drawLimbs,
   drawPark,
@@ -26,6 +29,7 @@ import {
   moverBody,
   moverShadow,
   roadStrip,
+  patchGraphic,
   sample,
   speedStreaks,
   warnRing,
@@ -57,12 +61,24 @@ const easeOut = (t: number): number => 1 - (1 - Math.min(1, Math.max(0, t))) ** 
 /** How far below and right of a mover its shadow falls, as if lit from the top left. */
 const SHADOW = { x: 2, y: 3 };
 
+interface RatView {
+  body: Graphics;
+  alert: Graphics;
+  /** Scurrying phase, advanced by distance covered. */
+  phase: number;
+  lastX: number;
+  lastY: number;
+  angle: number;
+}
+
 interface MoverView {
   root: Container;
   shadow: Graphics;
   limbs: Graphics;
   /** Speed lines behind it while boosted. */
   streaks: Graphics;
+  /** Stars over the head of someone a rat has bitten. */
+  daze: Graphics;
   warn: Graphics;
   badge: Container;
   /** What the badge shows now, so it is only rebuilt when that changes. */
@@ -100,6 +116,7 @@ export class ChaosParkView {
   private readonly crashRing = new Graphics();
   private readonly badges = new Container();
   private readonly popLayer = new Container();
+  private readonly ratLayer = new Container();
   private readonly frame = new Graphics();
   private readonly hud = new Container();
   private readonly hudLeft = new Container();
@@ -116,6 +133,7 @@ export class ChaosParkView {
   private readonly paused = new Container();
 
   private readonly views = new Map<number, MoverView>();
+  private readonly ratViews = new Map<number, RatView>();
   private readonly popViews = new Map<number, Text>();
   private readonly lapsText: Counter;
   private readonly bestText: Counter;
@@ -167,6 +185,7 @@ export class ChaosParkView {
       this.shadows,
       this.warnings,
       this.movers,
+      this.ratLayer,
       this.crashRing,
       this.badges,
       this.popLayer,
@@ -183,6 +202,7 @@ export class ChaosParkView {
     const inPlay = phase === 'playing' || phase === 'crashed';
 
     this.syncMovers(sim.movers, alpha, deltaMs);
+    this.syncRats(alpha);
     this.syncPops();
     this.syncCrash();
 
@@ -245,6 +265,7 @@ export class ChaosParkView {
     this.scenery.removeChildren().forEach((c) => c.destroy({ children: true }));
     this.scenery.addChild(drawPark(park));
     for (const id of [...this.views.keys()]) this.dropMover(id);
+    for (const id of [...this.ratViews.keys()]) this.dropRat(id);
     this.buildTitle(park);
     this.buildHelp(park);
   }
@@ -275,7 +296,7 @@ export class ChaosParkView {
         v.phase += moved * STRIDE[m.kind];
         drawLimbs(v.limbs, v.look, v.phase);
       }
-      // A wobble after slipping on ice.
+      // A wobble after sliding on a patch.
       const wobble =
         m.slip > 0 ? Math.sin((sim.clock + alpha) * 0.9) * 0.5 * (m.slip / SLIP_TICKS) : 0;
       v.root.position.set(x, y);
@@ -305,12 +326,23 @@ export class ChaosParkView {
       const lift = along + across + BADGE_R + 3;
       v.badge.position.set(x + up.x * lift, y + up.y * lift);
       v.badge.alpha = m.alpha;
+      v.daze.visible = m.daze > 0;
+      if (m.daze > 0) {
+        drawDaze(v.daze, sim.clock + alpha);
+        v.daze.position.set(x + up.x * 4, y + up.y * 4);
+        v.daze.rotation = -this.world.rotation;
+      }
     }
     for (const id of [...this.views.keys()]) if (!live.has(id)) this.dropMover(id);
   }
 
   private createMover(m: Mover): MoverView {
-    const look: Look = { kind: m.kind, look: m.look, season: this.game.sim.park.season };
+    const look: Look = {
+      kind: m.kind,
+      look: m.look,
+      season: this.game.sim.park.season,
+      crowd: m.crowd,
+    };
     const root = new Container();
     const limbs = new Graphics();
     const streaks = speedStreaks(m.width, m.len);
@@ -321,16 +353,19 @@ export class ChaosParkView {
     warn.visible = false;
     const badge = new Container();
     badge.rotation = -this.world.rotation;
+    const daze = new Graphics();
+    daze.visible = false;
     this.shadows.addChild(shadow);
     this.warnings.addChild(warn);
     this.movers.addChild(root);
-    this.badges.addChild(badge);
+    this.badges.addChild(badge, daze);
     drawLimbs(limbs, look, 0);
     return {
       root,
       shadow,
       limbs,
       streaks,
+      daze,
       warn,
       badge,
       badgeKey: '',
@@ -350,7 +385,50 @@ export class ChaosParkView {
     v.shadow.destroy();
     v.warn.destroy();
     v.badge.destroy({ children: true });
+    v.daze.destroy();
     this.views.delete(id);
+  }
+
+  /** Rats, with a "!" over one waiting at the kerb. */
+  private syncRats(alpha: number): void {
+    const { rats, clock } = this.game.sim;
+    const live = new Set<number>();
+    for (const r of rats) {
+      live.add(r.id);
+      let v = this.ratViews.get(r.id);
+      if (!v) {
+        const body = new Graphics();
+        body.scale.set(1.3);
+        const alert = ratAlert();
+        this.ratLayer.addChild(body);
+        this.badges.addChild(alert);
+        v = { body, alert, phase: 0, lastX: r.x, lastY: r.y, angle: r.heading };
+        this.ratViews.set(r.id, v);
+      }
+      const x = lerp(r.prevX, r.x, alpha);
+      const y = lerp(r.prevY, r.y, alpha);
+      v.phase += Math.hypot(x - v.lastX, y - v.lastY) * 0.5 + 0.08;
+      v.lastX = x;
+      v.lastY = y;
+      v.angle += angleDiff(v.angle, lerpAngle(r.prevHeading, r.heading, alpha)) * 0.5;
+      drawRat(v.body, v.phase, r.state !== 'lurk');
+      v.body.position.set(x, y);
+      v.body.rotation = v.angle;
+      const lurking = r.state === 'lurk';
+      v.alert.visible = lurking && Math.sin(clock * 0.4) > -0.5;
+      const up = { x: -Math.sin(this.world.rotation), y: -Math.cos(this.world.rotation) };
+      v.alert.position.set(x + up.x * 16, y + up.y * 16);
+      v.alert.rotation = -this.world.rotation;
+    }
+    for (const id of [...this.ratViews.keys()]) if (!live.has(id)) this.dropRat(id);
+  }
+
+  private dropRat(id: number): void {
+    const v = this.ratViews.get(id);
+    if (!v) return;
+    v.body.destroy();
+    v.alert.destroy();
+    this.ratViews.delete(id);
   }
 
   /** Laps to go, an exit arrow once they're done, or a horseshoe for a carriage. Red-rimmed if going the wrong way. */
@@ -384,7 +462,7 @@ export class ChaosParkView {
       live.add(p.id);
       let t = this.popViews.get(p.id);
       if (!t) {
-        t = label('+1', 24, 0xffffff, {
+        t = label(`+${p.value}`, p.value > 1 ? 30 : 24, 0xffffff, {
           stroke: { color: 0x3f6b28, width: 6, join: 'round' },
           letterSpacing: 1,
         });
@@ -487,95 +565,115 @@ export class ChaosParkView {
     const layer = this.help;
     this.clear(layer);
     this.card(layer);
-    const heading = label('HOW TO PLAY', 50, COLORS.red, {
+    const heading = label('HOW TO PLAY', 46, COLORS.red, {
       stroke: { color: COLORS.ink, width: 6, join: 'round' },
       letterSpacing: 2,
     });
-    heading.position.set(0, -212);
+    heading.position.set(0, -218);
     layer.addChild(heading);
-    const rows: [Container, string][] = [];
-
-    const speed = new Container();
-    (['walker', 'runner', 'biker', 'car'] as const).forEach((kind, i) => {
-      const s = sample(kind, park.season);
-      s.scale.set(0.85);
-      s.position.set([-16, 8, 36, 74][i]!, 0);
-      speed.addChild(s);
+    const { season } = park;
+    const group = (...parts: [Container, number, number, number?][]): Container => {
+      const c = new Container();
+      for (const [part, x, y, scale = 1] of parts) {
+        part.position.set(x, y);
+        part.scale.set(part.scale.x * scale);
+        c.addChild(part);
+      }
+      return c;
+    };
+    const badge = (ring: number, n: number): Container => {
+      const b = new Container();
+      b.addChild(badgeDisc(ring), badgeNumber(n));
+      return b;
+    };
+    const reversed = (): Container => {
+      const w = sample('walker', season, [0.6, 0.3, 0.5]);
+      w.rotation = Math.PI;
+      return w;
+    };
+    const boosted = (): Container => {
+      const r = sample('runner', season, [0.5, 0.1, 0.8]);
+      const lines = speedStreaks(1, 14);
+      lines.x = -3;
+      r.addChildAt(lines, 0);
+      return r;
+    };
+    const plusOne = label('+1', 24, 0xffffff, {
+      stroke: { color: 0x3f6b28, width: 6, join: 'round' },
+      letterSpacing: 1,
     });
-    rows.push([speed, 'EACH ONE FASTER THAN THE LAST']);
+    const crash = new Container();
+    const a = sample('runner', season, [0.2, 0.5, 0.2]);
+    const b = sample('walker', season, [0.7, 0.2, 0.6]);
+    b.rotation = Math.PI;
+    const burst = new Graphics();
+    star(burst, 0, -2, 8);
+    burst.fill(COLORS.gold).stroke({ width: 1.6, color: COLORS.ink, join: 'round' });
+    crash.addChild(group([a, -11, 0], [b, 11, 0], [burst, 0, 0]));
 
-    const laps = new Container();
-    const runner = sample('runner', park.season);
-    const badge = new Container();
-    badge.addChild(badgeDisc(KIND_COLORS.runner), badgeNumber(2));
-    badge.position.set(0, -16);
-    runner.position.set(0, 4);
-    laps.addChild(runner, badge);
-    laps.x = 30;
-    rows.push([laps, 'NUMBERS SHOW THE LAPS LEFT TO GO']);
+    // The rows in order: an illustration and a line (or two) of text.
+    const rows: [Container, string][] = [
+      [
+        group(
+          [sample('walker', season), -40, 0, 0.75],
+          [sample('runner', season, [0.3, 0.6, 0.1]), -18, 0, 0.75],
+          [sample('biker', season), 8, 0, 0.75],
+          [sample('car', season), 44, 0, 0.6],
+        ),
+        'PARK VISITORS VARY IN SPEED',
+      ],
+      [
+        group([sample('runner', season), 0, 5, 0.8], [badge(KIND_COLORS.runner, 2), 0, -9, 0.8]),
+        'NUMBERS INDICATE REMAINING LAPS',
+      ],
+      [
+        group(
+          [sample('dog', season, [0.4, 0.1, 0.7]), -22, 0, 0.7],
+          [sample('carriage', season), 26, 0, 0.6],
+        ),
+        'SOME VISITORS OCCUPY TWO LANES',
+      ],
+      [
+        group([reversed(), 0, 5, 0.8], [badge(WRONG_WAY_COLOR, 1), 0, -9, 0.8]),
+        'SOME PEOPLE GO THE WRONG WAY',
+      ],
+      [
+        group(
+          ...(['winter', 'spring', 'summer', 'autumn'] as const).map(
+            (sea, i): [Container, number, number] => [patchGraphic(sea, 20, i), -36 + i * 24, 0],
+          ),
+        ),
+        'PATCHES OF ICE, WATER, MUD AND LEAVES\nWILL CAUSE UNEXPECTED LANE CHANGES',
+      ],
+      [
+        group([sample('runner', season), -6, 0, 0.85], [arrows(true), 16, 0]),
+        'SWIPE IN/OUT TO CHANGE LANES',
+      ],
+      [
+        group([boosted(), -12, 0, 0.85], [arrows(false), 18, 0]),
+        'SWIPE FORWARD TO SPEED UP AND BACK\nTO SLOW DOWN AGAIN',
+      ],
+      [group([plusOne, 0, 0]), 'EACH LAP IS A POINT'],
+      [group([crash, 0, 0, 0.9]), 'ONE COLLISION AND THE GAME IS OVER!'],
+    ];
 
-    const wide = new Container();
-    const dog = sample('dog', park.season, [0.4, 0.1, 0.7]);
-    const carriage = sample('carriage', park.season);
-    carriage.scale.set(0.8);
-    dog.position.set(-6, 0);
-    carriage.position.set(56, 0);
-    wide.addChild(dog, carriage);
-    rows.push([wide, 'DOGS, CARS & CARRIAGES TAKE TWO LANES']);
-
-    const wrong = new Container();
-    const back = sample('walker', park.season, [0.6, 0.3, 0.5]);
-    back.rotation = Math.PI;
-    const red = new Container();
-    red.addChild(badgeDisc(WRONG_WAY_COLOR), badgeNumber(1));
-    red.position.set(0, -16);
-    back.position.set(0, 4);
-    wrong.addChild(back, red);
-    wrong.x = 30;
-    rows.push([wrong, 'RED RIMS ARE GOING THE WRONG WAY!']);
-
-    if (park.season === 'winter') {
-      const ice = new Graphics()
-        .ellipse(30, 0, 26, 9)
-        .fill({ color: 0xd6efff, alpha: 0.95 })
-        .stroke({ width: 1.6, color: COLORS.ink, alpha: 0.4 })
-        .moveTo(18, -2)
-        .lineTo(28, -2)
-        .moveTo(34, 3)
-        .lineTo(40, 3)
-        .stroke({ width: 1.6, color: 0xffffff, cap: 'round' });
-      rows.push([ice, 'ICE SENDS THEM SLIDING A LANE']);
-    } else {
-      const shortcut = new Graphics()
-        .moveTo(0, 8)
-        .bezierCurveTo(20, -14, 40, 14, 62, -6)
-        .stroke({ width: 9, color: 0xcdb98f, cap: 'round' })
-        .moveTo(0, 8)
-        .bezierCurveTo(20, -14, 40, 14, 62, -6)
-        .stroke({ width: 6, color: 0xeadbb6, cap: 'round' });
-      rows.push([shortcut, 'SOME CUT ACROSS THE PARK']);
-    }
-
-    rows.forEach(([icon, text], i) => {
-      const y = -146 + i * 50;
-      icon.scale.set(icon.scale.x * 1.25);
-      icon.position.set((icon.x - 30) * 1.25 - 170, y);
-      const caption = label(text, 20, COLORS.ink, { letterSpacing: 1 });
-      caption.anchor.set(0, 0.5);
-      caption.position.set(-84, y);
-      layer.addChild(icon, caption);
-    });
-    const body = label(
-      'SWIPE IN OR OUT TO CHANGE LANE,\nFORWARD TO SPEED UP AND BACK TO SLOW DOWN.\nONE COLLISION AND IT’S GAME OVER!',
-      21,
-      COLORS.ink,
-      {
-        lineHeight: 27,
+    let y = -188;
+    for (const [icon, text] of rows) {
+      const lines = text.split('\n').length;
+      const h = lines > 1 ? 52 : 33;
+      const mid = y + h / 2;
+      icon.position.set(-178, mid);
+      const caption = label(text, 19, COLORS.ink, {
         letterSpacing: 1,
-      },
-    );
-    body.position.set(0, 120);
-    layer.addChild(body, ovalButton(BACK_BUTTON, 'red', 32));
+        lineHeight: 22,
+        align: 'left',
+      });
+      caption.anchor.set(0, 0.5);
+      caption.position.set(-98, mid);
+      layer.addChild(icon, caption);
+      y += h;
+    }
+    layer.addChild(ovalButton(BACK_BUTTON, 'red', 32));
   }
 
   private buildGameOver(): void {
@@ -650,6 +748,29 @@ export class ChaosParkView {
     );
   }
 }
+
+/**
+ * A double-headed arrow, white with an ink outline: up and down (across the road) or left and right (along it).
+ */
+const arrows = (across: boolean): Graphics => {
+  const g = new Graphics();
+  const draw = (): void => {
+    g.moveTo(0, -11)
+      .lineTo(0, 11)
+      .moveTo(-4.5, -6.5)
+      .lineTo(0, -11)
+      .lineTo(4.5, -6.5)
+      .moveTo(-4.5, 6.5)
+      .lineTo(0, 11)
+      .lineTo(4.5, 6.5);
+  };
+  draw();
+  g.stroke({ width: 5.5, color: COLORS.ink, cap: 'round', join: 'round' });
+  draw();
+  g.stroke({ width: 2.6, color: 0xffffff, cap: 'round', join: 'round' });
+  if (!across) g.rotation = Math.PI / 2;
+  return g;
+};
 
 const star = (g: Graphics, x: number, y: number, r: number): void => {
   const pts: number[] = [];

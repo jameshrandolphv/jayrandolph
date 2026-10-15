@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { BOOST, CRASH_TICKS, GAME_OVER_LOCKOUT, KIND_SPECS, LANES, type Kind } from './constants';
+import {
+  BOOST,
+  CRASH_TICKS,
+  DAZE_TICKS,
+  GAME_OVER_LOCKOUT,
+  GROUP_SIZE,
+  KIND_SPECS,
+  LANES,
+  RAT_LURK,
+  groupLength,
+  type Kind,
+} from './constants';
 import { ChaosParkGame, screenToPark } from './game';
 import { generatePark, laneOffset, pose, seededRng, wrap } from './park';
 import { ChaosParkSim, laneOverlap, lapsLeft, maxMovers, type Mover } from './sim';
@@ -14,14 +25,14 @@ const noArrivals = (sim: ChaosParkSim): void => {
 };
 
 /**
- * A run with the starting carriage cleared away, nothing arriving, and no short cuts or ice, so movers stay where
+ * A run with the starting carriage cleared away, nothing arriving, and no short cuts or patches, so movers stay where
  * tests put them.
  */
 const playing = (seed = 3): ChaosParkSim => {
   const sim = new ChaosParkSim(seededRng(seed));
   sim.start();
   sim.movers = [];
-  sim.park = { ...sim.park, shortcuts: [], ice: [] };
+  sim.park = { ...sim.park, shortcuts: [], patches: [] };
   noArrivals(sim);
   return sim;
 };
@@ -72,7 +83,9 @@ const put = (
     slip: 0,
     age: 0,
     look: [0.5, 0.5, 0.5],
-    onIce: new Set(),
+    onPatch: new Set(),
+    crowd: 1,
+    daze: 0,
     ...options,
   };
   m.baseSpeed = m.speed;
@@ -214,13 +227,13 @@ describe('ChaosParkSim', () => {
     expect(m.state).toBe('leaving');
   });
 
-  it('slides movers a lane on ice', () => {
+  it('slides movers a lane on a patch, whatever the season', () => {
     const sim = new ChaosParkSim(seededRng(5));
-    sim.park = generatePark(seededRng(5), 'winter');
+    sim.park = generatePark(seededRng(5), 'summer');
     sim.start();
     sim.movers = [];
     noArrivals(sim);
-    const patch = sim.park.ice[0]!;
+    const patch = sim.park.patches[0]!;
     const m = put(sim, 'runner', wrap(patch.s - 40, sim.park.track.length), patch.lane);
     ticks(sim, 60);
     expect(m.target).not.toBe(patch.lane);
@@ -304,6 +317,163 @@ describe('ChaosParkSim', () => {
   });
 });
 
+describe('run groups', () => {
+  const internals = (sim: ChaosParkSim) =>
+    sim as unknown as { arrive: (k: Kind) => boolean; checkTraffic: () => void };
+
+  it('come in as one two-lane pack of 6 to 12 runners doing a single lap', () => {
+    const black = new Set<boolean>();
+    for (let seed = 1; seed <= 40; seed++) {
+      const sim = playing(seed);
+      expect(internals(sim).arrive('group')).toBe(true);
+      const g = sim.movers.find((m) => m.kind === 'group')!;
+      expect(g.width).toBe(2);
+      expect(g.crowd).toBeGreaterThanOrEqual(GROUP_SIZE[0]);
+      expect(g.crowd).toBeLessThanOrEqual(GROUP_SIZE[1]);
+      expect(g.len).toBe(groupLength(g.crowd));
+      expect(g.laps).toBe(1);
+      expect(g.dir).toBe(1);
+      black.add(g.look[0] < 0.5);
+    }
+    // Both all-black and colourful groups turn up.
+    expect(black.size).toBe(2);
+  });
+
+  it('score a lap for every runner, then leave', () => {
+    const sim = playing();
+    const e = sim.park.entrances[0]!;
+    const g = put(sim, 'group', e.s, LANES - 2, { laps: 1 });
+    g.crowd = 9;
+    g.len = groupLength(9);
+    ticks(sim, Math.ceil(sim.park.track.length / g.speed) + 2);
+    expect(sim.score).toBe(9);
+    expect(sim.pops[0]!.value).toBe(9);
+    expect(g.state).toBe('leaving');
+  });
+
+  it('are rare and never two at once', () => {
+    const sim = new ChaosParkSim(seededRng(6));
+    sim.start();
+    // No crashes, and a score high enough for groups and rats from the start.
+    internals(sim).checkTraffic = () => undefined;
+    sim.score = 20;
+    const groups = new Set<number>();
+    let rats = 0;
+    let lastRat = -1;
+    const minutes = 10;
+    for (let t = 0; t < minutes * 3600; t++) {
+      sim.step();
+      sim.drainEvents();
+      const now = sim.movers.filter((m) => m.kind === 'group');
+      expect(now.length).toBeLessThanOrEqual(1);
+      for (const g of now) groups.add(g.id);
+      expect(sim.rats.length).toBeLessThanOrEqual(1);
+      const rat = sim.rats[0]?.id ?? -1;
+      if (rat !== -1 && rat !== lastRat) rats++;
+      lastRat = rat;
+    }
+    // Roughly one every 40 to 70 seconds for groups (after a full wait for the first), 30 to 55 for rats.
+    expect(groups.size).toBeGreaterThanOrEqual(minutes * 0.6);
+    expect(groups.size).toBeLessThanOrEqual(minutes * 1.6);
+    expect(rats).toBeGreaterThanOrEqual(minutes);
+    expect(rats).toBeLessThanOrEqual(minutes * 2.2);
+  });
+});
+
+describe('rats', () => {
+  const sendRat = (sim: ChaosParkSim): boolean =>
+    (sim as unknown as { sendRat: () => boolean }).sendRat();
+
+  it('wait at the kerb, dart out and bite, leaving the person dazed in place', () => {
+    const sim = playing();
+    const walker = put(sim, 'walker', 100, 0);
+    expect(sendRat(sim)).toBe(true);
+    expect(sim.drainEvents()).toEqual(['squeak']);
+    const rat = sim.rats[0]!;
+    expect(rat.state).toBe('lurk');
+    ticks(sim, RAT_LURK - 1);
+    expect(rat.state).toBe('lurk');
+    sim.step();
+    expect(rat.state).toBe('dash');
+    let bitten = -1;
+    for (let t = 0; t < 200 && bitten < 0; t++) {
+      sim.step();
+      if (sim.drainEvents().includes('bite')) bitten = t;
+    }
+    expect(bitten).toBeGreaterThanOrEqual(0);
+    expect(walker.daze).toBe(DAZE_TICKS);
+    const at = walker.s;
+    ticks(sim, DAZE_TICKS - 2);
+    expect(walker.s).toBe(at);
+    expect(walker.daze).toBeGreaterThan(0);
+    ticks(sim, 4);
+    expect(walker.daze).toBe(0);
+    expect(walker.s).not.toBe(at);
+    // The rat has run back off the road and gone.
+    ticks(sim, 120);
+    expect(sim.rats).toHaveLength(0);
+  });
+
+  it('only go for people on foot', () => {
+    const sim = playing();
+    put(sim, 'biker', 100, 0);
+    put(sim, 'car', 300, 2);
+    put(sim, 'carriage', 500, 0, { laps: Infinity });
+    expect(sendRat(sim)).toBe(false);
+    put(sim, 'dog', 700, 1);
+    expect(sendRat(sim)).toBe(true);
+  });
+
+  it('wait on the side of the road nearer their target', () => {
+    const sim = playing();
+    const { track } = sim.park;
+    const inner = put(sim, 'runner', 100, 0);
+    sendRat(sim);
+    const ratIn = sim.rats[0]!;
+    const centreIn = pose(track, inner.s + inner.speed * (RAT_LURK + 30));
+    const n =
+      track.normals[
+        Math.round(wrap(inner.s + inner.speed * (RAT_LURK + 30), track.length) / track.step) %
+          track.normals.length
+      ]!;
+    expect((ratIn.x - centreIn.x) * n.x + (ratIn.y - centreIn.y) * n.y).toBeLessThan(0);
+    sim.rats = [];
+    sim.movers = [];
+    const outer = put(sim, 'runner', 100, 3);
+    sendRat(sim);
+    const ratOut = sim.rats[0]!;
+    const centreOut = pose(track, outer.s + outer.speed * (RAT_LURK + 30));
+    expect((ratOut.x - centreOut.x) * n.x + (ratOut.y - centreOut.y) * n.y).toBeGreaterThan(0);
+  });
+
+  it('leave a dazed person who cannot be swiped and can be run into', () => {
+    const sim = playing();
+    const walker = put(sim, 'walker', 160, 1);
+    const runner = put(sim, 'runner', 60, 1);
+    walker.daze = DAZE_TICKS;
+    expect(sim.shift(walker.id, 1)).toBe(false);
+    expect(sim.setBoost(walker.id, true)).toBe(false);
+    let warned = false;
+    while (sim.phase === 'playing' && sim.playTicks < 200) {
+      sim.step();
+      warned ||= runner.warning;
+    }
+    expect(warned).toBe(true);
+    expect(sim.phase).toBe('crashed');
+  });
+
+  it('give up and run off when their target leaves the road', () => {
+    const sim = playing();
+    const walker = put(sim, 'walker', 100, 0);
+    sendRat(sim);
+    sim.movers = sim.movers.filter((m) => m !== walker);
+    sim.step();
+    expect(sim.rats[0]!.state).toBe('flee');
+    ticks(sim, 60);
+    expect(sim.rats).toHaveLength(0);
+  });
+});
+
 describe('speed swipes', () => {
   it('speeds a mover up and back down to its usual speed', () => {
     const sim = playing();
@@ -352,7 +522,7 @@ describe('ChaosParkGame swipes', () => {
     const game = new ChaosParkGame(scores as never, sfx as never, seededRng(3));
     game.sim.start();
     game.sim.movers = [];
-    game.sim.park = { ...game.sim.park, shortcuts: [], ice: [] };
+    game.sim.park = { ...game.sim.park, shortcuts: [], patches: [] };
     (game.sim as unknown as { spawn: () => void }).spawn = () => undefined;
     const m = put(game.sim, 'runner', 100, 1);
     return { game, m };

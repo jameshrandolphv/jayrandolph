@@ -87,8 +87,11 @@ export interface Tree {
   evergreen: boolean;
 }
 
-/** A slick patch on the road in winter; anything crossing it slides a lane. */
-export interface Ice {
+/**
+ * A slippery patch on the road, drawn for the season (ice, puddle, mud or a pile of leaves); anything crossing it
+ * slides a lane.
+ */
+export interface Patch {
   id: number;
   s: number;
   lane: number;
@@ -112,7 +115,7 @@ export interface Park {
   /** Footpaths drawn for show; nobody uses them but the short cuts. */
   paths: Point[][];
   trees: Tree[];
-  ice: Ice[];
+  patches: Patch[];
   wall: Rect;
   /** City blocks round the park, and the buildings on them. */
   blocks: Rect[];
@@ -633,22 +636,27 @@ const makeTrees = (
   return out.sort((a, b) => a.y - b.y);
 };
 
-const makeIce = (
+/** How many slippery patches each park has. */
+export const PATCH_COUNT = 2;
+
+/** Two small one-lane patches, well apart and clear of the entrances and short cuts. */
+const makePatches = (
   track: Track,
   entrances: readonly Entrance[],
   shortcuts: readonly Shortcut[],
   rng: () => number,
-) => {
-  const out: Ice[] = [];
-  const want = 4 + Math.floor(rng() * 3);
+): Patch[] => {
+  const out: Patch[] = [];
   const avoid = [...entrances.map((e) => e.s), ...shortcuts.flatMap((c) => [c.a, c.b])];
-  for (let tries = 0; tries < 200 && out.length < want; tries++) {
-    const s = rng() * track.length;
-    if (avoid.some((a) => Math.abs(loopDelta(a, s, track.length)) < 60)) continue;
-    if (out.some((o) => Math.abs(loopDelta(o.s, s, track.length)) < 110)) continue;
-    const width = rng() < 0.4 ? 2 : 1;
-    const lane = Math.floor(rng() * (LANES - width + 1));
-    out.push({ id: out.length, s, lane, width, len: 26 + rng() * 18 });
+  for (let spread = track.length / 3; out.length < PATCH_COUNT && spread > 0; spread -= 40) {
+    out.length = 0;
+    for (let tries = 0; tries < 200 && out.length < PATCH_COUNT; tries++) {
+      const s = rng() * track.length;
+      if (avoid.some((a) => Math.abs(loopDelta(a, s, track.length)) < 60)) continue;
+      if (out.some((o) => Math.abs(loopDelta(o.s, s, track.length)) < spread)) continue;
+      const lane = Math.floor(rng() * LANES);
+      out.push({ id: out.length, s, lane, width: 1, len: 18 + rng() * 6 });
+    }
   }
   return out;
 };
@@ -749,7 +757,7 @@ export const generatePark = (rng: () => number = Math.random, season?: Season): 
   const fields = makeFields(inside, water, shortcuts, rng);
   const paths = makePaths(track, inside, water, fields, rng);
   const trees = makeTrees(track, inside, entrances, shortcuts, water, fields, paths, chosen, rng);
-  const ice = chosen === 'winter' ? makeIce(track, entrances, shortcuts, rng) : [];
+  const patches = makePatches(track, entrances, shortcuts, rng);
   return {
     season: chosen,
     track,
@@ -759,7 +767,7 @@ export const generatePark = (rng: () => number = Math.random, season?: Season): 
     fields,
     paths,
     trees,
-    ice,
+    patches,
     wall: WALL,
     ...makeCity(rng),
   };

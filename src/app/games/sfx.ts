@@ -15,7 +15,9 @@ export type SfxName =
   | 'crash'
   | 'slip'
   | 'boost'
-  | 'brake';
+  | 'brake'
+  | 'squeak'
+  | 'bite';
 
 interface Tone {
   from: number;
@@ -68,6 +70,14 @@ const TONES: Readonly<Record<SfxName, readonly Tone[]>> = {
     { from: 780, to: 1560, seconds: 0.1, type: 'triangle', volume: 0.05, delay: 0.07 },
   ],
   brake: [{ from: 700, to: 300, seconds: 0.14, type: 'triangle', volume: 0.06 }],
+  squeak: [
+    { from: 2200, to: 2900, seconds: 0.05, type: 'sine', volume: 0.05 },
+    { from: 2400, to: 3100, seconds: 0.05, type: 'sine', volume: 0.05, delay: 0.09 },
+  ],
+  bite: [
+    { from: 900, to: 250, seconds: 0.08, type: 'square', volume: 0.06 },
+    { from: 600, to: 120, seconds: 0.3, type: 'triangle', volume: 0.06, delay: 0.06 },
+  ],
   slip: [
     { from: 1400, to: 500, seconds: 0.18, type: 'triangle', volume: 0.06 },
     { from: 900, to: 1300, seconds: 0.12, type: 'sine', volume: 0.04, delay: 0.14 },

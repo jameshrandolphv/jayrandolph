@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.6.1
+- Chaos Park: two small slippery patches in every season (ice, puddles, mud or leaf piles), rare run groups of 6 to 12 runners, rats that bite and daze people, and a rewritten how-to-play card
+
 ## 1.6.0
 - Added Chaos Park, a lane-swiping traffic game on a randomly generated park loop, with a random season every play (and ice in winter); swipe a mover forward to speed it up and back to slow it down
 
