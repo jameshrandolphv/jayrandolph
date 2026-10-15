@@ -1,6 +1,7 @@
 # Changelog
 
 ## 1.6.2
+- Chaos Park: one slippery patch per park instead of two; bikers shout "Out of my way!" when closing in on someone on foot
 - World's Longest Game eases in more gently: fewer enemies and roomier lanes in the first levels, no stationary dots before level 10, and stationary dots never placed right beside the start, checkpoints or finish
 
 ## 1.6.1

@@ -89,6 +89,13 @@ export const RAT_SPEED = 2.4;
 export const RAT_GIVE_UP = 150;
 export const DAZE_TICKS = 180;
 
+/**
+ * A biker closing in on someone on foot shouts "Out of my way!" in a speech bubble for `SHOUT_TICKS`, at most once
+ * every `SHOUT_COOLDOWN` ticks.
+ */
+export const SHOUT_TICKS = 100;
+export const SHOUT_COOLDOWN = 300;
+
 /** Cars only arrive from this score; their chance then grows a little. */
 export const CARS_FROM_SCORE = 6;
 /** The second (and last) carriage arrives at this score. */

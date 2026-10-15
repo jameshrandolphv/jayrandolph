@@ -637,9 +637,9 @@ const makeTrees = (
 };
 
 /** How many slippery patches each park has. */
-export const PATCH_COUNT = 2;
+export const PATCH_COUNT = 1;
 
-/** Two small one-lane patches, well apart and clear of the entrances and short cuts. */
+/** Small one-lane patches (`PATCH_COUNT` of them), well apart and clear of the entrances and short cuts. */
 const makePatches = (
   track: Track,
   entrances: readonly Entrance[],

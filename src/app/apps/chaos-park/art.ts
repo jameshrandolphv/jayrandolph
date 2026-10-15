@@ -1047,6 +1047,35 @@ export const drawRat = (g: Graphics, phase: number, running: boolean): void => {
     .stroke({ width: 0.6, color: INK, alpha: 0.6 });
 };
 
+/**
+ * A small speech bubble with its tail pointing down at (0, 0), so it can sit just above whoever is talking.
+ */
+export const speechBubble = (text: string): Container => {
+  const c = new Container();
+  const t = label(text, 13, INK, { letterSpacing: 0.5 });
+  const w = t.width + 12;
+  const h = 18;
+  const top = -h - 6;
+  const g = new Graphics()
+    .roundRect(-w / 2 + 1, top + 1.5, w, h, 7)
+    .fill({ color: 0x000000, alpha: 0.18 })
+    .moveTo(-4, top + h - 1)
+    .lineTo(0, 0)
+    .lineTo(4, top + h - 1)
+    .closePath()
+    .fill(0xffffff)
+    .stroke({ width: 1.2, color: INK, alpha: 0.7, join: 'round' })
+    .roundRect(-w / 2, top, w, h, 7)
+    .fill(0xffffff)
+    .stroke({ width: 1.2, color: INK, alpha: 0.7 })
+    // Paint over the tail's base so it joins the bubble without a seam.
+    .rect(-3.2, top + h - 2.5, 6.4, 2)
+    .fill(0xffffff);
+  t.position.set(0, top + h / 2 - 0.5);
+  c.addChild(g, t);
+  return c;
+};
+
 /** A red "!" in a white disc, over a rat about to dart out. */
 export const ratAlert = (): Graphics =>
   new Graphics()

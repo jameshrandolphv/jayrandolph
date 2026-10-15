@@ -31,6 +31,7 @@ import {
   roadStrip,
   patchGraphic,
   sample,
+  speechBubble,
   speedStreaks,
   warnRing,
   type Look,
@@ -47,6 +48,7 @@ import {
   QUIT_BUTTON,
   RESUME_BUTTON,
   RETRY_BUTTON,
+  SHOUT_TICKS,
   SLIP_TICKS,
   pauseButton,
   type Bounds,
@@ -79,6 +81,8 @@ interface MoverView {
   streaks: Graphics;
   /** Stars over the head of someone a rat has bitten. */
   daze: Graphics;
+  /** A biker's "Out of my way!", made when first needed. */
+  shout: Container | null;
   warn: Graphics;
   badge: Container;
   /** What the badge shows now, so it is only rebuilt when that changes. */
@@ -326,6 +330,7 @@ export class ChaosParkView {
       const lift = along + across + BADGE_R + 3;
       v.badge.position.set(x + up.x * lift, y + up.y * lift);
       v.badge.alpha = m.alpha;
+      this.syncShout(v, m, up);
       v.daze.visible = m.daze > 0;
       if (m.daze > 0) {
         drawDaze(v.daze, sim.clock + alpha);
@@ -366,6 +371,7 @@ export class ChaosParkView {
       limbs,
       streaks,
       daze,
+      shout: null,
       warn,
       badge,
       badgeKey: '',
@@ -386,7 +392,26 @@ export class ChaosParkView {
     v.warn.destroy();
     v.badge.destroy({ children: true });
     v.daze.destroy();
+    v.shout?.destroy({ children: true });
     this.views.delete(id);
+  }
+
+  /** Pops a biker's shout up over its badge, then fades it away. */
+  private syncShout(v: MoverView, m: Mover, up: { x: number; y: number }): void {
+    if (m.shout <= 0) {
+      if (v.shout) v.shout.visible = false;
+      return;
+    }
+    if (!v.shout) {
+      v.shout = speechBubble('Out of my way!');
+      this.badges.addChild(v.shout);
+    }
+    const age = SHOUT_TICKS - m.shout;
+    v.shout.visible = true;
+    v.shout.alpha = 0.92 * Math.min(1, age / 6, m.shout / 16) * m.alpha;
+    v.shout.scale.set(0.7 + 0.3 * easeOut(age / 8));
+    v.shout.rotation = -this.world.rotation;
+    v.shout.position.set(v.badge.x + up.x * (BADGE_R + 2), v.badge.y + up.y * (BADGE_R + 2));
   }
 
   /** Rats, with a "!" over one waiting at the kerb. */
@@ -643,7 +668,7 @@ export class ChaosParkView {
             (sea, i): [Container, number, number] => [patchGraphic(sea, 20, i), -36 + i * 24, 0],
           ),
         ),
-        'PATCHES OF ICE, WATER, MUD AND LEAVES\nWILL CAUSE UNEXPECTED LANE CHANGES',
+        'PATCHES OF ICE, WATER, MUD, AND LEAVES\nWILL CAUSE UNEXPECTED LANE CHANGES',
       ],
       [
         group([sample('runner', season), -6, 0, 0.85], [arrows(true), 16, 0]),

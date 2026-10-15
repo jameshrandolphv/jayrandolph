@@ -112,7 +112,7 @@ describe('generatePark', () => {
     expect(total).toBeGreaterThan(SEEDS.length * 0.8);
   });
 
-  it('lays two small one-lane patches in every season, well apart', () => {
+  it('lays one small one-lane patch in every season', () => {
     const seen = new Set<string>();
     for (const seed of SEEDS) {
       const park = generatePark(seededRng(seed));
@@ -123,10 +123,6 @@ describe('generatePark', () => {
         expect(p.lane + p.width).toBeLessThanOrEqual(LANES);
         expect(p.len).toBeLessThan(30);
       }
-      const [a, b] = park.patches;
-      expect(Math.abs(loopDelta(a!.s, b!.s, park.track.length))).toBeGreaterThan(
-        park.track.length / 6,
-      );
     }
     expect(seen.size).toBe(SEASONS.length);
   });
