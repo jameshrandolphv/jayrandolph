@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.6.2
+- Chaos Park: one slippery patch per park instead of two
+
 ## 1.6.1
 - Chaos Park: two small slippery patches in every season (ice, puddles, mud or leaf piles), rare run groups of 6 to 12 runners, rats that bite and daze people, and a rewritten how-to-play card
 
