@@ -2,6 +2,7 @@
 
 ## 1.6.2
 - Chaos Park: one slippery patch per park instead of two; bikers shout "Out of my way!" when closing in on someone on foot
+- World's Longest Game eases in more gently: fewer enemies and roomier lanes in the first levels, no stationary dots before level 10, and stationary dots never placed right beside the start, checkpoints or finish
 
 ## 1.6.1
 - Chaos Park: two small slippery patches in every season (ice, puddles, mud or leaf piles), rare run groups of 6 to 12 runners, rats that bite and daze people, and a rewritten how-to-play card
