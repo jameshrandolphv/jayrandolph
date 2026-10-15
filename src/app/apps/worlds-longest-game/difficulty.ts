@@ -41,6 +41,10 @@ export interface Difficulty {
   loopDots: number;
   /** Dots following a winding route. */
   routeDots: number;
+  /** Largest clear patch, in solver cells, left without a fill-in enemy; early levels keep a little breathing room. */
+  openCells: number;
+  /** Whether a fill-in may be a dot that never moves; early levels only get moving ones. */
+  stationary: boolean;
 }
 
 const CHAMBERS = [
@@ -84,10 +88,15 @@ const LAYOUT_UNLOCKS: readonly [LayoutKind, number][] = [
   ['winding', 10],
 ];
 
+/** Levels before this are eased in: sparser patterns, roomier lanes and no stationary fill-ins. */
+const EASY_UNTIL = 10;
+
 /** Speed and lane width saturate at what is humanly playable; later levels get longer, denser and more mixed. */
 export const difficultyFor = (number: number): Difficulty => {
   const level = number + HEAD_START;
   const t = level - 1;
+  // How far into the eased-in stretch this level is, from 1 at level 1 down to 0 at EASY_UNTIL.
+  const ease = Math.max(0, (EASY_UNTIL - number) / (EASY_UNTIL - 1));
   // Safe zones are scarce: a long run between them is the point.
   const segments = number < 10 ? 1 : number < 24 ? 2 : number < 45 ? 3 : 4;
   const layouts = LAYOUT_UNLOCKS.filter(([, from]) => number >= from).map(([kind]) => kind);
@@ -105,12 +114,14 @@ export const difficultyFor = (number: number): Difficulty => {
     // Busy levels build up slowly: the heaviest mixes are for level 20 and beyond.
     patternsPerChamber: number < 14 ? 1 : number < 26 ? 2 : 3,
     speed: Math.min(4, 2.2 + 0.06 * t),
-    lane: Math.max(12, 40 - t),
-    columns: Math.min(8, 2 + Math.floor(number / 4)),
+    lane: Math.max(12, 40 - t) + Math.round(16 * ease),
+    columns: Math.min(8, 2 + Math.floor(Math.max(0, number - 4) / 4)),
     perColumn: number < 6 ? 1 : number < 14 ? 2 : number < 24 ? 3 : 4,
-    orbitDots: Math.min(8, 3 + Math.floor(number / 8)),
+    orbitDots: number < 6 ? 2 : Math.min(8, 3 + Math.floor(number / 8)),
     rings: level < 20 ? 1 : 2,
     loopDots: Math.min(6, 2 + Math.floor(number / 10)),
     routeDots: Math.min(6, 2 + Math.floor(number / 6)),
+    openCells: number < 6 ? 16 : number < EASY_UNTIL ? 9 : 4,
+    stationary: number >= EASY_UNTIL,
   };
 };

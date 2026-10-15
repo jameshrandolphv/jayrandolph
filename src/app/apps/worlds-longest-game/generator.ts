@@ -21,8 +21,26 @@ import { COIN_REACH, isSegmentSolvable, isSolvable, openAreas, viableSpots, type
 
 const area = (r: TileRect): number => r.w * r.h;
 
+/** A dot that never moves. */
+const isStill = (e: Enemy): boolean => e.kind === 'sweep' && e.ax === e.bx && e.ay === e.by;
+
+/** How close to a safe zone a dot that never moves may sit: far enough that the way in and out stays open. */
+const ZONE_CLEARANCE = 2 * TILE;
+
+const nearZone = (zones: readonly TileRect[], e: Enemy): boolean =>
+  e.kind === 'sweep' &&
+  zones.some((z) => {
+    const dx = Math.max(z.c * TILE - e.ax, 0, e.ax - (z.c + z.w) * TILE);
+    const dy = Math.max(z.r * TILE - e.ay, 0, e.ay - (z.r + z.h) * TILE);
+    return Math.hypot(dx, dy) < ZONE_CLEARANCE;
+  });
+
+/** Whether any of the enemies stands still beside a safe zone, crowding the start, a checkpoint or the finish. */
+const blocksZone = (zones: readonly TileRect[], enemies: readonly Enemy[]): boolean =>
+  enemies.some((e) => isStill(e) && nearZone(zones, e));
+
 /** Fills the chamber with patterns: one apiece for each part of a complicated shape, several in a plain room. */
-const populateChamber = (rand: Random, chamber: Chamber, d: Difficulty): Enemy[] => {
+const populateChamber = (rand: Random, chamber: Chamber, d: Difficulty, zones: readonly TileRect[]): Enemy[] => {
   const enemies: Enemy[] = [];
   if (chamber.route && rand.chance(0.8)) enemies.push(...trace(rand, chamber.route, d));
   const single = chamber.parts.length === 1;
@@ -30,7 +48,7 @@ const populateChamber = (rand: Random, chamber: Chamber, d: Difficulty): Enemy[]
     if (part.w < 2 || part.h < 2) continue;
     // Walls need the whole stretch to stand across, so they are tried before the part is split up.
     const walled = d.patterns.includes('wall') && rand.chance(0.3) ? walls(rand, boxOf(part), d) : [];
-    if (walled.length) {
+    if (walled.length && !blocksZone(zones, walled)) {
       enemies.push(...walled);
       continue;
     }
@@ -151,8 +169,6 @@ const placeCoins = (rand: Random, plan: Plan, level: LevelDef, d: Difficulty): C
   return coins;
 };
 
-/** A clear patch bigger than this many solver cells (about one player square) counts as an open area. */
-const MAX_OPEN_CELLS = 4;
 const MAX_FILLS = 16;
 /** Candidate fill-ins tried for a single open area before it is given up on. */
 const FILL_TRIES = 6;
@@ -173,7 +189,7 @@ const stays = (level: LevelDef, enemy: Enemy): boolean => {
   return true;
 };
 
-/** Something to patrol an open area: a spinner when it is roomy, a small orbit or a lone dot when it is tight, otherwise a sweep along its long side. */
+/** Something to patrol an open area: a spinner when it is roomy (once spinners are unlocked), a small orbit or a lone dot when it is tight, otherwise a sweep along its long side. */
 const fillerFor = (
   rand: Random,
   level: LevelDef,
@@ -187,7 +203,9 @@ const fillerFor = (
   const height = open.y1 - open.y0;
   const cx = (open.x0 + open.x1) / 2;
   const cy = (open.y0 + open.y1) / 2;
-  if (Math.min(width, height) >= 2 * (INSET + 3 * 2 * ENEMY_R)) attempts.push(spinners(rand, box, d));
+  // A spinner is a whole bar of dots, so it only fills in once spinners are part of the level's mix.
+  if (d.patterns.includes('spinner') && Math.min(width, height) >= 2 * (INSET + 3 * 2 * ENEMY_R))
+    attempts.push(spinners(rand, box, d));
   const small = Math.max(width, height) < 60;
   const orbit = (radius: number): Enemy[] => {
     const period = pickPeriod(2 * Math.PI * radius, d.speed * 0.8);
@@ -226,6 +244,7 @@ const fillerFor = (
   return (
     attempts.find((made) => {
       if (!made.length || !made.every((e) => stays(level, e)) || tried++ >= FILL_TRIES) return false;
+      if (made.some(isStill) && (!d.stationary || blocksZone(level.zones, made))) return false;
       return accept(made);
     }) ?? []
   );
@@ -241,7 +260,7 @@ const chamberAt = (plan: Plan, x: number, y: number): number =>
 const fillOpenAreas = (rand: Random, plan: Plan, level: LevelDef, d: Difficulty): LevelDef => {
   let current = level;
   for (let i = 0; i < MAX_FILLS; i++) {
-    const [open] = openAreas(current, MAX_OPEN_CELLS);
+    const [open] = openAreas(current, d.openCells);
     if (!open) break;
     const chamber = chamberAt(plan, (open.x0 + open.x1) / 2, (open.y0 + open.y1) / 2);
     // Coins are left out of the quick check; generateLevel checks the whole level again at the end.
@@ -299,7 +318,7 @@ export const buildChecked = (
     let made: Enemy[] = [];
     let clear: Enemy[] | undefined;
     for (let attempt = 0; attempt < CHAMBER_TRIES; attempt++) {
-      made = populateChamber(rand, chamber, easedBy(d, Math.max(0, attempt - CHAMBER_TRIES / 2)));
+      made = populateChamber(rand, chamber, easedBy(d, Math.max(0, attempt - CHAMBER_TRIES / 2)), plan.zones);
       if (crossesWheels(enemies, made)) continue;
       clear = made;
       if (isSegmentSolvable({ ...bare, enemies: made }, i)) break;
@@ -330,10 +349,11 @@ export const generateLevel = (number: number, runSeed: number): LevelDef => {
     // Rarely a hard draw has no solution; later attempts step the difficulty down a little.
     const eased =
       attempt < EASED_AFTER ? number : Math.max(1, Math.floor(number * (1 - (attempt - EASED_AFTER + 1) * 0.06)));
-    const built = buildChecked(hashSeed(runSeed, number, attempt), number, difficultyFor(eased));
+    const d = difficultyFor(eased);
+    const built = buildChecked(hashSeed(runSeed, number, attempt), number, d);
     last = built.level;
     // Fill-ins can occasionally leave a pocket; prefer a draw without one, but take a solvable one after a while.
-    if (built.solvable && (attempt >= EASED_AFTER / 2 || openAreas(last, MAX_OPEN_CELLS).length === 0)) return last;
+    if (built.solvable && (attempt >= EASED_AFTER / 2 || openAreas(last, d.openCells).length === 0)) return last;
   }
   return last!;
 };
