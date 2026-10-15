@@ -3,9 +3,13 @@ import {
   CARS_FROM_SCORE,
   COLLIDE_FACTOR,
   CRASH_TICKS,
+  DAZE_TICKS,
   FIRST_SPAWN,
   GAME_OVER_LOCKOUT,
   GRAB_RADIUS,
+  GROUP_FROM_SCORE,
+  GROUP_INTERVAL,
+  GROUP_SIZE,
   JOIN_HOLD,
   JOIN_TICKS,
   KIND_SPECS,
@@ -17,6 +21,12 @@ import {
   MAX_MOVERS,
   MAX_MOVERS_START,
   POP_TICKS,
+  RAT_FROM_SCORE,
+  RAT_GIVE_UP,
+  RAT_INTERVAL,
+  RAT_LURK,
+  RAT_SPEED,
+  ROAD_HALF,
   SECOND_CARRIAGE_SCORE,
   SHORTCUT_CHANCE,
   SLIP_TICKS,
@@ -29,6 +39,7 @@ import {
   WRONG_WAY_CHANCE,
   WRONG_WAY_FROM_SCORE,
   WRONG_WAY_MAX_CHANCE,
+  groupLength,
   type Kind,
 } from './constants';
 import {
@@ -44,7 +55,17 @@ import {
 } from './park';
 
 export type Phase = 'title' | 'help' | 'playing' | 'crashed' | 'gameOver';
-export type SimEvent = 'lap' | 'alert' | 'crash' | 'slip' | 'shift' | 'bump' | 'boost' | 'brake';
+export type SimEvent =
+  | 'lap'
+  | 'alert'
+  | 'crash'
+  | 'slip'
+  | 'shift'
+  | 'bump'
+  | 'boost'
+  | 'brake'
+  | 'squeak'
+  | 'bite';
 
 /**
  * Where a mover is: walking in from the street, on the loop, cutting across the park, or heading out. Only movers on
@@ -101,19 +122,45 @@ export interface Mover {
   alpha: number;
   /** About to hit something in its lane. */
   warning: boolean;
-  /** Ticks left of an ice wobble. */
+  /** Ticks left of a wobble after sliding on a patch. */
   slip: number;
   /** Ticks since it appeared; drives walking and pedalling. */
   age: number;
   /** Fixed random numbers for its colours. */
   look: [number, number, number];
-  /** Ice patches it is on, so each crossing only slides it once. */
-  onIce: Set<number>;
+  /** Patches it is on, so each crossing only slides it once. */
+  onPatch: Set<number>;
+  /** How many people it is: the runners in a run group, otherwise 1. Each scores for a lap. */
+  crowd: number;
+  /** Ticks left standing still after a rat bite. */
+  daze: number;
+}
+
+/**
+ * A rat: it waits at the kerb ahead of the person it is after, darts out to bite them, then runs back off the road.
+ */
+export interface Rat {
+  id: number;
+  state: 'lurk' | 'dash' | 'flee';
+  /** The mover it is after. */
+  target: number;
+  /** Where it waited, off the road, which it runs back to. */
+  home: Point;
+  x: number;
+  y: number;
+  heading: number;
+  prevX: number;
+  prevY: number;
+  prevHeading: number;
+  /** Ticks in its current state. */
+  ticks: number;
 }
 
 /** The "+1" that floats up where a lap is completed. */
 export interface Pop {
   id: number;
+  /** Points scored: 1, or the size of a run group. */
+  value: number;
   x: number;
   y: number;
   ticks: number;
@@ -122,6 +169,12 @@ export interface Pop {
 /** Movers allowed in the park at once (not counting carriages) at a given score. */
 export const maxMovers = (score: number): number =>
   Math.min(MAX_MOVERS, MAX_MOVERS_START + Math.floor(score / LAPS_PER_EXTRA));
+
+/** How fast a mover is actually going: nothing while dazed. */
+export const pace = (m: Pick<Mover, 'speed' | 'daze'>): number => (m.daze > 0 ? 0 : m.speed);
+
+/** People a rat goes for. */
+const BITEABLE: ReadonlySet<Kind> = new Set(['walker', 'runner', 'dog']);
 
 /** How much of each lane span [p, p + w) overlaps, in lanes. */
 export const laneOverlap = (p1: number, w1: number, p2: number, w2: number): number =>
@@ -135,6 +188,7 @@ export class ChaosParkSim {
   score = 0;
   park: Park;
   movers: Mover[] = [];
+  rats: Rat[] = [];
   pops: Pop[] = [];
   crash: { x: number; y: number; ids: [number, number] } | null = null;
   phaseTicks = 0;
@@ -146,6 +200,8 @@ export class ChaosParkSim {
   private nextId = 1;
   private spawnTimer = FIRST_SPAWN;
   private carriagesSent = 0;
+  private groupTimer = 0;
+  private ratTimer = 0;
   /** Pairs already warned about, so the alert sounds once per close call. */
   private warnedPairs = new Set<string>();
 
@@ -221,7 +277,8 @@ export class ChaosParkSim {
     const m = this.movers.find((o) => o.id === id && o.state === 'track');
     if (!m) return false;
     const next = Math.max(0, Math.min(LANES - m.width, m.target + delta));
-    if (next === m.target) {
+    // Someone dazed by a rat can't be moved on.
+    if (next === m.target || m.daze > 0) {
       this.events.push('bump');
       return false;
     }
@@ -243,7 +300,7 @@ export class ChaosParkSim {
     if (this.phase !== 'playing' || this.paused) return false;
     const m = this.movers.find((o) => o.id === id && o.state === 'track');
     if (!m) return false;
-    if (m.boosted === on) {
+    if (m.boosted === on || m.daze > 0) {
       this.events.push('bump');
       return false;
     }
@@ -258,6 +315,11 @@ export class ChaosParkSim {
       m.prevX = m.x;
       m.prevY = m.y;
       m.prevHeading = m.heading;
+    }
+    for (const r of this.rats) {
+      r.prevX = r.x;
+      r.prevY = r.y;
+      r.prevHeading = r.heading;
     }
     if (this.paused) return;
     this.clock++;
@@ -274,6 +336,7 @@ export class ChaosParkSim {
       else if (this.moveOnRoute(m)) gone.add(m);
     }
     if (gone.size) this.movers = this.movers.filter((m) => !gone.has(m));
+    this.moveRats();
     for (const p of this.pops) p.ticks++;
     this.pops = this.pops.filter((p) => p.ticks < POP_TICKS);
     this.checkTraffic();
@@ -284,13 +347,18 @@ export class ChaosParkSim {
 
   private moveOnTrack(m: Mover): void {
     const { track, entrances, shortcuts } = this.park;
+    if (m.daze > 0) {
+      // Standing still, seeing stars.
+      m.daze--;
+      return;
+    }
     const from = m.s;
     const delta = m.speed * m.dir;
     m.s = wrap(m.s + delta, track.length);
     if (m.p !== m.target) m.p += Math.max(-LANE_RATE, Math.min(LANE_RATE, m.target - m.p));
     m.progress += m.speed;
     this.countLaps(m);
-    this.checkIce(m);
+    this.checkPatches(m);
     this.place(m);
 
     if (m.done) {
@@ -411,31 +479,31 @@ export class ChaosParkSim {
   }
 
   // -------------------------------------------------------------------------------------------------------------
-  // Laps, ice and collisions.
+  // Laps, patches and collisions.
 
   private countLaps(m: Mover): void {
     const length = this.park.track.length;
     while (!m.done && m.progress >= (m.lapsDone + 1) * length - 1e-6) {
       m.lapsDone++;
-      this.score++;
+      this.score += m.crowd;
       this.events.push('lap');
-      this.pops.push({ id: this.nextId++, x: m.x, y: m.y, ticks: 0 });
+      this.pops.push({ id: this.nextId++, value: m.crowd, x: m.x, y: m.y, ticks: 0 });
       if (m.lapsDone >= m.laps) m.done = true;
     }
   }
 
-  private checkIce(m: Mover): void {
-    const { ice, track } = this.park;
-    for (const patch of ice) {
+  private checkPatches(m: Mover): void {
+    const { patches, track } = this.park;
+    for (const patch of patches) {
       const over =
         Math.abs(loopDelta(patch.s, m.s, track.length)) < (patch.len + m.len) / 2 - 4 &&
         laneOverlap(m.p, m.width, patch.lane, patch.width) > 0.3;
       if (!over) {
-        m.onIce.delete(patch.id);
+        m.onPatch.delete(patch.id);
         continue;
       }
-      if (m.onIce.has(patch.id)) continue;
-      m.onIce.add(patch.id);
+      if (m.onPatch.has(patch.id)) continue;
+      m.onPatch.add(patch.id);
       const options = [m.target - 1, m.target + 1].filter((l) => l >= 0 && l <= LANES - m.width);
       m.target = options[Math.floor(this.rng() * options.length)]!;
       m.slip = SLIP_TICKS;
@@ -456,12 +524,12 @@ export class ChaosParkSim {
       const clearance = (o.len + m.len) / 2 + 10;
       // How far it has to go to reach the joining spot, and how far past it it already is.
       const toReach = wrap((s - o.s) * o.dir, length);
-      if (toReach < o.speed * JOIN_TICKS + clearance) return false;
+      if (toReach < pace(o) * JOIN_TICKS + clearance) return false;
       if (length - toReach < clearance) return false;
       if (o.dir === m.dir) {
         // Something slower just ahead would soon be caught.
         const ahead = wrap((o.s - s) * m.dir, length);
-        if (ahead < clearance + Math.max(0, m.speed - o.speed) * JOIN_TICKS) return false;
+        if (ahead < clearance + Math.max(0, m.speed - pace(o)) * JOIN_TICKS) return false;
       }
     }
     return true;
@@ -497,7 +565,7 @@ export class ChaosParkSim {
         const bW = Math.max(b.p, b.target) + b.width - bLo;
         if (laneOverlap(aLo, aW, bLo, bW) <= 0.1) continue;
         const gap = dist - half;
-        const closing = -Math.sign(delta) * (b.speed * b.dir - a.speed * a.dir);
+        const closing = -Math.sign(delta) * (pace(b) * b.dir - pace(a) * a.dir);
         if (gap < 6 || (closing > 0 && gap / closing < WARN_TICKS)) {
           a.warning = b.warning = true;
           const key = `${a.id}:${b.id}`;
@@ -513,6 +581,7 @@ export class ChaosParkSim {
   // Arrivals.
 
   private spawn(): void {
+    this.spawnSpecials();
     const active = this.movers.filter((m) => m.kind !== 'carriage' && m.state !== 'leaving').length;
     if (this.carriagesSent < 2 && this.score >= SECOND_CARRIAGE_SCORE && this.arrive('carriage'))
       this.carriagesSent++;
@@ -525,6 +594,25 @@ export class ChaosParkSim {
     const base = Math.max(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL - this.score * SPAWN_INTERVAL_STEP);
     this.spawnTimer = Math.round(base * (0.75 + this.rng() * 0.5));
     if (!this.arrive(this.pickKind())) this.spawnTimer = 20;
+  }
+
+  /** The rare ones: run groups and rats, each on its own long timer once the score is high enough. */
+  private spawnSpecials(): void {
+    const between = ([lo, hi]: readonly [number, number]) =>
+      Math.round(lo + this.rng() * (hi - lo));
+    if (this.score >= GROUP_FROM_SCORE) {
+      if (this.groupTimer <= 0) this.groupTimer = between(GROUP_INTERVAL);
+      else if (--this.groupTimer <= 0) {
+        // One at a time; a busy moment just puts it off a little.
+        if (this.movers.some((m) => m.kind === 'group') || !this.arrive('group'))
+          this.groupTimer = 120;
+        else this.groupTimer = between(GROUP_INTERVAL);
+      }
+    }
+    if (this.score >= RAT_FROM_SCORE) {
+      if (this.ratTimer <= 0) this.ratTimer = between(RAT_INTERVAL) / 2;
+      else if (--this.ratTimer <= 0) this.ratTimer = this.sendRat() ? between(RAT_INTERVAL) : 120;
+    }
   }
 
   private pickKind(): Kind {
@@ -552,7 +640,11 @@ export class ChaosParkSim {
     );
     if (!free.length) return false;
     const e = free[Math.floor(this.rng() * free.length)]!;
-    const m = this.create(kind);
+    const crowd =
+      kind === 'group'
+        ? GROUP_SIZE[0] + Math.floor(this.rng() * (GROUP_SIZE[1] - GROUP_SIZE[0] + 1))
+        : 1;
+    const m = this.create(kind, crowd);
     const wrongWayChance = Math.min(
       WRONG_WAY_MAX_CHANCE,
       WRONG_WAY_CHANCE + (this.score - WRONG_WAY_FROM_SCORE) * 0.003,
@@ -590,7 +682,7 @@ export class ChaosParkSim {
     this.carriagesSent = 1;
   }
 
-  private create(kind: Kind): Mover {
+  private create(kind: Kind, crowd = 1): Mover {
     const spec = KIND_SPECS[kind];
     const [lo, hi] = spec.laps;
     // Fewer laps are more likely than many.
@@ -602,7 +694,7 @@ export class ChaosParkSim {
       id: this.nextId++,
       kind,
       width: spec.width,
-      len: spec.len,
+      len: kind === 'group' ? groupLength(crowd) : spec.len,
       speed,
       baseSpeed: speed,
       boosted: false,
@@ -634,18 +726,105 @@ export class ChaosParkSim {
       slip: 0,
       age: 0,
       look: [this.rng(), this.rng(), this.rng()],
-      onIce: new Set(),
+      onPatch: new Set(),
+      crowd,
+      daze: 0,
     };
+  }
+
+  // -------------------------------------------------------------------------------------------------------------
+  // Rats.
+
+  /** Sets a rat waiting at the kerb ahead of someone to bite; returns false if nobody suitable is about. */
+  private sendRat(): boolean {
+    if (this.rats.length) return false;
+    const { track } = this.park;
+    const lead = RAT_LURK + 30;
+    const people = this.movers.filter(
+      (m) => m.state === 'track' && BITEABLE.has(m.kind) && m.daze === 0 && !m.done,
+    );
+    if (!people.length) return false;
+    const m = people[Math.floor(this.rng() * people.length)]!;
+    // Waits on whichever side of the road is nearer the person, where they will be when it darts out.
+    const side = m.p + m.width / 2 <= LANES / 2 ? -1 : 1;
+    const at = pose(track, m.s + m.dir * m.speed * lead, side * (ROAD_HALF + 9));
+    const heading = at.angle + (side < 0 ? Math.PI / 2 : -Math.PI / 2);
+    this.rats.push({
+      id: this.nextId++,
+      state: 'lurk',
+      target: m.id,
+      home: { x: at.x, y: at.y },
+      x: at.x,
+      y: at.y,
+      heading,
+      prevX: at.x,
+      prevY: at.y,
+      prevHeading: heading,
+      ticks: 0,
+    });
+    this.events.push('squeak');
+    return true;
+  }
+
+  private moveRats(): void {
+    for (const r of this.rats) {
+      r.ticks++;
+      const target = this.movers.find((m) => m.id === r.target);
+      const gone = !target || target.state !== 'track';
+      if (r.state === 'lurk') {
+        if (gone) this.ratState(r, 'flee');
+        else if (r.ticks >= RAT_LURK) this.ratState(r, 'dash');
+        continue;
+      }
+      if (r.state === 'dash') {
+        if (gone || target.daze > 0 || r.ticks > RAT_GIVE_UP) {
+          this.ratState(r, 'flee');
+          continue;
+        }
+        if (this.ratRun(r, target, target.width * 5 + 3)) {
+          target.daze = DAZE_TICKS;
+          // A bitten person loses any boost.
+          target.boosted = false;
+          target.speed = target.baseSpeed;
+          this.events.push('bite');
+          this.ratState(r, 'flee');
+        }
+        continue;
+      }
+      if (this.ratRun(r, r.home, 1)) r.ticks = -1;
+    }
+    this.rats = this.rats.filter((r) => r.ticks >= 0);
+  }
+
+  private ratState(r: Rat, state: Rat['state']): void {
+    r.state = state;
+    r.ticks = 0;
+  }
+
+  /** Runs a rat toward a point; returns true once it is within `reach`. */
+  private ratRun(r: Rat, to: Point, reach: number): boolean {
+    const dx = to.x - r.x;
+    const dy = to.y - r.y;
+    const d = Math.hypot(dx, dy);
+    if (d <= reach) return true;
+    const step = Math.min(RAT_SPEED, d - reach + 0.01);
+    r.heading = Math.atan2(dy, dx);
+    r.x += (dx / d) * step;
+    r.y += (dy / d) * step;
+    return d - step <= reach;
   }
 
   private reset(): void {
     this.score = 0;
     this.movers = [];
+    this.rats = [];
     this.pops = [];
     this.crash = null;
     this.paused = false;
     this.spawnTimer = FIRST_SPAWN;
     this.carriagesSent = 0;
+    this.groupTimer = 0;
+    this.ratTimer = 0;
     this.playTicks = 0;
     this.warnedPairs.clear();
   }

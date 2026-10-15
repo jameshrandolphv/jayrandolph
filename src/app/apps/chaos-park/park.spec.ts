@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FRAME_H, FRAME_MARGIN, FRAME_W, LANES, LANE_W, ROAD_HALF } from './constants';
 import {
+  PATCH_COUNT,
   SEASONS,
   WALL,
   edge,
@@ -111,14 +112,21 @@ describe('generatePark', () => {
     expect(total).toBeGreaterThan(SEEDS.length * 0.8);
   });
 
-  it('lays ice on the road only in winter', () => {
+  it('lays two small one-lane patches in every season, well apart', () => {
     const seen = new Set<string>();
     for (const seed of SEEDS) {
       const park = generatePark(seededRng(seed));
       seen.add(park.season);
-      if (park.season === 'winter') expect(park.ice.length).toBeGreaterThanOrEqual(3);
-      else expect(park.ice).toHaveLength(0);
-      for (const ice of park.ice) expect(ice.lane + ice.width).toBeLessThanOrEqual(LANES);
+      expect(park.patches).toHaveLength(PATCH_COUNT);
+      for (const p of park.patches) {
+        expect(p.width).toBe(1);
+        expect(p.lane + p.width).toBeLessThanOrEqual(LANES);
+        expect(p.len).toBeLessThan(30);
+      }
+      const [a, b] = park.patches;
+      expect(Math.abs(loopDelta(a!.s, b!.s, park.track.length))).toBeGreaterThan(
+        park.track.length / 6,
+      );
     }
     expect(seen.size).toBe(SEASONS.length);
   });

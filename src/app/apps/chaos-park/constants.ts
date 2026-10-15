@@ -26,8 +26,16 @@ export const STREET_WIDTH = 34;
 /** Points the loop's centre line is resampled to, evenly spaced. */
 export const TRACK_SAMPLES = 640;
 
-export type Kind = 'walker' | 'dog' | 'runner' | 'biker' | 'car' | 'carriage';
-export const KINDS: readonly Kind[] = ['walker', 'dog', 'runner', 'biker', 'car', 'carriage'];
+export type Kind = 'walker' | 'dog' | 'runner' | 'biker' | 'car' | 'carriage' | 'group';
+export const KINDS: readonly Kind[] = [
+  'walker',
+  'dog',
+  'runner',
+  'biker',
+  'car',
+  'carriage',
+  'group',
+];
 
 export interface KindSpec {
   /** Centre-line px per tick. */
@@ -50,10 +58,36 @@ export const KIND_SPECS: Readonly<Record<Kind, KindSpec>> = {
   biker: { speed: 1.8, len: 30, width: 1, laps: [1, 4], weight: 0.22 },
   car: { speed: 2.75, len: 46, width: 2, laps: [1, 2], weight: 0.07 },
   carriage: { speed: 0.72, len: 62, width: 2, laps: [Infinity, Infinity], weight: 0 },
+  /** A run group; its length depends on how many are in it (see `groupLength`). */
+  group: { speed: 1.15, len: 40, width: 2, laps: [1, 1], weight: 0 },
 };
 
 /** Each mover's speed is its kind's times a factor in this range, so even two of a kind close in on each other. */
 export const SPEED_SPREAD = 0.08;
+
+/**
+ * Run groups: 6 to 12 runners two abreast, doing one lap. They are rare: the first can come once the score reaches
+ * `GROUP_FROM_SCORE`, then one every `GROUP_INTERVAL` ticks or so, never two at once. Each runner's lap scores.
+ */
+export const GROUP_SIZE: readonly [number, number] = [6, 12];
+export const GROUP_FROM_SCORE = 8;
+export const GROUP_INTERVAL: readonly [number, number] = [2400, 4200];
+/** Spacing between the rows of a run group, front to back. */
+export const GROUP_ROW = 12;
+export const groupLength = (size: number): number => Math.ceil(size / 2) * GROUP_ROW + 4;
+
+/**
+ * Rats: now and then one waits at the kerb ahead of a walker, runner or dog walker, then darts out and bites them.
+ * The bitten person stands dazed for `DAZE_TICKS`.
+ */
+export const RAT_FROM_SCORE = 4;
+export const RAT_INTERVAL: readonly [number, number] = [1800, 3300];
+/** Ticks the rat waits at the kerb, in sight, before it darts out. */
+export const RAT_LURK = 55;
+export const RAT_SPEED = 2.4;
+/** It gives up and runs off if it hasn't reached its target in this many ticks. */
+export const RAT_GIVE_UP = 150;
+export const DAZE_TICKS = 180;
 
 /** Cars only arrive from this score; their chance then grows a little. */
 export const CARS_FROM_SCORE = 6;
@@ -98,7 +132,7 @@ export const LAPS_PER_EXTRA = 4;
 /** A press grabs the nearest mover within this distance of its body. */
 export const GRAB_RADIUS = 30;
 
-/** Ticks a mover wobbles after sliding on ice. */
+/** Ticks a mover wobbles after sliding on a patch. */
 export const SLIP_TICKS = 34;
 export const POP_TICKS = 60;
 export const CRASH_TICKS = 130;
