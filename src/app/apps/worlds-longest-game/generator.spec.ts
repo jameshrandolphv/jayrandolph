@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { COLS, ENEMY_R, MAX_ENEMY_SPEED, ROWS, TILE, TILE_SAFE, TILE_VOID } from './constants';
-import { difficultyFor } from './difficulty';
-import { buildChecked, deadEndsHaveCoins, generateLevel } from './generator';
+import { BEATS, cyclesOf, difficultyFor } from './difficulty';
+import { buildChecked, deadEndsHaveCoins, generateLevel, unpatrolled } from './generator';
 import { enemyPositionAt, insideZone, tileAt, type LevelDef } from './level';
 import type { Plan } from './layouts';
 import { hashSeed } from './rng';
-import { isSolvable, openAreas, viableSpots } from './solver';
+import { isSolvable, openAreas, viableSpots, walksThrough } from './solver';
 import { wheelsOf, wheelsOverlap } from './wheels';
 
 const SEEDS = [1, 7, 12345];
@@ -64,7 +64,8 @@ describe('generateLevel', () => {
     expect(d.layouts).toEqual(['chain']);
     expect(d.patterns).toEqual(['sweepV', 'sweepH']);
     expect(d.patternsPerChamber).toBe(1);
-    expect(d.speed).toBeCloseTo(2.2 + 0.06 * 2, 5);
+    expect(d.speed).toBeLessThan(2.2 + 0.06 * 2);
+    expect(d.rhythm).toBe(2);
     expect(d.columns * d.perColumn).toBeLessThan(difficultyFor(15).columns * difficultyFor(15).perColumn);
     expect(d.chamber.maxW * d.chamber.maxH).toBeLessThanOrEqual(60);
   });
@@ -196,13 +197,62 @@ describe('straight-running enemies', () => {
 
 describe('open areas', () => {
   it.each([1, 2, 5, 10, 20, 40])('level %i has nowhere in the chambers that enemies never reach', (n) => {
-    for (const seed of SEEDS) expect(openAreas(generateLevel(n, seed), difficultyFor(n).openCells)).toEqual([]);
+    for (const seed of SEEDS) expect(unpatrolled(generateLevel(n, seed), difficultyFor(n))).toEqual([]);
+  });
+
+  it.each([1, 2, 3, 5, 7, 9, 10, 20])('level %i can never be walked through without meeting an enemy', (n) => {
+    for (const seed of SEEDS) {
+      const level = generateLevel(n, seed);
+      for (let segment = 0; segment < level.zones.length - 1; segment++) expect(walksThrough(level, segment)).toBe(false);
+    }
+  });
+
+  it('keeps the free squares between lanes as places to stand early on, but not later', () => {
+    expect(difficultyFor(1).restStrips).toBe(true);
+    expect(difficultyFor(10).restStrips).toBe(false);
+    // Once rest strips are gone, every patch bigger than about a player square gets an enemy.
+    expect(openAreas(generateLevel(20, 1), 4)).toEqual([]);
   });
 
   it('leaves early levels a little breathing room, and none once the game is under way', () => {
     expect(difficultyFor(1).openCells).toBeGreaterThan(difficultyFor(10).openCells);
-    expect(difficultyFor(10).openCells).toBe(4);
+    expect(difficultyFor(14).openCells).toBe(4);
   });
+});
+
+describe('rhythm', () => {
+  const moves = (e: LevelDef['enemies'][number]): boolean =>
+    !(e.kind === 'sweep' && e.ax === e.bx && e.ay === e.by) && !(e.kind === 'orbit' && e.radius === 0);
+
+  it('builds every beat from periods that line up again within a few loops', () => {
+    for (const beat of BEATS) {
+      expect(cyclesOf(beat)).toBeLessThanOrEqual(4);
+      expect(Math.max(...beat)).toBeGreaterThanOrEqual(240);
+    }
+    expect(cyclesOf([72, 80])).toBe(10);
+    expect(cyclesOf([120, 180])).toBe(3);
+  });
+
+  it.each([1, 3, 5, 9, 10, 15, 20, 40])(
+    'level %i keeps each chamber in step: back to the start within its allowed loops of the quickest enemy',
+    (n) => {
+      const d = difficultyFor(n);
+      for (const seed of SEEDS) {
+        const { level, plan } = buildChecked(hashSeed(seed, n, 0), n, d);
+        plan.chambers.forEach((chamber) => {
+          const inside = (e: LevelDef['enemies'][number]): boolean => {
+            const p = enemyPositionAt(e, 0);
+            return chamber.parts.some(
+              (r) => p.x >= r.c * TILE && p.x < (r.c + r.w) * TILE && p.y >= r.r * TILE && p.y < (r.r + r.h) * TILE,
+            );
+          };
+          const periods = [...new Set(level.enemies.filter((e) => moves(e) && inside(e)).map((e) => e.period))];
+          expect(cyclesOf(periods)).toBeLessThanOrEqual(d.rhythm);
+        });
+      }
+    },
+    60000,
+  );
 });
 
 describe('stationary enemies', () => {

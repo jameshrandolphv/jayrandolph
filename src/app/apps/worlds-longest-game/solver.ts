@@ -256,6 +256,39 @@ export const isSegmentSolvable = (level: LevelDef, segment: number): boolean =>
   solveSegment(workspaceFor(level), segment);
 
 /**
+ * Whether the player could walk from zone `segment` to the next without an enemy ever coming near,
+ * which would make the stretch no challenge at all.
+ */
+export const walksThrough = (level: LevelDef, segment: number): boolean => {
+  const layers = level.period / STEP;
+  const walk = walkableCells(level);
+  const haz = hazardLayers(level, layers);
+  const allowed = segmentCells(level, walk, segment);
+  const safe = new Uint8Array(N);
+  for (let cell = 0; cell < N; cell++) {
+    if (!allowed[cell]) continue;
+    let hit = false;
+    for (let t = 0; t < layers && !hit; t++) hit = haz[t * N + cell] === 1;
+    safe[cell] = +!hit;
+  }
+  const goal = level.zones[segment + 1]!;
+  const seen = new Uint8Array(N);
+  const stack = zoneCells(allowed, level.zones[segment]!).filter((cell) => safe[cell]);
+  for (const cell of stack) seen[cell] = 1;
+  while (stack.length) {
+    const at = stack.pop()!;
+    if (insideZone(goal, centre(at % GW), centre(Math.floor(at / GW)))) return true;
+    const i = at % GW;
+    for (const next of [at + 1, at - 1, at + GW, at - GW]) {
+      if (next < 0 || next >= N || Math.abs((next % GW) - i) > 1 || !safe[next] || seen[next]) continue;
+      seen[next] = 1;
+      stack.push(next);
+    }
+  }
+  return false;
+};
+
+/**
  * Centres of the cells where, on some way from zone `segment` to the next, the player can be: reached
  * from the start safely and with a safe way on to the goal. Coins that sit on these can be collected.
  */

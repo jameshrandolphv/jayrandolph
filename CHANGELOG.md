@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.3
+- World's Longest Game keeps every room in rhythm: all of a room's enemies move to one beat and fall back into step within a few loops (two in the first levels), instead of drifting slowly out of sync
+- Gentler first levels: slower enemies, new patterns and layouts introduced more gradually, a free square to stand in between pairs of lanes, and fewer odd extra enemies filling gaps; no room can ever be walked through without meeting an enemy
+
 ## 1.6.2
 - Chaos Park: one slippery patch per park instead of two; bikers shout "Out of my way!" when closing in on someone on foot
 - World's Longest Game eases in more gently: fewer enemies and roomier lanes in the first levels, no stationary dots before level 10, and stationary dots never placed right beside the start, checkpoints or finish

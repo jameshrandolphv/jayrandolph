@@ -18,6 +18,8 @@ export const MAX_ENEMY_SPEED = 4.8;
 
 /** Every enemy loops with a period that divides this, so a level repeats exactly. */
 export const LEVEL_PERIOD = 720;
+/** Loop periods an enemy may have, all dividing the level's. */
+export const LOOP_PERIODS = [60, 72, 80, 90, 120, 144, 180, 240, 360, 720].filter((p) => LEVEL_PERIOD % p === 0);
 
 export const INTRO_TICKS = 90;
 export const DEATH_TICKS = 24;
