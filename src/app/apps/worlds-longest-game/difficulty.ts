@@ -1,3 +1,5 @@
+import { LOOP_PERIODS } from './constants';
+
 export type PatternKind =
   | 'sweepV'
   | 'sweepH'
@@ -43,9 +45,49 @@ export interface Difficulty {
   routeDots: number;
   /** Largest clear patch, in solver cells, left without a fill-in enemy; early levels keep a little breathing room. */
   openCells: number;
+  /**
+   * Whether a clear strip no wider than a square is left alone, whatever its length, as somewhere to stand,
+   * such as the free square between pairs of lanes. One that lets the player walk straight through is always filled.
+   */
+  restStrips: boolean;
   /** Whether a fill-in may be a dot that never moves; early levels only get moving ones. */
   stationary: boolean;
+  /**
+   * Most loops of a chamber's quickest enemy before all of them are back where they started together,
+   * so the chamber always falls into a short rhythm.
+   */
+  rhythm: number;
+  /** Loop periods enemies may use; the generator narrows this to one beat per chamber. */
+  periods: readonly number[];
+  /** How much faster than `speed` an enemy may go to keep to its chamber's beat; early levels would rather go slower. */
+  overspeed: number;
 }
+
+const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
+
+/** Loops of the quickest of these periods before they all line up again. */
+export const cyclesOf = (periods: readonly number[]): number => {
+  if (!periods.length) return 1;
+  const lcm = periods.reduce((a, b) => (a * b) / gcd(a, b));
+  return lcm / Math.min(...periods);
+};
+
+/**
+ * Beats a chamber can be built on: sets of periods that fall back into step within a few loops of the
+ * quickest. Every set reaches at least 240 ticks, so a sweep across a whole room still fits.
+ */
+export const BEATS: readonly (readonly number[])[] = [
+  [120, 240],
+  [180, 360],
+  [360, 720],
+  [80, 240],
+  [120, 360],
+  [240, 720],
+  [60, 240],
+  [90, 180, 360],
+  [60, 120, 240],
+  [180, 360, 720],
+];
 
 const CHAMBERS = [
   { minW: 8, maxW: 14, minH: 5, maxH: 9 },
@@ -68,11 +110,11 @@ const PATTERN_UNLOCKS: readonly [PatternKind, number][] = [
   ['sweepV', 1],
   ['sweepH', 1],
   ['unison', 3],
-  ['orbit', 4],
-  ['swing', 5],
-  ['spinner', 6],
-  ['loop', 8],
-  ['diagonal', 9],
+  ['orbit', 5],
+  ['swing', 7],
+  ['spinner', 8],
+  ['loop', 9],
+  ['diagonal', 10],
   ['wall', 15],
   ['pinwheel', 11],
   ['streams', 12],
@@ -82,10 +124,10 @@ const PATTERN_UNLOCKS: readonly [PatternKind, number][] = [
 /** Layouts open up the same way. */
 const LAYOUT_UNLOCKS: readonly [LayoutKind, number][] = [
   ['chain', 1],
-  ['hall', 4],
-  ['comb', 6],
-  ['stairs', 8],
-  ['winding', 10],
+  ['hall', 6],
+  ['comb', 8],
+  ['stairs', 10],
+  ['winding', 12],
 ];
 
 /** Levels before this are eased in: sparser patterns, roomier lanes and no stationary fill-ins. */
@@ -113,7 +155,8 @@ export const difficultyFor = (number: number): Difficulty => {
     patterns: PATTERN_UNLOCKS.filter(([, from]) => number >= from).map(([kind]) => kind),
     // Busy levels build up slowly: the heaviest mixes are for level 20 and beyond.
     patternsPerChamber: number < 14 ? 1 : number < 26 ? 2 : 3,
-    speed: Math.min(4, 2.2 + 0.06 * t),
+    // Enemies start out a little slower, catching up with the full curve by EASY_UNTIL.
+    speed: Math.min(4, 2.2 + 0.06 * t) * (1 - 0.15 * ease),
     lane: Math.max(12, 40 - t) + Math.round(16 * ease),
     columns: Math.min(8, 2 + Math.floor(Math.max(0, number - 4) / 4)),
     perColumn: number < 6 ? 1 : number < 14 ? 2 : number < 24 ? 3 : 4,
@@ -121,7 +164,13 @@ export const difficultyFor = (number: number): Difficulty => {
     rings: level < 20 ? 1 : 2,
     loopDots: Math.min(6, 2 + Math.floor(number / 10)),
     routeDots: Math.min(6, 2 + Math.floor(number / 6)),
-    openCells: number < 6 ? 16 : number < EASY_UNTIL ? 9 : 4,
+    // The checkpoint at level 10 already doubles the floor to cover, so the fill-ins tighten up over a few levels after it.
+    openCells: number < 6 ? 16 : number < EASY_UNTIL ? 9 : number < 14 ? 6 : 4,
+    restStrips: number < EASY_UNTIL,
     stationary: number >= EASY_UNTIL,
+    // Early chambers stick to one speed and its double; later ones may mix in a third that still keeps time.
+    rhythm: number < 4 ? 2 : number < EASY_UNTIL ? 3 : 4,
+    periods: LOOP_PERIODS,
+    overspeed: number < EASY_UNTIL ? 1.15 : number < 15 ? 1.3 : 1.45,
   };
 };

@@ -1,4 +1,4 @@
-import { ENEMY_R, LEVEL_PERIOD, MAX_ENEMY_SPEED, PLAYER_SIZE, PLAYER_SPEED, TILE } from './constants';
+import { ENEMY_R, LEVEL_PERIOD, LOOP_PERIODS, MAX_ENEMY_SPEED, PLAYER_SIZE, PLAYER_SPEED, TILE } from './constants';
 import type { Difficulty, PatternKind } from './difficulty';
 import { routeLength, type Enemy, type Point, type TileRect } from './level';
 import type { Random } from './rng';
@@ -19,7 +19,6 @@ export const centresIn = (lo: number, hi: number): number[] => {
   for (let k = Math.ceil(lo / TILE - 0.5); (k + 0.5) * TILE <= hi; k++) out.push((k + 0.5) * TILE);
   return out;
 };
-const PERIODS = [60, 72, 80, 90, 120, 144, 180, 240, 360, 720].filter((p) => LEVEL_PERIOD % p === 0);
 
 export const boxOf = (room: TileRect, inset = 0): Box => ({
   x0: room.c * TILE + inset,
@@ -28,14 +27,23 @@ export const boxOf = (room: TileRect, inset = 0): Box => ({
   y1: (room.r + room.h) * TILE - inset,
 });
 
-/** The loop period whose speed over `distance` is closest to `speed`, without exceeding the cap. */
-export const pickPeriod = (distance: number, speed: number): number => {
+/** The periods an enemy may loop with, and how much faster than asked it may go to keep to them. */
+export type Timing = Pick<Difficulty, 'periods' | 'overspeed'>;
+
+const FREE: Timing = { periods: LOOP_PERIODS, overspeed: 1.25 };
+
+/**
+ * The allowed loop period whose speed over `distance` is closest to `speed`, by ratio, never more than
+ * `overspeed` times faster nor over the cap; undefined when every allowed period is too fast.
+ */
+export const pickPeriod = (distance: number, speed: number, timing: Timing = FREE): number | undefined => {
   const target = distance / speed;
-  let best = PERIODS[PERIODS.length - 1]!;
+  const fastest = Math.min(MAX_ENEMY_SPEED, speed * timing.overspeed);
+  let best: number | undefined;
   let bestError = Infinity;
-  for (const period of PERIODS) {
-    if (distance / period > MAX_ENEMY_SPEED) continue;
-    const error = Math.abs(period - target);
+  for (const period of timing.periods) {
+    if (distance / period > fastest) continue;
+    const error = Math.abs(Math.log(period / target));
     if (error < bestError) {
       best = period;
       bestError = error;
@@ -78,7 +86,8 @@ export const sweeps = (
   const perColumn = Math.max(1, Math.min(d.perColumn, Math.floor((to - from) / (2 * (PLAYER_SIZE + 2 * ENEMY_R)))));
   const centres = laneCentres(lo, hi, d.columns * perColumn);
   const pairs = Math.ceil(centres.length / 2);
-  const period = pickPeriod(2 * (to - from), d.speed * rand.range(0.85, 1.15));
+  const period = pickPeriod(2 * (to - from), d.speed * rand.range(0.85, 1.15), d);
+  if (!period) return [];
   const base = rand.int(0, period - 1);
   return centres.map((across, i): Enemy => {
     // The two lanes of a pair run half a cycle apart; successive pairs are staggered between them.
@@ -112,7 +121,8 @@ export const orbits = (rand: Random, box: Box, d: Difficulty): Enemy[] => {
     const radius = reach - ring * lanes;
     if (radius < 40) break;
     const circumference = 2 * Math.PI * radius;
-    const period = pickPeriod(circumference, d.speed * 0.8);
+    const period = pickPeriod(circumference, d.speed * 0.8, d);
+    if (!period) break;
     const dots = Math.min(d.orbitDots + ring, Math.floor(circumference / crossingSpacing(d, circumference / period)));
     if (dots < 2) break;
     const base = rand.int(0, period - 1);
@@ -142,7 +152,8 @@ export const loops = (rand: Random, box: Box, d: Difficulty): Enemy[] => {
   const w = xs[xs.length - 1]! - x;
   const h = ys[ys.length - 1]! - y;
   const perimeter = 2 * (w + h);
-  const period = pickPeriod(perimeter, d.speed * 0.8);
+  const period = pickPeriod(perimeter, d.speed * 0.8, d);
+  if (!period) return [];
   const dots = Math.min(d.loopDots, Math.floor(perimeter / crossingSpacing(d, perimeter / period)));
   if (dots < 2) return [];
   const base = rand.int(0, period - 1);
@@ -168,7 +179,8 @@ export const spinners = (rand: Random, box: Box, d: Difficulty): Enemy[] => {
   const cy = (box.y0 + box.y1) / 2;
   const reach = Math.min(box.x1 - box.x0, box.y1 - box.y0) / 2 - INSET;
   if (reach < 3 * BAR_STEP) return [];
-  const period = pickPeriod(2 * Math.PI * reach, d.speed * 0.7);
+  const period = pickPeriod(2 * Math.PI * reach, d.speed * 0.7, d);
+  if (!period) return [];
   const base = rand.int(0, period - 1);
   const dir: 1 | -1 = rand.chance(0.5) ? 1 : -1;
   const arms = rand.int(1, 2);
@@ -194,7 +206,8 @@ export const swings = (rand: Random, box: Box, d: Difficulty): Enemy[] => {
   const length = Math.min(depth, across / Math.sin(amp));
   if (length < 3 * BAR_STEP) return [];
   // The peak speed is at the bottom of the swing: 2π · amp · length per period.
-  const period = pickPeriod(2 * Math.PI * amp * length, d.speed * 1.1);
+  const period = pickPeriod(2 * Math.PI * amp * length, d.speed * 1.1, d);
+  if (!period) return [];
   const phase = rand.int(0, period - 1);
   const out: Enemy[] = [];
   for (let radius = 0; radius <= length; radius += BAR_STEP)
@@ -270,7 +283,8 @@ export const pinwheels = (rand: Random, box: Box, d: Difficulty): Enemy[] => {
   const first = reach + INSET;
   const count = Math.min(3, Math.max(1, Math.floor((length - 2 * first) / pitch) + 1));
   if (length < 2 * first) return [];
-  const period = pickPeriod(2 * Math.PI * reach, d.speed * 0.7);
+  const period = pickPeriod(2 * Math.PI * reach, d.speed * 0.7, d);
+  if (!period) return [];
   const base = rand.int(0, period - 1);
   const arms = rand.pick([1, 2, 2, 3]);
   const out: Enemy[] = [];
@@ -299,7 +313,8 @@ export const streams = (rand: Random, box: Box, d: Difficulty): Enemy[] => {
     if (run < 160) return;
     const across = lanes[rand.int(0, lanes.length - 2)]!;
     const perimeter = 2 * (run + TILE);
-    const period = pickPeriod(perimeter, d.speed * 0.8);
+    const period = pickPeriod(perimeter, d.speed * 0.8, d);
+    if (!period) return;
     const dots = Math.min(10, Math.floor(perimeter / (1.5 * crossingSpacing(d, perimeter / period))));
     if (dots < 3) return;
     const base = rand.int(0, period - 1);
@@ -336,7 +351,8 @@ export const diagonals = (rand: Random, box: Box, d: Difficulty): Enemy[] => {
   const out: Enemy[] = [];
   for (const [a, b] of lines) {
     const length = Math.hypot(b.x - a.x, b.y - a.y);
-    const period = pickPeriod(2 * length, d.speed * rand.range(0.85, 1.1));
+    const period = pickPeriod(2 * length, d.speed * rand.range(0.85, 1.1), d);
+    if (!period) continue;
     const dots = Math.max(
       2,
       Math.min(d.routeDots + 1, Math.floor(length / (crossingSpacing(d, (2 * length) / period) * 0.8))),
@@ -374,7 +390,9 @@ export const walls = (rand: Random, box: Box, d: Difficulty): Enemy[] => {
   const count = Math.min(3, Math.max(1, Math.floor(d.columns / 2)));
   const out: Enemy[] = [];
   const moves = rand.chance(0.4);
-  const period = pickPeriod(2 * TILE, d.speed * 0.5);
+  // A standing wall has no period to fit, so only a moving one needs the chamber's beat.
+  const period = moves ? pickPeriod(2 * TILE, d.speed * 0.5, d) : LEVEL_PERIOD;
+  if (!period) return [];
   const base = rand.int(0, period - 1);
   let door = rand.pick(doorways);
   for (let k = rand.int(0, 1); k < places.length && k < 3 * count; k += 3) {
@@ -443,15 +461,16 @@ const clipStart = (points: readonly Point[], by: number): Point[] => {
 export const trace = (rand: Random, fullRoute: readonly Point[], d: Difficulty): Enemy[] => {
   if (routeLength(fullRoute, false) < 2 * INSET + 240) return [];
   let route = clipStart(clipStart(fullRoute, INSET).reverse(), INSET).reverse();
-  // There and back must fit in one level period at about the wanted speed, so a very long route is cut short.
-  const longest = (d.speed * LEVEL_PERIOD * 1.15) / 2;
+  // There and back must fit in the chamber's longest period at about the wanted speed, so a very long route is cut short.
+  const longest = (d.speed * Math.max(...d.periods) * 1.15) / 2;
   if (routeLength(route, false) > longest)
     route = clipStart([...route].reverse(), routeLength(route, false) - longest).reverse();
   const total = routeLength(route, false);
   if (total < 240) return [];
   const dots = Math.min(d.routeDots, Math.floor(total / (crossingSpacing(d, d.speed) * 1.4)));
   if (dots < 2) return [];
-  const period = pickPeriod(2 * total, d.speed * rand.range(0.85, 1.1));
+  const period = pickPeriod(2 * total, d.speed * rand.range(0.85, 1.1), d);
+  if (!period) return [];
   const base = rand.int(0, period - 1);
   return Array.from({ length: dots }, (_, j): Enemy => ({
     kind: 'route',

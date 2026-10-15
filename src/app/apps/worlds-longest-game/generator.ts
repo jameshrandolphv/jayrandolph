@@ -1,5 +1,5 @@
-import { COLS, ENEMY_R, LEVEL_PERIOD, ROWS, TILE, TILE_FLOOR } from './constants';
-import { difficultyFor, type Difficulty } from './difficulty';
+import { COLS, ENEMY_R, LEVEL_PERIOD, MAX_ENEMY_SPEED, ROWS, TILE, TILE_FLOOR } from './constants';
+import { BEATS, cyclesOf, difficultyFor, type Difficulty } from './difficulty';
 import { planLevel, tilesOf, type Chamber, type Plan } from './layouts';
 import { enemyPositionAt, tileAt, type Coin, type Enemy, type LevelDef, type Point, type TileRect } from './level';
 import {
@@ -17,7 +17,7 @@ import {
 } from './patterns';
 import { createRandom, hashSeed, type Random } from './rng';
 import { crossesWheels } from './wheels';
-import { COIN_REACH, isSegmentSolvable, isSolvable, openAreas, viableSpots, type OpenArea } from './solver';
+import { COIN_REACH, isSegmentSolvable, isSolvable, openAreas, viableSpots, walksThrough, type OpenArea } from './solver';
 
 const area = (r: TileRect): number => r.w * r.h;
 
@@ -69,6 +69,25 @@ const populateChamber = (rand: Random, chamber: Chamber, d: Difficulty, zones: r
     enemies.push(...sweeps(rand, boxOf(biggest), d, true));
   }
   return enemies;
+};
+
+/**
+ * A beat for the chamber. Its slowest period suits a run there and back along the chamber's biggest
+ * stretch at the level's speed, and its quickest is as quick as can be, so neither long nor short
+ * paths are dragged far from the speed the level asks for. A few close fits are drawn from for variety.
+ */
+const beatFor = (rand: Random, chamber: Chamber, d: Difficulty): readonly number[] => {
+  const biggest = chamber.parts.reduce((a, b) => (area(b) > area(a) ? b : a));
+  const run = 2 * (Math.max(biggest.w, biggest.h) * TILE - 2 * INSET);
+  const wanted = run / d.speed;
+  const fastest = Math.min(MAX_ENEMY_SPEED, d.speed * d.overspeed);
+  const inStep = BEATS.filter((beat) => cyclesOf(beat) <= d.rhythm);
+  const fitting = inStep.filter((beat) => Math.max(...beat) * fastest >= run);
+  const score = (beat: readonly number[]): number =>
+    Math.abs(Math.log(Math.max(...beat) / wanted)) + 0.6 * Math.log(Math.min(...beat) / 60);
+  const ranked = (fitting.length ? fitting : inStep).slice().sort((a, b) => score(a) - score(b));
+  const best = score(ranked[0]!);
+  return rand.pick(ranked.filter((beat) => score(beat) <= best + 0.3));
 };
 
 const COIN_APART = 90;
@@ -169,9 +188,9 @@ const placeCoins = (rand: Random, plan: Plan, level: LevelDef, d: Difficulty): C
   return coins;
 };
 
-const MAX_FILLS = 16;
 /** Candidate fill-ins tried for a single open area before it is given up on. */
 const FILL_TRIES = 6;
+const MAX_FILLS = 16;
 /** Fresh draws of a chamber's enemies before settling for the last. */
 const CHAMBER_TRIES = 10;
 
@@ -208,7 +227,8 @@ const fillerFor = (
     attempts.push(spinners(rand, box, d));
   const small = Math.max(width, height) < 60;
   const orbit = (radius: number): Enemy[] => {
-    const period = pickPeriod(2 * Math.PI * radius, d.speed * 0.8);
+    const period = pickPeriod(2 * Math.PI * radius, d.speed * 0.8, d);
+    if (!period) return [];
     return [
       {
         kind: 'orbit',
@@ -229,7 +249,8 @@ const fillerFor = (
     // Straight runs go down the middle of a square, the one nearest the patch's middle first.
     const lines = centresIn(c0 - 18, c1 + 18).sort((a, b) => Math.abs(a - (c0 + c1) / 2) - Math.abs(b - (c0 + c1) / 2));
     for (const line of lines.slice(0, 3)) {
-      const period = pickPeriod(2 * Math.max(a1 - a0, 48), d.speed * rand.range(0.9, 1.2));
+      const period = pickPeriod(2 * Math.max(a1 - a0, 48), d.speed * rand.range(0.9, 1.2), d);
+      if (!period) continue;
       const phase = rand.int(0, period - 1);
       const [from, to] = [(a0 + a1) / 2 - Math.max(a1 - a0, 48) / 2, (a0 + a1) / 2 + Math.max(a1 - a0, 48) / 2];
       attempts.push([
@@ -250,6 +271,13 @@ const fillerFor = (
   );
 };
 
+/** A clear patch no wider than one square, like the gap left between pairs of lanes. */
+const isStrip = (open: OpenArea): boolean => Math.min(open.x1 - open.x0, open.y1 - open.y0) <= TILE / 2;
+
+/** Clear patches the difficulty doesn't allow, biggest first: too large to rest in, and not a strip to stand in. */
+export const unpatrolled = (level: LevelDef, d: Difficulty): OpenArea[] =>
+  openAreas(level, d.openCells).filter((open) => !(d.restStrips && isStrip(open)));
+
 /** The chamber a point on the floor belongs to, or -1. */
 const chamberAt = (plan: Plan, x: number, y: number): number =>
   plan.chambers.findIndex((chamber) =>
@@ -257,10 +285,21 @@ const chamberAt = (plan: Plan, x: number, y: number): number =>
   );
 
 /** Adds enemies until nowhere in a chamber is out of their reach, so the player is never just resting. */
-const fillOpenAreas = (rand: Random, plan: Plan, level: LevelDef, d: Difficulty): LevelDef => {
+const fillOpenAreas = (
+  rand: Random,
+  plan: Plan,
+  level: LevelDef,
+  d: Difficulty,
+  beats: readonly (readonly number[])[],
+): LevelDef => {
   let current = level;
   for (let i = 0; i < MAX_FILLS; i++) {
-    const [open] = openAreas(current, d.openCells);
+    // A stretch the player could stroll through untouched has its biggest clear patch filled first, however small.
+    const through = plan.chambers.findIndex((_, c) => walksThrough(current, c));
+    const [open] =
+      through >= 0
+        ? openAreas(current, 0).filter((a) => chamberAt(plan, (a.x0 + a.x1) / 2, (a.y0 + a.y1) / 2) === through)
+        : unpatrolled(current, d);
     if (!open) break;
     const chamber = chamberAt(plan, (open.x0 + open.x1) / 2, (open.y0 + open.y1) / 2);
     // Coins are left out of the quick check; generateLevel checks the whole level again at the end.
@@ -269,7 +308,8 @@ const fillOpenAreas = (rand: Random, plan: Plan, level: LevelDef, d: Difficulty)
       const grown = { ...current, coins: [], enemies: [...current.enemies, ...extra] };
       return chamber < 0 ? isSolvable(grown) : isSegmentSolvable(grown, chamber);
     };
-    const made = fillerFor(rand, current, open, d, solvable);
+    // A fill-in keeps to the beat of the chamber it is in.
+    const made = fillerFor(rand, current, open, { ...d, periods: beats[Math.max(0, chamber)]! }, solvable);
     if (!made.length) break;
     current = { ...current, enemies: [...current.enemies, ...made] };
   }
@@ -312,13 +352,16 @@ export const buildChecked = (
     coins: [],
     enemies: [],
   };
+  // Every enemy in a chamber moves to one beat, so the chamber's pattern comes round again within a few loops.
+  const beats = plan.chambers.map((chamber) => beatFor(rand, chamber, d));
   // Each chamber is solved by itself, so a hard draw only costs a re-draw of that one chamber.
   const enemies: Enemy[] = [];
   plan.chambers.forEach((chamber, i) => {
     let made: Enemy[] = [];
     let clear: Enemy[] | undefined;
     for (let attempt = 0; attempt < CHAMBER_TRIES; attempt++) {
-      made = populateChamber(rand, chamber, easedBy(d, Math.max(0, attempt - CHAMBER_TRIES / 2)), plan.zones);
+      const eased = easedBy({ ...d, periods: beats[i]! }, Math.max(0, attempt - CHAMBER_TRIES / 2));
+      made = populateChamber(rand, chamber, eased, plan.zones);
       if (crossesWheels(enemies, made)) continue;
       clear = made;
       if (isSegmentSolvable({ ...bare, enemies: made }, i)) break;
@@ -326,7 +369,7 @@ export const buildChecked = (
     // A draw whose spinners don't cross is kept over a later one that does, even if it is the harder to beat.
     enemies.push(...(clear ?? made));
   });
-  const filled = fillOpenAreas(rand, plan, { ...bare, enemies }, d);
+  const filled = fillOpenAreas(rand, plan, { ...bare, enemies }, d, beats);
 
   let level = filled;
   for (let attempt = 0; attempt < COIN_TRIES; attempt++) {
@@ -353,7 +396,10 @@ export const generateLevel = (number: number, runSeed: number): LevelDef => {
     const built = buildChecked(hashSeed(runSeed, number, attempt), number, d);
     last = built.level;
     // Fill-ins can occasionally leave a pocket; prefer a draw without one, but take a solvable one after a while.
-    if (built.solvable && (attempt >= EASED_AFTER / 2 || openAreas(last, d.openCells).length === 0)) return last;
+    // A stretch that can be walked through without meeting an enemy is never taken while there are attempts left.
+    const strolls = last.zones.slice(1).some((_, segment) => walksThrough(last!, segment));
+    if (built.solvable && !strolls && (attempt >= EASED_AFTER / 2 || unpatrolled(last, d).length === 0))
+      return last;
   }
   return last!;
 };
