@@ -217,8 +217,8 @@ export const pauseButton = (b: Bounds): Rect => ({
   h: 48,
 });
 
-/** Oval buttons on the cards, centred relative to the middle of the screen. */
-export interface Oval {
+/** Sign-plaque buttons on the cards: centre relative to the middle of the screen, and half width and height. */
+export interface Plaque {
   x: number;
   y: number;
   rx: number;
@@ -226,16 +226,19 @@ export interface Oval {
   label: string;
 }
 
-export const inOval = (o: Oval, x: number, y: number): boolean =>
-  ((x - o.x) / o.rx) ** 2 + ((y - o.y) / o.ry) ** 2 <= 1;
+export const inPlaque = (p: Plaque, x: number, y: number): boolean =>
+  Math.abs(x - p.x) <= p.rx && Math.abs(y - p.y) <= p.ry;
+
+/** Buttons on a card are all one size, so a card's two choices match. */
+export const BUTTON_TEXT = 30;
 
 /** Cards are this size, centred on screen; small enough to fit either way round. */
 export const CARD = { w: 540, h: 520 };
 
-export const PLAY_BUTTON: Oval = { x: 112, y: 182, rx: 100, ry: 52, label: 'PLAY!' };
-export const HELP_BUTTON: Oval = { x: -130, y: 190, rx: 82, ry: 32, label: 'HOW TO PLAY' };
-export const BACK_BUTTON: Oval = { x: 0, y: 206, rx: 82, ry: 36, label: 'GOT IT!' };
-export const RETRY_BUTTON: Oval = { x: 100, y: 182, rx: 98, ry: 52, label: 'RETRY' };
-export const MENU_BUTTON: Oval = { x: -140, y: 192, rx: 62, ry: 32, label: 'MENU' };
-export const RESUME_BUTTON: Oval = { x: 90, y: 40, rx: 96, ry: 48, label: 'RESUME' };
-export const QUIT_BUTTON: Oval = { x: -120, y: 48, rx: 64, ry: 34, label: 'MENU' };
+export const PLAY_BUTTON: Plaque = { x: 116, y: 186, rx: 100, ry: 36, label: 'PLAY' };
+export const HELP_BUTTON: Plaque = { x: -116, y: 186, rx: 100, ry: 36, label: 'HOW TO PLAY' };
+export const BACK_BUTTON: Plaque = { x: 0, y: 206, rx: 100, ry: 36, label: 'GOT IT!' };
+export const RETRY_BUTTON: Plaque = { x: 116, y: 186, rx: 100, ry: 36, label: 'RETRY' };
+export const MENU_BUTTON: Plaque = { x: -116, y: 186, rx: 100, ry: 36, label: 'MENU' };
+export const RESUME_BUTTON: Plaque = { x: 116, y: 44, rx: 100, ry: 36, label: 'RESUME' };
+export const QUIT_BUTTON: Plaque = { x: -116, y: 44, rx: 100, ry: 36, label: 'MENU' };

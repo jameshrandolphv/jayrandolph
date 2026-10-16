@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.5
+- Chaos Park gets a park look of its own instead of Flights!' borrowed menus: wooden noticeboard cards, green and wood sign buttons, a round green pause button, a hedge round the screen, and a yellow "!" bubble with a bike-bell ding for anyone about to collide
+- Chaos Park wording: "Pile-up!" on game over, "New park record!" with a trophy for a new best, "BEST" and "YOUR BEST" for the high score, and "Taking a breather" when paused
+
 ## 1.7.4
 - Chaos Park plays at 70% of its old speed, cars are only a little faster than bikes, only one car is in the park at a time, and run groups come as soon as the score reaches 10, then every 45 to 65 seconds
 

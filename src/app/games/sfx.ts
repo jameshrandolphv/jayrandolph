@@ -17,7 +17,8 @@ export type SfxName =
   | 'boost'
   | 'brake'
   | 'squeak'
-  | 'bite';
+  | 'bite'
+  | 'bell';
 
 interface Tone {
   from: number;
@@ -60,6 +61,13 @@ const TONES: Readonly<Record<SfxName, readonly Tone[]>> = {
   alert: [
     { from: 1175, to: 1175, seconds: 0.07, type: 'square', volume: 0.035 },
     { from: 1175, to: 1175, seconds: 0.07, type: 'square', volume: 0.035, delay: 0.12 },
+  ],
+  // A bicycle bell: two quick dings.
+  bell: [
+    { from: 2093, to: 2093, seconds: 0.16, type: 'sine', volume: 0.05 },
+    { from: 2637, to: 2637, seconds: 0.12, type: 'sine', volume: 0.025 },
+    { from: 2093, to: 2093, seconds: 0.22, type: 'sine', volume: 0.05, delay: 0.13 },
+    { from: 2637, to: 2637, seconds: 0.16, type: 'sine', volume: 0.025, delay: 0.13 },
   ],
   crash: [
     { from: 260, to: 40, seconds: 0.55, type: 'sawtooth', volume: 0.09 },
@@ -123,7 +131,8 @@ export class Sfx {
       void this.prepare(this.ctx);
     }
     // iOS reports 'interrupted' as well as 'suspended'; only a running context can be left alone.
-    if (this.ctx.state !== 'running' && this.ctx.state !== 'closed') void this.ctx.resume().catch(() => undefined);
+    if (this.ctx.state !== 'running' && this.ctx.state !== 'closed')
+      void this.ctx.resume().catch(() => undefined);
   }
 
   play(name: SfxName): void {

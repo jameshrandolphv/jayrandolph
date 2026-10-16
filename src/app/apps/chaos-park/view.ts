@@ -1,14 +1,6 @@
 import { Container, Graphics, type Text } from 'pixi.js';
 import type { LogicalSize } from '../../games/game-canvas';
-import {
-  cornerButton,
-  drawFrame,
-  label,
-  ovalButton,
-  paperCard,
-  pauseIcon,
-  SCRIPT_FONT,
-} from '../flights/art';
+import { label, SCRIPT_FONT } from '../flights/art';
 import { angleDiff, lerpAngle } from '../flights/geometry';
 import {
   BADGE_R,
@@ -35,11 +27,12 @@ import {
   sample,
   speechBubble,
   speedStreaks,
-  warnRing,
+  warnBubble,
   type Look,
 } from './art';
 import {
   BACK_BUTTON,
+  BUTTON_TEXT,
   CARD,
   ART,
   HELP_BUTTON,
@@ -58,6 +51,7 @@ import {
   type Bounds,
 } from './constants';
 import { placePark, type ChaosParkGame } from './game';
+import { drawHedge, noticeBoard, plaqueButton, roundPauseButton, trophy } from './ui';
 import type { Park } from './park';
 import { lapsLeft, patchesShown, type Mover } from './sim';
 
@@ -87,7 +81,7 @@ interface MoverView {
   daze: Graphics;
   /** A biker's "Out of my way!", made when first needed. */
   shout: Container | null;
-  warn: Graphics;
+  warn: Container;
   badge: Container;
   /** What the badge shows now, so it is only rebuilt when that changes. */
   badgeKey: string;
@@ -128,7 +122,6 @@ export class ChaosParkView {
   private readonly hearts: Container[] = [];
   private shownHits = -1;
   private readonly shadows = new Container();
-  private readonly warnings = new Container();
   private readonly movers = new Container();
   private readonly crashRing = new Graphics();
   private readonly badges = new Container();
@@ -185,7 +178,7 @@ export class ChaosParkView {
       this.hearts.push(h);
       this.hudLeft.addChild(h);
     }
-    const best = label('HI SCORE:', 28, COLORS.ink, {
+    const best = label('BEST:', 28, COLORS.ink, {
       stroke: { color: 0xffffff, width: 5, join: 'round' },
       letterSpacing: 1,
     });
@@ -193,12 +186,14 @@ export class ChaosParkView {
     best.position.set(-136, 32);
     this.bestText.box.position.set(-78, 32);
     this.hudRight.addChild(best, this.bestText.box);
-    this.pauseButton = cornerButton(pauseIcon);
+    this.pauseButton = roundPauseButton();
     this.hud.addChild(this.hudLeft, this.hudRight, this.pauseButton);
 
     this.titleBest = label('0', 54, COLORS.ink, {});
+    // Padding keeps the slanted digits and their outline from being clipped at the edge of the text texture.
     this.overCount = label('0', 84, COLORS.red, {
       stroke: { color: COLORS.ink, width: 6, join: 'round' },
+      padding: 16,
     });
     this.buildGameOver();
     this.buildPaused();
@@ -207,7 +202,6 @@ export class ChaosParkView {
       this.scenery,
       this.patchLayer,
       this.shadows,
-      this.warnings,
       this.movers,
       this.ratLayer,
       this.crashRing,
@@ -276,7 +270,7 @@ export class ChaosParkView {
     this.world.rotation = place.portrait ? Math.PI / 2 : 0;
     this.world.scale.set(place.scale);
     this.world.position.set(place.x0, place.y0);
-    drawFrame(this.frame, b);
+    drawHedge(this.frame, b);
     this.hudLeft.position.set(b.left, b.top);
     this.hudRight.position.set(b.right, b.top);
     const pause = pauseButton(b);
@@ -344,12 +338,7 @@ export class ChaosParkView {
       v.shadow.alpha = 0.22 * m.alpha;
 
       const crashed = sim.crash?.ids.includes(m.id) ?? false;
-      v.warn.visible = m.warning || crashed;
-      v.warn.position.set(x, y);
-      v.warn.rotation = v.angle;
-      v.warn.scale.set(
-        crashed ? 1 + 0.1 * Math.sin(sim.clock * 0.25) : 1 + 0.05 * Math.sin(sim.clock * 0.4),
-      );
+      const warned = m.warning || crashed;
 
       this.syncBadge(v, m);
       // Above the mover on screen, clear of however it is turned.
@@ -360,6 +349,20 @@ export class ChaosParkView {
       const lift = along + across + (BADGE_R + 3) * ART;
       v.badge.position.set(x + up.x * lift, y + up.y * lift);
       v.badge.alpha = m.alpha;
+      // A "!" bubble beside the badge for anyone about to collide, upright like the badge.
+      v.warn.visible = warned;
+      if (warned) {
+        const right = { x: -up.y, y: up.x };
+        const side = (BADGE_R + 3) * ART;
+        v.warn.position.set(v.badge.x + right.x * side, v.badge.y + right.y * side);
+        v.warn.rotation = -this.world.rotation;
+        v.warn.scale.set(
+          ART *
+            (crashed
+              ? 1.1 + 0.1 * Math.sin(sim.clock * 0.25)
+              : 1 + 0.06 * Math.sin(sim.clock * 0.4)),
+        );
+      }
       this.syncShout(v, m, up);
       v.daze.visible = m.daze > 0;
       if (m.daze > 0) {
@@ -386,16 +389,15 @@ export class ChaosParkView {
     streaks.visible = false;
     root.addChild(streaks, limbs, moverBody(look));
     const shadow = moverShadow(m.kind, m.width, m.len);
-    const warn = warnRing(m.width, m.len);
+    const warn = warnBubble();
     warn.visible = false;
     const badge = new Container();
     badge.rotation = -this.world.rotation;
     const daze = new Graphics();
     daze.visible = false;
     this.shadows.addChild(shadow);
-    this.warnings.addChild(warn);
     this.movers.addChild(root);
-    this.badges.addChild(badge, daze);
+    this.badges.addChild(badge, daze, warn);
     drawLimbs(limbs, look, 0);
     return {
       root,
@@ -642,7 +644,7 @@ export class ChaosParkView {
   }
 
   private card(layer: Container): void {
-    layer.addChild(paperCard(-CARD.w / 2, -CARD.h / 2, CARD.w, CARD.h));
+    layer.addChild(noticeBoard(-CARD.w / 2, -CARD.h / 2, CARD.w, CARD.h));
   }
 
   /** Empties a card for rebuilding, keeping the text objects the view holds on to and updates. */
@@ -666,11 +668,16 @@ export class ChaosParkView {
     const strip = roadStrip(park.season, 400);
     strip.scale.set(1.12);
     strip.y = -22;
-    const heading = label('HIGH SCORE:', 30, COLORS.ink, { letterSpacing: 2 });
+    const heading = label('YOUR BEST', 30, COLORS.ink, { letterSpacing: 2 });
     heading.position.set(0, 64);
+    const cup = trophy();
+    cup.position.set(-heading.width / 2 - 26, 62);
     this.titleBest.position.set(0, 106);
-    layer.addChild(season, strip, heading, this.titleBest);
-    layer.addChild(ovalButton(HELP_BUTTON, 'blue', 24, -0.08), ovalButton(PLAY_BUTTON, 'red', 50));
+    layer.addChild(season, strip, heading, cup, this.titleBest);
+    layer.addChild(
+      plaqueButton(HELP_BUTTON, 'wood', BUTTON_TEXT),
+      plaqueButton(PLAY_BUTTON, 'green', BUTTON_TEXT),
+    );
   }
 
   private buildHelp(park: Park): void {
@@ -787,7 +794,7 @@ export class ChaosParkView {
       layer.addChild(icon, caption);
       y += h;
     }
-    layer.addChild(ovalButton(BACK_BUTTON, 'red', 32));
+    layer.addChild(plaqueButton(BACK_BUTTON, 'green', BUTTON_TEXT));
   }
 
   private buildGameOver(): void {
@@ -821,8 +828,8 @@ export class ChaosParkView {
       biker,
       walker,
       stars,
-      ovalButton(MENU_BUTTON, 'blue', 28),
-      ovalButton(RETRY_BUTTON, 'red', 46),
+      plaqueButton(MENU_BUTTON, 'wood', BUTTON_TEXT),
+      plaqueButton(RETRY_BUTTON, 'green', BUTTON_TEXT),
     );
   }
 
@@ -835,14 +842,18 @@ export class ChaosParkView {
     this.overHeadline.removeChildren().forEach((c) => c.destroy());
     if (!result) return;
     if (result.isNewBest) {
-      const top = label('NEW HIGH SCORE', 28, COLORS.red, { letterSpacing: 2 });
-      top.position.set(0, -206);
-      const main = label('Congratulations!', 54, COLORS.ink, { padding: 20 }, SCRIPT_FONT);
-      main.position.set(0, -156);
+      // The headline and its trophy are centred together.
+      const main = label('New park record!', 50, COLORS.ink, { padding: 20 }, SCRIPT_FONT);
+      const cup = trophy();
+      cup.scale.set(1.4);
+      const gap = 14;
+      const left = -(main.width + gap + cup.width) / 2;
+      main.position.set(left + main.width / 2, -172);
       main.rotation = -0.04;
-      this.overHeadline.addChild(top, main);
+      cup.position.set(left + main.width + gap + cup.width / 2, -180);
+      this.overHeadline.addChild(main, cup);
     } else {
-      const main = label('Oh dear!', 68, COLORS.ink, { padding: 20 }, SCRIPT_FONT);
+      const main = label('Pile-up!', 68, COLORS.ink, { padding: 20 }, SCRIPT_FONT);
       main.position.set(0, -172);
       main.rotation = -0.04;
       this.overHeadline.addChild(main);
@@ -850,15 +861,19 @@ export class ChaosParkView {
   }
 
   private buildPaused(): void {
-    const text = label('PAUSED', 96, 0xffffff, {
-      stroke: { color: COLORS.ink, width: 10, join: 'round' },
-      letterSpacing: 4,
-    });
+    const text = label(
+      'Taking a breather',
+      64,
+      0xffffff,
+      { stroke: { color: COLORS.ink, width: 10, join: 'round' }, padding: 24 },
+      SCRIPT_FONT,
+    );
     text.position.set(0, -90);
+    text.rotation = -0.04;
     this.paused.addChild(
       text,
-      ovalButton(QUIT_BUTTON, 'blue', 30),
-      ovalButton(RESUME_BUTTON, 'red', 42),
+      plaqueButton(QUIT_BUTTON, 'wood', BUTTON_TEXT),
+      plaqueButton(RESUME_BUTTON, 'green', BUTTON_TEXT),
     );
   }
 }
