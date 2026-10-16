@@ -1171,17 +1171,30 @@ export const speedStreaks = (width: number, len: number): Graphics => {
   return g;
 };
 
-/** The red ring round a mover about to collide. */
-export const warnRing = (width: number, len: number): Graphics => {
-  const w = width * LANE_W + 4;
-  const l = len + 12;
-  return new Graphics()
-    .roundRect(-l / 2, -w / 2, l, w, Math.min(w, l) / 2)
-    .fill({ color: COLORS.warn, alpha: 0.18 })
-    .stroke({ width: 3, color: COLORS.warn })
-    .roundRect(-l / 2 - 3, -w / 2 - 3, l + 6, w + 6, Math.min(w, l) / 2 + 3)
-    .stroke({ width: 1.5, color: COLORS.warnRim, alpha: 0.8 });
-};
+/**
+ * A "!" in a speech bubble over someone about to collide. The tail's tip is at the origin, pointing down at them, with
+ * the bubble above and to the right, so it sits beside their lap badge.
+ */
+export const warnBubble = (): Graphics =>
+  new Graphics()
+    .roundRect(-2, -27, 18, 20, 7)
+    .fill({ color: 0x000000, alpha: 0.2 })
+    .moveTo(-0.5, -9)
+    .lineTo(-4, 0)
+    .lineTo(5, -9)
+    .closePath()
+    .fill(COLORS.gold)
+    .stroke({ width: 1.4, color: INK, join: 'round' })
+    .roundRect(-3, -28, 18, 20, 7)
+    .fill(COLORS.gold)
+    .stroke({ width: 1.4, color: INK })
+    // Paint over the tail's base so it joins the bubble without a seam.
+    .rect(-0.2, -10, 4.6, 2)
+    .fill(COLORS.gold)
+    .roundRect(4.6, -24.5, 2.8, 8.4, 1.4)
+    .fill(INK)
+    .circle(6, -13, 1.6)
+    .fill(INK);
 
 // ---------------------------------------------------------------------------------------------------------------
 // Lap badges.

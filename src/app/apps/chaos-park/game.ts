@@ -12,7 +12,7 @@ import {
   QUIT_BUTTON,
   RESUME_BUTTON,
   RETRY_BUTTON,
-  inOval,
+  inPlaque,
   inRect,
   pauseButton,
   type Bounds,
@@ -24,7 +24,7 @@ export const GAME_ID = 'chaos-park';
 
 const SOUNDS: Readonly<Record<SimEvent, SfxName>> = {
   lap: 'checkpoint',
-  alert: 'alert',
+  alert: 'bell',
   crash: 'crash',
   slip: 'slip',
   shift: 'pick',
@@ -149,19 +149,19 @@ export class ChaosParkGame {
     const cy = y - this.size.height / 2;
     switch (sim.phase) {
       case 'title':
-        if (inOval(PLAY_BUTTON, cx, cy)) this.start();
-        else if (inOval(HELP_BUTTON, cx, cy)) {
+        if (inPlaque(PLAY_BUTTON, cx, cy)) this.start();
+        else if (inPlaque(HELP_BUTTON, cx, cy)) {
           this.sfx.play('click');
           sim.showHelp();
         }
         break;
       case 'help':
-        if (inOval(BACK_BUTTON, cx, cy)) this.toTitle();
+        if (inPlaque(BACK_BUTTON, cx, cy)) this.toTitle();
         break;
       case 'playing':
         if (sim.paused) {
-          if (inOval(RESUME_BUTTON, cx, cy)) this.resume();
-          else if (inOval(QUIT_BUTTON, cx, cy)) this.quit();
+          if (inPlaque(RESUME_BUTTON, cx, cy)) this.resume();
+          else if (inPlaque(QUIT_BUTTON, cx, cy)) this.quit();
         } else if (inRect(pauseButton(this.bounds), x, y)) {
           this.sfx.play('click');
           this.swipes.clear();
@@ -173,8 +173,8 @@ export class ChaosParkGame {
         }
         break;
       case 'gameOver':
-        if (inOval(RETRY_BUTTON, cx, cy)) this.start();
-        else if (inOval(MENU_BUTTON, cx, cy)) this.toTitle();
+        if (inPlaque(RETRY_BUTTON, cx, cy)) this.start();
+        else if (inPlaque(MENU_BUTTON, cx, cy)) this.toTitle();
         break;
       case 'crashed':
         break;
