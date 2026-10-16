@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.7.4
+- Chaos Park plays at 80% of its old speed, cars are only a little faster than bikes, and only one car is in the park at a time
+
 ## 1.7.3
 - Chaos Park builds a park about 10 times faster and World's Longest Game builds a level about 45% faster, with exactly the same parks and levels as before, so the game generator tests no longer time out
 - Tests: the road-fits-the-frame park check makes one assertion per park instead of one per point of road, and the three World's Longest Game tests that build 18 to 30 whole levels get the same 60s limit as the other heavy generator tests

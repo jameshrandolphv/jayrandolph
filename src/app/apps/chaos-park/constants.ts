@@ -65,22 +65,31 @@ export interface KindSpec {
   weight: number;
 }
 
-/** Walkers (and dog walkers), runners, bikers and cars are each faster; carriages go at a walk and never leave. */
+/**
+ * The overall pace of the game: every mover's speed (and the rats') is scaled by this, so the challenge comes from
+ * how many are about rather than how fast they go.
+ */
+export const PACE = 0.8;
+
 const spec = (
   speed: number,
   len: number,
   width: 1 | 2,
   laps: readonly [number, number],
   weight: number,
-): KindSpec => ({ speed: speed * ART, len: len * ART, width, laps, weight });
+): KindSpec => ({ speed: speed * ART * PACE, len: len * ART, width, laps, weight });
 
-/** Speeds and lengths are given at the design lane width and scaled to the one in use. */
+/**
+ * Walkers (and dog walkers), runners, bikers and cars are each faster; carriages go at a walk and never leave.
+ * Speeds and lengths are given at the design lane width and scaled to the one in use (and speeds by `PACE`).
+ */
 export const KIND_SPECS: Readonly<Record<Kind, KindSpec>> = {
   walker: spec(0.72, 14, 1, [1, 2], 0.3),
   dog: spec(0.72, 24, 2, [1, 1], 0.12),
   runner: spec(1.15, 14, 1, [1, 3], 0.3),
   biker: spec(1.8, 30, 1, [1, 4], 0.22),
-  car: spec(2.75, 46, 2, [1, 2], 0.07),
+  /** Only a little faster than a bike. */
+  car: spec(2.0, 46, 2, [1, 2], 0.07),
   carriage: spec(0.72, 62, 2, [Infinity, Infinity], 0),
   /** A run group; its length depends on how many are in it (see `groupLength`). */
   group: spec(1.15, 40, 2, [1, 1], 0),
@@ -108,7 +117,7 @@ export const RAT_FROM_SCORE = 4;
 export const RAT_INTERVAL: readonly [number, number] = [1800, 3300];
 /** Ticks the rat waits at the kerb, in sight, before it darts out. */
 export const RAT_LURK = 55;
-export const RAT_SPEED = 2.4 * ART;
+export const RAT_SPEED = 2.4 * ART * PACE;
 /** It gives up and runs off if it hasn't reached its target in this many ticks. */
 export const RAT_GIVE_UP = 150;
 export const DAZE_TICKS = 180;

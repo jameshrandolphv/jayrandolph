@@ -683,6 +683,31 @@ describe('collisions', () => {
   });
 });
 
+describe('arrivals', () => {
+  it('never let a second car in while one is in the park', () => {
+    for (let seed = 1; seed <= 6; seed++) {
+      const sim = new ChaosParkSim(seededRng(seed));
+      sim.start();
+      // No collisions, and a score where cars are common.
+      (sim as unknown as { checkTraffic: () => void }).checkTraffic = () => undefined;
+      sim.score = 60;
+      let cars = 0;
+      for (let t = 0; t < 4 * 3600; t++) {
+        sim.step();
+        const now = sim.movers.filter((m) => m.kind === 'car').length;
+        expect(now).toBeLessThanOrEqual(1);
+        cars = Math.max(cars, now);
+      }
+      expect(cars).toBe(1);
+    }
+  });
+
+  it('send cars round only a little faster than bikes', () => {
+    expect(KIND_SPECS.car.speed / KIND_SPECS.biker.speed).toBeGreaterThan(1);
+    expect(KIND_SPECS.car.speed / KIND_SPECS.biker.speed).toBeLessThan(1.2);
+  });
+});
+
 describe('patches', () => {
   it('appear at 25, 50 and 100 points', () => {
     expect([0, 24, 25, 49, 50, 99, 100, 500].map(patchesShown)).toEqual([0, 0, 1, 1, 2, 2, 3, 3]);

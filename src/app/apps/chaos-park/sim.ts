@@ -733,10 +733,12 @@ export class ChaosParkSim {
 
   private pickKind(): Kind {
     const kinds: Kind[] = ['walker', 'dog', 'runner', 'biker', 'car'];
+    // One car in the park at a time, from the moment it turns in at the gate until it has driven out.
+    const carIn = this.movers.some((m) => m.kind === 'car');
     const weight = (k: Kind): number =>
       k !== 'car'
         ? KIND_SPECS[k].weight
-        : this.score < CARS_FROM_SCORE
+        : this.score < CARS_FROM_SCORE || carIn
           ? 0
           : KIND_SPECS.car.weight + Math.min(0.05, (this.score - CARS_FROM_SCORE) * 0.002);
     const total = kinds.reduce((sum, k) => sum + weight(k), 0);
