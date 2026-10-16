@@ -18,8 +18,6 @@ const N = GW * GH;
 /** A coin counts as collected when the player's centre is this close, which always overlaps it. */
 export const COIN_REACH = HALF - 4;
 
-const MOVES = [0, 1, -1, GW, -GW];
-
 const floorAt = (level: LevelDef, x: number, y: number): boolean => {
   const c = Math.floor(x / TILE);
   const r = Math.floor(y / TILE);
@@ -46,10 +44,11 @@ const walkableCells = (level: LevelDef): Uint8Array => {
   return walk;
 };
 
-const hazardLayers = (level: LevelDef, layers: number): Uint8Array => {
+const drawHazards = (level: LevelDef, layers: number): Uint8Array => {
   const haz = new Uint8Array(layers * N);
   const radius = ENEMY_R + SLACK;
   const reach = HALF + radius;
+  const r2 = radius * radius;
   for (let t = 0; t < layers; t++) {
     const base = t * N;
     for (const enemy of level.enemies) {
@@ -59,14 +58,32 @@ const hazardLayers = (level: LevelDef, layers: number): Uint8Array => {
       const j0 = Math.max(0, Math.floor((p.y - reach) / CELL));
       const j1 = Math.min(GH - 1, Math.floor((p.y + reach) / CELL));
       for (let j = j0; j <= j1; j++) {
+        const cy = centre(j);
+        const ny = p.y < cy - HALF ? cy - HALF : p.y > cy + HALF ? cy + HALF : p.y;
+        const dy2 = (p.y - ny) * (p.y - ny);
+        if (dy2 > r2) continue;
         for (let i = i0; i <= i1; i++) {
-          const nx = Math.max(centre(i) - HALF, Math.min(p.x, centre(i) + HALF));
-          const ny = Math.max(centre(j) - HALF, Math.min(p.y, centre(j) + HALF));
-          if ((p.x - nx) ** 2 + (p.y - ny) ** 2 <= radius * radius) haz[base + j * GW + i] = 1;
+          const cx = centre(i);
+          const nx = p.x < cx - HALF ? cx - HALF : p.x > cx + HALF ? cx + HALF : p.x;
+          if ((p.x - nx) * (p.x - nx) + dy2 <= r2) haz[base + j * GW + i] = 1;
         }
       }
     }
   }
+  return haz;
+};
+
+/**
+ * Hazards are worked out again and again for the same enemies while a level is built, so they are kept per enemy
+ * list. The generator makes a new list whenever it adds enemies, and the length guards against one grown in place.
+ */
+const hazardCache = new WeakMap<LevelDef['enemies'], { count: number; layers: number; haz: Uint8Array }>();
+
+const hazardLayers = (level: LevelDef, layers: number): Uint8Array => {
+  const cached = hazardCache.get(level.enemies);
+  if (cached && cached.count === level.enemies.length && cached.layers === layers) return cached.haz;
+  const haz = drawHazards(level, layers);
+  hazardCache.set(level.enemies, { count: level.enemies.length, layers, haz });
   return haz;
 };
 
@@ -173,19 +190,47 @@ const flood = (ws: Workspace, open: Uint8Array, sources: readonly number[], step
     visited[s] = 1;
     queue[tail++] = s;
   }
+  // The hottest loop in level generation, so the moves are written out: wait, right, left, down, up.
+  const last = (layers - 1) * N;
   while (head < tail) {
     const s = queue[head++]!;
-    const t = Math.floor(s / N);
-    const cell = s - t * N;
-    const nt = (t + step + layers) % layers;
-    if (!open[nt * N + cell]) continue;
-    for (const move of MOVES) {
-      const next = cell + move;
-      if (next < 0 || next >= N) continue;
-      const ns = nt * N + next;
-      if (visited[ns] || !open[ns] || !open[t * N + next]) continue;
+    const tN = s - (s % N);
+    const cell = s - tN;
+    const ntN = step === 1 ? (tN === last ? 0 : tN + N) : tN === 0 ? last : tN - N;
+    if (!open[ntN + cell]) continue;
+    // Waiting in place.
+    let ns = ntN + cell;
+    if (!visited[ns] && open[tN + cell]) {
       visited[ns] = 1;
       queue[tail++] = ns;
+    }
+    if (cell + 1 < N) {
+      ns = ntN + cell + 1;
+      if (!visited[ns] && open[ns] && open[tN + cell + 1]) {
+        visited[ns] = 1;
+        queue[tail++] = ns;
+      }
+    }
+    if (cell >= 1) {
+      ns = ntN + cell - 1;
+      if (!visited[ns] && open[ns] && open[tN + cell - 1]) {
+        visited[ns] = 1;
+        queue[tail++] = ns;
+      }
+    }
+    if (cell + GW < N) {
+      ns = ntN + cell + GW;
+      if (!visited[ns] && open[ns] && open[tN + cell + GW]) {
+        visited[ns] = 1;
+        queue[tail++] = ns;
+      }
+    }
+    if (cell >= GW) {
+      ns = ntN + cell - GW;
+      if (!visited[ns] && open[ns] && open[tN + cell - GW]) {
+        visited[ns] = 1;
+        queue[tail++] = ns;
+      }
     }
   }
   ws.reached = tail;
@@ -209,6 +254,7 @@ const solveSegment = (ws: Workspace, segment: number): boolean => {
   const pending = level.coins.filter((c) => c.segment === segment);
   const sources = zoneCells(allowed, start);
 
+  const atCoin = new Uint8Array(N);
   let from = zoneCentre(start);
   while (pending.length) {
     let nearest = 0;
@@ -222,14 +268,15 @@ const solveSegment = (ws: Workspace, segment: number): boolean => {
     const [coin] = pending.splice(nearest, 1);
     flood(ws, open, sources);
     sources.length = 0;
-    for (let i = 0; i < ws.reached; i++) {
-      const s = queue[i]!;
-      const cell = s % N;
-      if (
+    for (let cell = 0; cell < N; cell++) {
+      atCoin[cell] = +(
         Math.abs(centre(cell % GW) - coin!.x) <= COIN_REACH &&
         Math.abs(centre(Math.floor(cell / GW)) - coin!.y) <= COIN_REACH
-      )
-        sources.push(s);
+      );
+    }
+    for (let i = 0; i < ws.reached; i++) {
+      const s = queue[i]!;
+      if (atCoin[s % N]) sources.push(s);
     }
     if (!sources.length) return false;
     from = coin!;
