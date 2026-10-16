@@ -3,6 +3,11 @@ frontend:
   phases:
     preBuild:
       commands:
+        # Angular CLI refuses Node below 22.22.3, so pin a newer Node instead of
+        # relying on whatever the Amplify build image ships with.
+        - nvm install 24
+        - nvm use 24
+        - node -v
         - npm ci
     build:
       commands:
