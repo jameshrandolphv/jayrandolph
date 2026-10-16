@@ -32,6 +32,7 @@ import {
 } from './art';
 import {
   BACK_BUTTON,
+  BUTTON_TEXT,
   CARD,
   ART,
   HELP_BUTTON,
@@ -189,8 +190,10 @@ export class ChaosParkView {
     this.hud.addChild(this.hudLeft, this.hudRight, this.pauseButton);
 
     this.titleBest = label('0', 54, COLORS.ink, {});
+    // Padding keeps the slanted digits and their outline from being clipped at the edge of the text texture.
     this.overCount = label('0', 84, COLORS.red, {
       stroke: { color: COLORS.ink, width: 6, join: 'round' },
+      padding: 16,
     });
     this.buildGameOver();
     this.buildPaused();
@@ -671,7 +674,10 @@ export class ChaosParkView {
     cup.position.set(-heading.width / 2 - 26, 62);
     this.titleBest.position.set(0, 106);
     layer.addChild(season, strip, heading, cup, this.titleBest);
-    layer.addChild(plaqueButton(HELP_BUTTON, 'wood', 24), plaqueButton(PLAY_BUTTON, 'green', 44));
+    layer.addChild(
+      plaqueButton(HELP_BUTTON, 'wood', BUTTON_TEXT),
+      plaqueButton(PLAY_BUTTON, 'green', BUTTON_TEXT),
+    );
   }
 
   private buildHelp(park: Park): void {
@@ -788,7 +794,7 @@ export class ChaosParkView {
       layer.addChild(icon, caption);
       y += h;
     }
-    layer.addChild(plaqueButton(BACK_BUTTON, 'green', 30));
+    layer.addChild(plaqueButton(BACK_BUTTON, 'green', BUTTON_TEXT));
   }
 
   private buildGameOver(): void {
@@ -822,8 +828,8 @@ export class ChaosParkView {
       biker,
       walker,
       stars,
-      plaqueButton(MENU_BUTTON, 'wood', 28),
-      plaqueButton(RETRY_BUTTON, 'green', 40),
+      plaqueButton(MENU_BUTTON, 'wood', BUTTON_TEXT),
+      plaqueButton(RETRY_BUTTON, 'green', BUTTON_TEXT),
     );
   }
 
@@ -836,12 +842,15 @@ export class ChaosParkView {
     this.overHeadline.removeChildren().forEach((c) => c.destroy());
     if (!result) return;
     if (result.isNewBest) {
-      const main = label('New park record!', 54, COLORS.ink, { padding: 20 }, SCRIPT_FONT);
-      main.position.set(0, -172);
-      main.rotation = -0.04;
+      // The headline and its trophy are centred together.
+      const main = label('New park record!', 50, COLORS.ink, { padding: 20 }, SCRIPT_FONT);
       const cup = trophy();
       cup.scale.set(1.4);
-      cup.position.set(main.width / 2 + 30, -186);
+      const gap = 14;
+      const left = -(main.width + gap + cup.width) / 2;
+      main.position.set(left + main.width / 2, -172);
+      main.rotation = -0.04;
+      cup.position.set(left + main.width + gap + cup.width / 2, -180);
       this.overHeadline.addChild(main, cup);
     } else {
       const main = label('Pile-up!', 68, COLORS.ink, { padding: 20 }, SCRIPT_FONT);
@@ -863,8 +872,8 @@ export class ChaosParkView {
     text.rotation = -0.04;
     this.paused.addChild(
       text,
-      plaqueButton(QUIT_BUTTON, 'wood', 28),
-      plaqueButton(RESUME_BUTTON, 'green', 38),
+      plaqueButton(QUIT_BUTTON, 'wood', BUTTON_TEXT),
+      plaqueButton(RESUME_BUTTON, 'green', BUTTON_TEXT),
     );
   }
 }
