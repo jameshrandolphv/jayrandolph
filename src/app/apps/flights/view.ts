@@ -505,13 +505,13 @@ export class FlightsView {
 
   private buildTitle(): void {
     const layer = this.title;
-    this.card(layer, true);
+    this.card(layer, false);
     const mark = logo();
-    mark.position.set(330, 180);
+    mark.position.set(WIDTH / 2, 178);
     layer.addChild(mark);
     const heading = label('HIGH SCORE:', 34, COLORS.ink, { letterSpacing: 2 });
-    heading.position.set(330, 300);
-    this.titleBest.position.set(330, 352);
+    heading.position.set(WIDTH / 2, 312);
+    this.titleBest.position.set(WIDTH / 2, 364);
     layer.addChild(heading, this.titleBest);
     layer.addChild(ovalButton(HELP_BUTTON, 'blue', 26, -0.08), ovalButton(PLAY_BUTTON, 'red', 54));
   }
@@ -539,7 +539,7 @@ export class FlightsView {
       layer.addChild(row, caption);
     });
     const body = label(
-      'DRAG FROM AN AIRCRAFT TO DRAW ITS FLIGHT PATH.\nJOIN A RUNWAY AT ITS ARROWS TO LAND.\nKEEP THEM APART: ONE COLLISION AND IT’S GAME OVER!',
+      'DRAG FROM AN AIRCRAFT TO DRAW ITS FLIGHT PATH.\nJOIN A RUNWAY AT ITS ARROWS TO LAND.\nONE CRASH AND THE GAME IS OVER!',
       27,
       COLORS.ink,
       { lineHeight: 36, letterSpacing: 1 },

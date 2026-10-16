@@ -117,8 +117,8 @@ export interface Oval {
 export const inOval = (o: Oval, x: number, y: number): boolean =>
   ((x - o.x) / o.rx) ** 2 + ((y - o.y) / o.ry) ** 2 <= 1;
 
-export const PLAY_BUTTON: Oval = { x: 455, y: 500, rx: 108, ry: 56, label: 'PLAY!' };
-export const HELP_BUTTON: Oval = { x: 230, y: 470, rx: 78, ry: 34, label: 'HOW TO PLAY' };
+export const PLAY_BUTTON: Oval = { x: 600, y: 492, rx: 108, ry: 56, label: 'PLAY!' };
+export const HELP_BUTTON: Oval = { x: 345, y: 492, rx: 78, ry: 34, label: 'HOW TO PLAY' };
 export const BACK_BUTTON: Oval = { x: 480, y: 548, rx: 82, ry: 38, label: 'GOT IT!' };
 export const RETRY_BUTTON: Oval = { x: 400, y: 530, rx: 100, ry: 54, label: 'RETRY' };
 export const MENU_BUTTON: Oval = { x: 240, y: 548, rx: 62, ry: 32, label: 'MENU' };

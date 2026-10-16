@@ -553,66 +553,23 @@ export const paperCard = (x: number, y: number, w: number, h: number): Graphics 
   return g;
 };
 
-/** The game's logo: the name in script over a pair of blue wings and an arc of stars. */
+/** The game's logo: its name in red script with a white and a dark outline. */
 export const logo = (): Container => {
   const c = new Container();
-  const wings = new Graphics();
-  for (const side of [-1, 1]) {
-    wings
-      .moveTo(side * 30, -14)
-      .bezierCurveTo(side * 90, -46, side * 170, -40, side * 210, -22)
-      .bezierCurveTo(side * 170, -8, side * 120, 8, side * 30, 18)
-      .closePath()
-      .fill(COLORS.blue)
-      .stroke({ width: 3, color: COLORS.ink, join: 'round' });
-    for (let i = 0; i < 4; i++) {
-      const fx = side * (60 + i * 34);
-      wings.moveTo(fx, -26 + i * 2).lineTo(fx + side * 20, 6 - i * 4);
-    }
-    wings.stroke({ width: 2.5, color: COLORS.blueDark, cap: 'round' });
-  }
-  wings.ellipse(0, 0, 40, 26).fill(COLORS.red).stroke({ width: 3, color: COLORS.ink });
-  // Raised so the wings show above the lettering rather than behind it.
-  wings.y = -46;
-  c.addChild(wings);
-  const stars = new Graphics();
-  for (let i = 0; i < 5; i++) {
-    const a = Math.PI * (1.25 + i * 0.125);
-    star(stars, Math.cos(a) * 120, 30 + Math.sin(a) * 120, i === 2 ? 15 : 12);
-  }
-  stars.fill(COLORS.gold).stroke({ width: 2.5, color: COLORS.ink, join: 'round' });
-  stars.y = -64;
-  c.addChild(stars);
-  const name = label(
-    'Flights!',
-    92,
-    COLORS.red,
-    { stroke: { color: 0xffffff, width: 12, join: 'round' } },
-    SCRIPT_FONT,
-  );
-  const back = label(
-    'Flights!',
-    92,
-    COLORS.ink,
-    { stroke: { color: COLORS.ink, width: 20, join: 'round' } },
-    SCRIPT_FONT,
-  );
-  for (const t of [back, name]) {
-    t.rotation = -0.06;
-    t.y = 20;
-  }
+  const style = (fill: number, stroke: number, width: number) =>
+    // Padding keeps the script's swashes from being clipped at the edge of the text texture.
+    label(
+      'Flights!',
+      120,
+      fill,
+      { stroke: { color: stroke, width, join: 'round' }, padding: 24 },
+      SCRIPT_FONT,
+    );
+  const back = style(COLORS.ink, COLORS.ink, 24);
+  const name = style(COLORS.red, 0xffffff, 14);
+  for (const t of [back, name]) t.rotation = -0.06;
   c.addChild(back, name);
   return c;
-};
-
-const star = (g: Graphics, x: number, y: number, r: number): void => {
-  const pts: number[] = [];
-  for (let i = 0; i < 10; i++) {
-    const a = -Math.PI / 2 + (i * Math.PI) / 5;
-    const rr = i % 2 === 0 ? r : r * 0.45;
-    pts.push(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
-  }
-  g.poly(pts);
 };
 
 /** A speech bubble with a tail pointing at (tx, ty), relative to its centre. */

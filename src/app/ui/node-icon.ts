@@ -167,10 +167,11 @@ export class IconDefs {}
             <ellipse cx="32" cy="12" rx="34" ry="20" fill="url(#ico-gloss)" opacity="0.45" />
           </g>
           <g transform="rotate(-38 32 32)" stroke="#3a3a3a" stroke-width="1.6" stroke-linejoin="round">
-            <path d="M33 25l-19-8-2 3 12 9zM33 39l-19 8-2-3 12-9z" fill="#e4e6ea" />
+            <!-- Engines hang under the wings, whose roots run under the fuselage so the wings join it. -->
+            <rect x="23" y="21" width="8" height="4" rx="2" fill="#f6a01a" />
+            <rect x="23" y="39" width="8" height="4" rx="2" fill="#f6a01a" />
+            <path d="M37 30L15 16l-4 2 10 13zM37 34L15 48l-4-2 10-13z" fill="#e4e6ea" />
             <path d="M13 29l-4-5h-2l1 8-1 8h2l4-5z" fill="#e4e6ea" />
-            <rect x="22" y="17.5" width="7" height="4" rx="2" fill="#f6a01a" />
-            <rect x="22" y="42.5" width="7" height="4" rx="2" fill="#f6a01a" />
             <path d="M8 32c0-3 4-5 10-5h26c6 0 12 2 13 5-1 3-7 5-13 5H18c-6 0-10-2-10-5z" fill="#fafafa" />
             <path d="M51 30.5c1.5.3 3 .9 3.6 1.5-.6.6-2.1 1.2-3.6 1.5z" fill="#36506b" stroke="none" />
             <path d="M14 31.2h30" stroke="#f6a01a" stroke-width="2" />
