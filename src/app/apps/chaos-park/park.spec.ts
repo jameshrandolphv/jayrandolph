@@ -34,12 +34,12 @@ describe('generatePark', () => {
       expect(frame.hud === 'top' ? m.top : m.left).toBe(HUD_MARGIN);
       for (const seed of SEEDS) {
         const { track } = generatePark(seededRng(seed), undefined, frame);
-        for (const p of edge(track, ROAD_HALF)) {
-          expect(p.x).toBeGreaterThan(m.left);
-          expect(p.x).toBeLessThan(frame.w - m.right);
-          expect(p.y).toBeGreaterThan(m.top);
-          expect(p.y).toBeLessThan(frame.h - m.bottom);
-        }
+        // Checked in one go: an expect per point of 240 roads took longer than the parks themselves.
+        const outside = edge(track, ROAD_HALF).filter(
+          (p) =>
+            !(p.x > m.left && p.x < frame.w - m.right && p.y > m.top && p.y < frame.h - m.bottom),
+        );
+        expect(outside, `${frame.w}x${frame.h}, seed ${seed}`).toEqual([]);
       }
     }
   });

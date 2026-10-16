@@ -207,12 +207,54 @@ export const edge = (track: Track, d: number): Point[] =>
     y: p.y + track.normals[i]!.y * d,
   }));
 
+/** Segments per chunk of a long outline's index. */
+const CHUNK = 16;
+const chunkIndex = new WeakMap<readonly Point[], Float64Array>();
+
+/**
+ * Bounds of each run of `CHUNK` segments of a long outline (closing segment included), so a query can skip whole
+ * runs that are nowhere near. Worked out once per outline, which is never changed once built: the park's edges are
+ * asked about thousands of times.
+ */
+const chunksOf = (line: readonly Point[]): Float64Array | undefined => {
+  const n = line.length;
+  if (n < CHUNK * 4) return undefined;
+  let boxes = chunkIndex.get(line);
+  if (boxes) return boxes;
+  const count = Math.ceil(n / CHUNK);
+  boxes = new Float64Array(count * 4);
+  for (let c = 0; c < count; c++) {
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (let k = c * CHUNK; k <= Math.min(n, (c + 1) * CHUNK); k++) {
+      const q = line[k % n]!;
+      x0 = Math.min(x0, q.x);
+      y0 = Math.min(y0, q.y);
+      x1 = Math.max(x1, q.x);
+      y1 = Math.max(y1, q.y);
+    }
+    boxes.set([x0, y0, x1, y1], c * 4);
+  }
+  chunkIndex.set(line, boxes);
+  return boxes;
+};
+
 export const insidePolygon = (poly: readonly Point[], x: number, y: number): boolean => {
   let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const a = poly[i]!;
-    const b = poly[j]!;
-    if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  const n = poly.length;
+  const boxes = chunksOf(poly);
+  // Segment k runs from point k to the next; only those crossing the horizontal through `y` count.
+  for (let k0 = 0; k0 < n; k0 += CHUNK) {
+    const c = (k0 / CHUNK) * 4;
+    if (boxes && (boxes[c + 1]! > y || boxes[c + 3]! <= y)) continue;
+    for (let k = k0; k < Math.min(n, k0 + CHUNK); k++) {
+      const a = poly[(k + 1) % n]!;
+      const b = poly[k]!;
+      if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x)
+        inside = !inside;
+    }
   }
   return inside;
 };
@@ -231,6 +273,53 @@ export const polylineDistance = (line: readonly Point[], p: Point, closed = fals
   for (let i = 0; i < n - (closed ? 0 : 1); i++)
     best = Math.min(best, segmentDistance(p, line[i]!, line[(i + 1) % n]!));
   return best;
+};
+
+/**
+ * Whether `p` is closer than `d` to the line. The same as `polylineDistance(line, p, closed) < d`, but it skips
+ * segments whose bounds are too far off and stops at the first close one, which the generator leans on heavily.
+ */
+export const nearPolyline = (
+  line: readonly Point[],
+  p: Point,
+  d: number,
+  closed = false,
+): boolean => {
+  const n = line.length;
+  const d2 = d * d;
+  const boxes = chunksOf(line);
+  const end = n - (closed ? 0 : 1);
+  for (let i = 0; i < end; i++) {
+    if (boxes && i % CHUNK === 0) {
+      const c = (i / CHUNK) * 4;
+      if (
+        p.x + d < boxes[c]! ||
+        p.y + d < boxes[c + 1]! ||
+        p.x - d > boxes[c + 2]! ||
+        p.y - d > boxes[c + 3]!
+      ) {
+        i += CHUNK - 1;
+        continue;
+      }
+    }
+    const a = line[i]!;
+    const b = line[(i + 1) % n]!;
+    if (
+      (p.x + d < a.x && p.x + d < b.x) ||
+      (p.x - d > a.x && p.x - d > b.x) ||
+      (p.y + d < a.y && p.y + d < b.y) ||
+      (p.y - d > a.y && p.y - d > b.y)
+    )
+      continue;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = dx * dx + dy * dy;
+    const t = len ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len)) : 0;
+    const ex = p.x - a.x - dx * t;
+    const ey = p.y - a.y - dy * t;
+    if (ex * ex + ey * ey < d2) return true;
+  }
+  return false;
 };
 
 export const polylineLength = (line: readonly Point[]): number => {
@@ -508,7 +597,7 @@ const ellipse = (cx: number, cy: number, rx: number, ry: number): Point[] =>
 
 /** Every point of `outline` is inside the area and at least `margin` from its edge. */
 const wellInside = (area: readonly Point[], outline: readonly Point[], margin: number): boolean =>
-  outline.every((p) => insidePolygon(area, p.x, p.y) && polylineDistance(area, p, true) > margin);
+  outline.every((p) => insidePolygon(area, p.x, p.y) && !nearPolyline(area, p, margin, true));
 
 const makeWater = (
   inside: Interior,
@@ -526,7 +615,7 @@ const makeWater = (
       const outline =
         kind === 'reservoir' ? ellipse(cx, cy, r * stretch, r) : blob(cx, cy, r, rng, stretch);
       if (!wellInside(inside.inner, outline, 22)) continue;
-      if (shortcuts.some((c) => outline.some((p) => polylineDistance(c.path, p) < 18))) continue;
+      if (shortcuts.some((c) => outline.some((p) => nearPolyline(c.path, p, 18)))) continue;
       if (shortcuts.some((c) => c.path.some((p) => insidePolygon(outline, p.x, p.y)))) continue;
       const radius = r * Math.max(stretch, 1) * 1.15;
       if (out.some((w) => Math.hypot(w.centre.x - cx, w.centre.y - cy) < w.radius + radius + 34))
@@ -647,19 +736,19 @@ const makeTrees = (
       const middle = insidePolygon(inside.inner, tx, ty);
       let chance: number;
       if (middle) {
-        if (polylineDistance(inside.inner, p, true) < r + 2) continue;
+        if (nearPolyline(inside.inner, p, r + 2, true)) continue;
         if (
           water.some(
-            (w) => insidePolygon(w.outline, tx, ty) || polylineDistance(w.outline, p, true) < r + 5,
+            (w) => insidePolygon(w.outline, tx, ty) || nearPolyline(w.outline, p, r + 5, true),
           )
         )
           continue;
         if (fields.some((f) => inField(f, tx, ty, 1.08 + r / Math.min(f.rx, f.ry)))) continue;
-        if (paths.some((l) => polylineDistance(l, p) < r + 5)) continue;
-        if (shortcuts.some((c) => polylineDistance(c.path, p) < r + 6)) continue;
+        if (paths.some((l) => nearPolyline(l, p, r + 5))) continue;
+        if (shortcuts.some((c) => nearPolyline(c.path, p, r + 6))) continue;
         chance = 0.42 + 0.42 * clump(tx, ty);
       } else {
-        if (insidePolygon(outer, tx, ty) || polylineDistance(outer, p, true) < r + 3) continue;
+        if (insidePolygon(outer, tx, ty) || nearPolyline(outer, p, r + 3, true)) continue;
         // Clear of the wall, which is rounded at the corners.
         const cx = Math.max(wall.x + WALL_RADIUS, Math.min(wall.x + wall.w - WALL_RADIUS, tx));
         const cy = Math.max(wall.y + WALL_RADIUS, Math.min(wall.y + wall.h - WALL_RADIUS, ty));
@@ -671,7 +760,7 @@ const makeTrees = (
           ty > wall.y + wall.h - r - 5
         )
           continue;
-        if (lanes.some((l) => polylineDistance(l, p) < r + LANE_W + 6)) continue;
+        if (lanes.some((l) => nearPolyline(l, p, r + LANE_W + 6))) continue;
         chance = 0.62 + 0.3 * clump(tx, ty);
       }
       if (rng() > chance) continue;
