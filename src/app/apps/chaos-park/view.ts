@@ -19,6 +19,8 @@ import {
   WRONG_WAY_COLOR,
   badgeDisc,
   drawDaze,
+  heart,
+  patchSprites,
   drawRat,
   ratAlert,
   badgeNumber,
@@ -39,7 +41,7 @@ import {
 import {
   BACK_BUTTON,
   CARD,
-  FRAME_H,
+  ART,
   HELP_BUTTON,
   LANE_W,
   MENU_BUTTON,
@@ -48,14 +50,16 @@ import {
   QUIT_BUTTON,
   RESUME_BUTTON,
   RETRY_BUTTON,
+  IMPACT_TICKS,
+  MAX_HITS,
   SHOUT_TICKS,
   SLIP_TICKS,
   pauseButton,
   type Bounds,
 } from './constants';
-import { isPortrait, type ChaosParkGame } from './game';
+import { placePark, type ChaosParkGame } from './game';
 import type { Park } from './park';
-import { lapsLeft, type Mover } from './sim';
+import { lapsLeft, patchesShown, type Mover } from './sim';
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 const easeOut = (t: number): number => 1 - (1 - Math.min(1, Math.max(0, t))) ** 3;
@@ -114,6 +118,15 @@ export class ChaosParkView {
   /** The park, in park coordinates; turned on its side on portrait screens. */
   private readonly world = new Container();
   private readonly scenery = new Container();
+  /** The park's patches, shown one by one as the score reaches each. */
+  private readonly patchLayer = new Container();
+  private patchSprites: Graphics[] = [];
+  /** Frames since each patch appeared, for its pop-in. */
+  private patchAge: number[] = [];
+  private readonly impactLayer = new Graphics();
+  /** One per collision a run can take, after the lap counter. */
+  private readonly hearts: Container[] = [];
+  private shownHits = -1;
   private readonly shadows = new Container();
   private readonly warnings = new Container();
   private readonly movers = new Container();
@@ -166,6 +179,12 @@ export class ChaosParkView {
     laps.position.set(24, 32);
     this.lapsText.box.position.set(laps.x + laps.width + 64, 32);
     this.hudLeft.addChild(laps, this.lapsText.box);
+    for (let i = 0; i < MAX_HITS; i++) {
+      const h = new Container();
+      h.position.set(this.lapsText.box.x + COUNTER.w / 2 + 26 + i * 30, 32);
+      this.hearts.push(h);
+      this.hudLeft.addChild(h);
+    }
     const best = label('HI SCORE:', 28, COLORS.ink, {
       stroke: { color: 0xffffff, width: 5, join: 'round' },
       letterSpacing: 1,
@@ -186,11 +205,13 @@ export class ChaosParkView {
 
     this.world.addChild(
       this.scenery,
+      this.patchLayer,
       this.shadows,
       this.warnings,
       this.movers,
       this.ratLayer,
       this.crashRing,
+      this.impactLayer,
       this.badges,
       this.popLayer,
     );
@@ -200,8 +221,8 @@ export class ChaosParkView {
 
   update(alpha: number, deltaMs: number, bounds: Bounds, size: LogicalSize): void {
     const { sim } = this.game;
-    this.fitScreen(bounds, size);
     if (sim.park !== this.park) this.loadPark(sim.park);
+    this.fitScreen(bounds, size);
     const phase = sim.phase;
     const inPlay = phase === 'playing' || phase === 'crashed';
 
@@ -209,6 +230,9 @@ export class ChaosParkView {
     this.syncRats(alpha);
     this.syncPops();
     this.syncCrash();
+    this.syncPatches();
+    this.syncImpacts();
+    this.syncHearts();
 
     this.hud.visible = inPlay || phase === 'gameOver';
     this.pauseButton.visible = phase === 'playing';
@@ -243,17 +267,15 @@ export class ChaosParkView {
 
   /** Turns the park to suit the screen and pins the frame, HUD and pause button to its edges. */
   private fitScreen(b: Bounds, size: LogicalSize): void {
-    const key = `${b.left},${b.top},${b.right},${b.bottom},${size.width}`;
+    const { frame } = this.game.sim.park;
+    const key = `${b.left},${b.top},${b.right},${b.bottom},${size.width},${frame.w},${frame.h}`;
     if (key === this.shownScreen) return;
     this.shownScreen = key;
-    if (isPortrait(size)) {
-      // A quarter turn clockwise: park (x, y) lands on screen at (FRAME_H - y, x).
-      this.world.rotation = Math.PI / 2;
-      this.world.position.set(FRAME_H, 0);
-    } else {
-      this.world.rotation = 0;
-      this.world.position.set(0, 0);
-    }
+    // Filling the screen, turned a quarter clockwise on a portrait one (see `placePark`).
+    const place = placePark(frame, size, b);
+    this.world.rotation = place.portrait ? Math.PI / 2 : 0;
+    this.world.scale.set(place.scale);
+    this.world.position.set(place.x0, place.y0);
     drawFrame(this.frame, b);
     this.hudLeft.position.set(b.left, b.top);
     this.hudRight.position.set(b.right, b.top);
@@ -268,6 +290,13 @@ export class ChaosParkView {
     this.park = park;
     this.scenery.removeChildren().forEach((c) => c.destroy({ children: true }));
     this.scenery.addChild(drawPark(park));
+    this.patchLayer.removeChildren().forEach((c) => c.destroy());
+    this.patchSprites = patchSprites(park);
+    this.patchAge = this.patchSprites.map(() => -1);
+    for (const g of this.patchSprites) {
+      g.visible = false;
+      this.patchLayer.addChild(g);
+    }
     for (const id of [...this.views.keys()]) this.dropMover(id);
     for (const id of [...this.ratViews.keys()]) this.dropRat(id);
     this.buildTitle(park);
@@ -304,6 +333,7 @@ export class ChaosParkView {
       const wobble =
         m.slip > 0 ? Math.sin((sim.clock + alpha) * 0.9) * 0.5 * (m.slip / SLIP_TICKS) : 0;
       v.root.position.set(x, y);
+      v.root.scale.set(ART);
       v.root.rotation = v.angle + wobble;
       v.root.alpha = m.alpha;
       v.streaks.visible = m.boosted;
@@ -327,14 +357,15 @@ export class ChaosParkView {
       const uy = Math.sin(v.angle);
       const along = Math.abs(ux * up.x + uy * up.y) * (m.len / 2);
       const across = Math.abs(-uy * up.x + ux * up.y) * ((m.width * LANE_W) / 2 - 3);
-      const lift = along + across + BADGE_R + 3;
+      const lift = along + across + (BADGE_R + 3) * ART;
       v.badge.position.set(x + up.x * lift, y + up.y * lift);
       v.badge.alpha = m.alpha;
       this.syncShout(v, m, up);
       v.daze.visible = m.daze > 0;
       if (m.daze > 0) {
         drawDaze(v.daze, sim.clock + alpha);
-        v.daze.position.set(x + up.x * 4, y + up.y * 4);
+        v.daze.position.set(x + up.x * 4 * ART, y + up.y * 4 * ART);
+        v.daze.scale.set(ART);
         v.daze.rotation = -this.world.rotation;
       }
     }
@@ -350,7 +381,8 @@ export class ChaosParkView {
     };
     const root = new Container();
     const limbs = new Graphics();
-    const streaks = speedStreaks(m.width, m.len);
+    // Drawn at the design size and scaled up to the lane width.
+    const streaks = speedStreaks(m.width, m.len / ART);
     streaks.visible = false;
     root.addChild(streaks, limbs, moverBody(look));
     const shadow = moverShadow(m.kind, m.width, m.len);
@@ -409,9 +441,10 @@ export class ChaosParkView {
     const age = SHOUT_TICKS - m.shout;
     v.shout.visible = true;
     v.shout.alpha = 0.92 * Math.min(1, age / 6, m.shout / 16) * m.alpha;
-    v.shout.scale.set(0.7 + 0.3 * easeOut(age / 8));
+    v.shout.scale.set((0.7 + 0.3 * easeOut(age / 8)) * ART);
     v.shout.rotation = -this.world.rotation;
-    v.shout.position.set(v.badge.x + up.x * (BADGE_R + 2), v.badge.y + up.y * (BADGE_R + 2));
+    const lift = (BADGE_R + 2) * ART;
+    v.shout.position.set(v.badge.x + up.x * lift, v.badge.y + up.y * lift);
   }
 
   /** Rats, with a "!" over one waiting at the kerb. */
@@ -423,7 +456,7 @@ export class ChaosParkView {
       let v = this.ratViews.get(r.id);
       if (!v) {
         const body = new Graphics();
-        body.scale.set(1.3);
+        body.scale.set(1.3 * ART);
         const alert = ratAlert();
         this.ratLayer.addChild(body);
         this.badges.addChild(alert);
@@ -442,7 +475,8 @@ export class ChaosParkView {
       const lurking = r.state === 'lurk';
       v.alert.visible = lurking && Math.sin(clock * 0.4) > -0.5;
       const up = { x: -Math.sin(this.world.rotation), y: -Math.cos(this.world.rotation) };
-      v.alert.position.set(x + up.x * 16, y + up.y * 16);
+      v.alert.position.set(x + up.x * 16 * ART, y + up.y * 16 * ART);
+      v.alert.scale.set(ART);
       v.alert.rotation = -this.world.rotation;
     }
     for (const id of [...this.ratViews.keys()]) if (!live.has(id)) this.dropRat(id);
@@ -463,7 +497,7 @@ export class ChaosParkView {
     const ring = m.dir < 0 ? WRONG_WAY_COLOR : KIND_COLORS[m.kind];
     const key = `${content}:${ring}`;
     if (v.pop > 0) v.pop--;
-    v.badge.scale.set(1 + 0.4 * Math.sin((v.pop / 12) * Math.PI));
+    v.badge.scale.set((1 + 0.4 * Math.sin((v.pop / 12) * Math.PI)) * ART);
     if (key === v.badgeKey) return;
     // A lap ticking down pops the badge.
     if (v.badgeKey) v.pop = 12;
@@ -494,10 +528,10 @@ export class ChaosParkView {
         this.popViews.set(p.id, t);
         this.popLayer.addChild(t);
       }
-      const rise = 18 + easeOut(p.ticks / POP_TICKS) * 26;
+      const rise = (18 + easeOut(p.ticks / POP_TICKS) * 26) * ART;
       t.position.set(p.x + up.x * rise, p.y + up.y * rise);
       t.rotation = -this.world.rotation;
-      t.scale.set(p.ticks < 8 ? easeOut(p.ticks / 8) * 1.2 : 1);
+      t.scale.set((p.ticks < 8 ? easeOut(p.ticks / 8) * 1.2 : 1) * ART);
       t.alpha = p.ticks > POP_TICKS - 20 ? (POP_TICKS - p.ticks) / 20 : 1;
     }
     for (const [id, t] of this.popViews) {
@@ -507,21 +541,74 @@ export class ChaosParkView {
     }
   }
 
+  /** Patches pop onto the road as the score unlocks them. */
+  private syncPatches(): void {
+    const shown = patchesShown(this.game.sim.score);
+    this.patchSprites.forEach((g, i) => {
+      if (i >= shown) {
+        g.visible = false;
+        this.patchAge[i] = -1;
+        return;
+      }
+      const age = ++this.patchAge[i]!;
+      g.visible = true;
+      // Grows in with a little overshoot.
+      const t = Math.min(1, age / 24);
+      g.scale.set(ART * (t < 1 ? easeOut(t) * (1 + 0.25 * Math.sin(t * Math.PI)) : 1));
+    });
+  }
+
+  /** A quick ring of stars where two movers bumped without ending the run. */
+  private syncImpacts(): void {
+    const g = this.impactLayer.clear();
+    for (const i of this.game.sim.impacts) {
+      const t = i.ticks / IMPACT_TICKS;
+      const fade = 1 - t;
+      const r = (14 + 22 * easeOut(t)) * ART;
+      g.circle(i.x, i.y, r).stroke({ width: 3 * ART * fade + 1, color: COLORS.warn, alpha: fade });
+      for (let k = 0; k < 5; k++) {
+        const a = (k / 5) * Math.PI * 2 + t * 2;
+        star(g, i.x + Math.cos(a) * r, i.y + Math.sin(a) * r, 4.5 * ART);
+      }
+      g.fill({ color: COLORS.gold, alpha: fade }).stroke({
+        width: 1.2,
+        color: COLORS.ink,
+        alpha: fade,
+        join: 'round',
+      });
+    }
+  }
+
+  /** Full hearts for the collisions still to come; the one just lost pops as it empties. */
+  private syncHearts(): void {
+    const { hits } = this.game.sim;
+    if (hits !== this.shownHits) {
+      const lost = hits > this.shownHits && this.shownHits >= 0;
+      this.shownHits = hits;
+      this.hearts.forEach((h, i) => {
+        h.removeChildren().forEach((c) => c.destroy());
+        h.addChild(heart(i < MAX_HITS - hits));
+        h.scale.set(lost && i === MAX_HITS - hits ? 1.8 : 1);
+      });
+    }
+    for (const h of this.hearts) if (h.scale.x > 1) h.scale.set(Math.max(1, h.scale.x - 0.04));
+  }
+
   private syncCrash(): void {
     const { crash, clock, phase } = this.game.sim;
     this.crashRing.visible = !!crash && phase !== 'title';
     if (!crash) return;
-    const r = 40 + 8 * Math.sin(clock * 0.2);
+    const r = (40 + 8 * Math.sin(clock * 0.2)) * ART;
     const g = this.crashRing
       .clear()
       .circle(crash.x, crash.y, r)
       .stroke({ width: 5, color: COLORS.warn, alpha: 0.9 })
-      .circle(crash.x, crash.y, r + 11)
+      .circle(crash.x, crash.y, r + 11 * ART)
       .stroke({ width: 2, color: 0xffffff, alpha: 0.6 });
     // Little stars circling the collision.
     for (let i = 0; i < 5; i++) {
       const a = clock * 0.06 + (i / 5) * Math.PI * 2;
-      star(g, crash.x + Math.cos(a) * 24, crash.y + Math.sin(a) * 14, 5);
+      star(g, crash.x + Math.cos(a) * 24 * ART, crash.y + Math.sin(a) * 14 * ART, 5 * ART);
     }
     g.fill(COLORS.gold).stroke({ width: 1.5, color: COLORS.ink, join: 'round' });
   }
@@ -627,14 +714,6 @@ export class ChaosParkView {
       stroke: { color: 0x3f6b28, width: 6, join: 'round' },
       letterSpacing: 1,
     });
-    const crash = new Container();
-    const a = sample('runner', season, [0.2, 0.5, 0.2]);
-    const b = sample('walker', season, [0.7, 0.2, 0.6]);
-    b.rotation = Math.PI;
-    const burst = new Graphics();
-    star(burst, 0, -2, 8);
-    burst.fill(COLORS.gold).stroke({ width: 1.6, color: COLORS.ink, join: 'round' });
-    crash.addChild(group([a, -11, 0], [b, 11, 0], [burst, 0, 0]));
 
     // The rows in order: an illustration and a line (or two) of text.
     const rows: [Container, string][] = [
@@ -679,7 +758,17 @@ export class ChaosParkView {
         'SWIPE FORWARD TO SPEED UP AND BACK\nTO SLOW DOWN AGAIN',
       ],
       [group([plusOne, 0, 0]), 'EACH LAP IS A POINT'],
-      [group([crash, 0, 0, 0.9]), 'ONE COLLISION AND THE GAME IS OVER!'],
+      [
+        group(
+          ...Array.from({ length: MAX_HITS }, (_, i): [Container, number, number, number] => [
+            heart(i < MAX_HITS - 1),
+            (i - (MAX_HITS - 1) / 2) * 22,
+            0,
+            0.8,
+          ]),
+        ),
+        'THREE COLLISIONS AND THE GAME IS OVER!',
+      ],
     ];
 
     let y = -188;

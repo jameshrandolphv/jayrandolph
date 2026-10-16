@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { FRAME_H, FRAME_MARGIN, FRAME_W, LANES, LANE_W, ROAD_HALF } from './constants';
+import { ART, EDGE_MARGIN, HUD_MARGIN, LANES, LANE_W, ROAD_HALF } from './constants';
 import {
   PATCH_COUNT,
   SEASONS,
-  WALL,
   edge,
+  frameMargins,
   generatePark,
   insidePolygon,
   laneOffset,
@@ -14,35 +14,66 @@ import {
   pose,
   seededRng,
   wrap,
+  type ParkFrame,
 } from './park';
 
 const SEEDS = Array.from({ length: 60 }, (_, i) => i + 1);
 
+/** The default frame, a phone in portrait, a tablet and a wide window. */
+const FRAMES: readonly ParkFrame[] = [
+  { w: 860, h: 600, hud: 'top' },
+  { w: 1077, h: 600, hud: 'left' },
+  { w: 860, h: 645, hud: 'left' },
+  { w: 1200, h: 600, hud: 'top' },
+];
+
 describe('generatePark', () => {
-  it('fits the loop inside the frame, leaving room round the edge', () => {
-    for (const seed of SEEDS) {
-      const { track } = generatePark(seededRng(seed));
-      for (const p of edge(track, ROAD_HALF)) {
-        expect(p.x).toBeGreaterThan(FRAME_MARGIN);
-        expect(p.x).toBeLessThan(FRAME_W - FRAME_MARGIN);
-        expect(p.y).toBeGreaterThan(FRAME_MARGIN);
-        expect(p.y).toBeLessThan(FRAME_H - FRAME_MARGIN);
+  it('fits the loop inside the frame, leaving room for the score along one edge', () => {
+    for (const frame of FRAMES) {
+      const m = frameMargins(frame);
+      expect(frame.hud === 'top' ? m.top : m.left).toBe(HUD_MARGIN);
+      for (const seed of SEEDS) {
+        const { track } = generatePark(seededRng(seed), undefined, frame);
+        for (const p of edge(track, ROAD_HALF)) {
+          expect(p.x).toBeGreaterThan(m.left);
+          expect(p.x).toBeLessThan(frame.w - m.right);
+          expect(p.y).toBeGreaterThan(m.top);
+          expect(p.y).toBeLessThan(frame.h - m.bottom);
+        }
       }
     }
   });
 
+  it('reaches close to the edges of the screen', () => {
+    for (const frame of FRAMES) {
+      let along = 0;
+      let across = 0;
+      for (const seed of SEEDS) {
+        const out = edge(generatePark(seededRng(seed), undefined, frame).track, ROAD_HALF);
+        along += Math.max(...out.map((p) => p.x)) - Math.min(...out.map((p) => p.x));
+        across += Math.max(...out.map((p) => p.y)) - Math.min(...out.map((p) => p.y));
+      }
+      // On average the road spans most of the screen both ways.
+      expect(along / SEEDS.length / frame.w).toBeGreaterThan(0.82);
+      expect(across / SEEDS.length / frame.h).toBeGreaterThan(0.78);
+    }
+    expect(EDGE_MARGIN).toBeLessThan(30);
+  });
+
   it('never bends so tightly that the inner or outer lane folds over', () => {
-    for (const seed of SEEDS) {
-      const { track } = generatePark(seededRng(seed));
-      expect(maxCurvature(track) * ROAD_HALF).toBeLessThan(0.9);
+    for (const frame of FRAMES) {
+      for (const seed of SEEDS) {
+        const { track } = generatePark(seededRng(seed), undefined, frame);
+        expect(maxCurvature(track) * ROAD_HALF).toBeLessThan(0.9);
+      }
     }
   });
 
   it('runs counterclockwise on screen with the normals pointing out', () => {
     for (const seed of SEEDS.slice(0, 10)) {
       const { track } = generatePark(seededRng(seed));
-      const cx = FRAME_W / 2;
-      const cy = FRAME_H / 2;
+      const cx = track.points.reduce((sum, p) => sum + p.x, 0) / track.points.length;
+      const cy = track.points.reduce((sum, p) => sum + p.y, 0) / track.points.length;
       // At the rightmost point, counterclockwise on a y-down screen means heading up.
       let right = 0;
       track.points.forEach((p, i) => p.x > track.points[right]!.x && (right = i));
@@ -57,8 +88,8 @@ describe('generatePark', () => {
 
   it('has three or four entrances, spread round the loop, each opening through the wall', () => {
     for (const seed of SEEDS) {
-      const park = generatePark(seededRng(seed));
-      const { entrances, track } = park;
+      const park = generatePark(seededRng(seed), undefined, FRAMES[seed % FRAMES.length]);
+      const { entrances, track, wall: WALL } = park;
       expect(entrances.length).toBeGreaterThanOrEqual(3);
       expect(entrances.length).toBeLessThanOrEqual(4);
       for (const [i, e] of entrances.entries()) {
@@ -83,7 +114,8 @@ describe('generatePark', () => {
 
   it('keeps trees off the road, out of the water and inside the wall', () => {
     for (const seed of SEEDS.slice(0, 20)) {
-      const park = generatePark(seededRng(seed));
+      const park = generatePark(seededRng(seed), undefined, FRAMES[seed % FRAMES.length]);
+      const WALL = park.wall;
       expect(park.trees.length).toBeGreaterThan(40);
       for (const t of park.trees) {
         expect(polylineDistance(park.track.points, t, true)).toBeGreaterThan(ROAD_HALF + t.r);
@@ -121,7 +153,7 @@ describe('generatePark', () => {
       for (const p of park.patches) {
         expect(p.width).toBe(1);
         expect(p.lane + p.width).toBeLessThanOrEqual(LANES);
-        expect(p.len).toBeLessThan(30);
+        expect(p.len).toBeLessThan(30 * ART);
       }
     }
     expect(seen.size).toBe(SEASONS.length);

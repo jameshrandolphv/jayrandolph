@@ -1,25 +1,40 @@
 /**
- * The park is laid out in a landscape frame of FRAME_W x FRAME_H logical px. On a portrait screen the canvas swaps
- * its logical size and the view turns the park on its side, so the frame is always as large as it can be.
- * Distances are logical px; speeds are per 60 Hz tick.
+ * The canvas's logical size: landscape, swapped on a portrait screen so it is always as large as it can be. Each
+ * park is then generated to fill the whole screen (see `ParkFrame`), in a landscape frame the view turns on its
+ * side on a portrait screen. Distances are logical px; speeds are per 60 Hz tick.
  */
 export const FRAME_W = 860;
 export const FRAME_H = 600;
+
+/** A park's frame is never longer than this times its width, however wide the screen; the city fills the rest. */
+export const MAX_ASPECT = 2;
+/** Nor squarer than this. */
+export const MIN_ASPECT = 1.2;
 
 /** How far past the frame the city is drawn, for screens of other shapes. */
 export const SCENERY_EXTENT = 900;
 
 /** Width of one lane, and how many lanes the loop has. Lane 0 is the innermost. */
-export const LANE_W = 22;
+export const LANE_W = 30;
 export const LANES = 4;
 /** Half the width of the road, from the centre line to either edge. */
 export const ROAD_HALF = (LANE_W * LANES) / 2;
 
-/** The outer edge of the road keeps at least this far inside the frame, leaving room for the HUD. */
-export const FRAME_MARGIN = 62;
-/** The park wall, inset from the frame. */
-export const WALL_INSET = 34;
-export const WALL_RADIUS = 56;
+/**
+ * Sprites are drawn for 22 px lanes; this scales them, and the lengths and speeds that go with them, to the lane
+ * width in use.
+ */
+export const DESIGN_LANE = 22;
+export const ART = LANE_W / DESIGN_LANE;
+
+/**
+ * How close the road's outer edge comes to the edges of the screen: further on the side with the score along it.
+ */
+export const EDGE_MARGIN = 22;
+export const HUD_MARGIN = 58;
+/** The park wall, inset from the frame, so it runs just inside the edge of the screen. */
+export const WALL_INSET = 6;
+export const WALL_RADIUS = 44;
 /** The street just outside the wall. */
 export const STREET_WIDTH = 34;
 
@@ -51,15 +66,24 @@ export interface KindSpec {
 }
 
 /** Walkers (and dog walkers), runners, bikers and cars are each faster; carriages go at a walk and never leave. */
+const spec = (
+  speed: number,
+  len: number,
+  width: 1 | 2,
+  laps: readonly [number, number],
+  weight: number,
+): KindSpec => ({ speed: speed * ART, len: len * ART, width, laps, weight });
+
+/** Speeds and lengths are given at the design lane width and scaled to the one in use. */
 export const KIND_SPECS: Readonly<Record<Kind, KindSpec>> = {
-  walker: { speed: 0.72, len: 14, width: 1, laps: [1, 2], weight: 0.3 },
-  dog: { speed: 0.72, len: 24, width: 2, laps: [1, 1], weight: 0.12 },
-  runner: { speed: 1.15, len: 14, width: 1, laps: [1, 3], weight: 0.3 },
-  biker: { speed: 1.8, len: 30, width: 1, laps: [1, 4], weight: 0.22 },
-  car: { speed: 2.75, len: 46, width: 2, laps: [1, 2], weight: 0.07 },
-  carriage: { speed: 0.72, len: 62, width: 2, laps: [Infinity, Infinity], weight: 0 },
+  walker: spec(0.72, 14, 1, [1, 2], 0.3),
+  dog: spec(0.72, 24, 2, [1, 1], 0.12),
+  runner: spec(1.15, 14, 1, [1, 3], 0.3),
+  biker: spec(1.8, 30, 1, [1, 4], 0.22),
+  car: spec(2.75, 46, 2, [1, 2], 0.07),
+  carriage: spec(0.72, 62, 2, [Infinity, Infinity], 0),
   /** A run group; its length depends on how many are in it (see `groupLength`). */
-  group: { speed: 1.15, len: 40, width: 2, laps: [1, 1], weight: 0 },
+  group: spec(1.15, 40, 2, [1, 1], 0),
 };
 
 /** Each mover's speed is its kind's times a factor in this range, so even two of a kind close in on each other. */
@@ -72,9 +96,9 @@ export const SPEED_SPREAD = 0.08;
 export const GROUP_SIZE: readonly [number, number] = [6, 12];
 export const GROUP_FROM_SCORE = 8;
 export const GROUP_INTERVAL: readonly [number, number] = [2400, 4200];
-/** Spacing between the rows of a run group, front to back. */
+/** Spacing between the rows of a run group, front to back, as drawn. */
 export const GROUP_ROW = 12;
-export const groupLength = (size: number): number => Math.ceil(size / 2) * GROUP_ROW + 4;
+export const groupLength = (size: number): number => (Math.ceil(size / 2) * GROUP_ROW + 4) * ART;
 
 /**
  * Rats: now and then one waits at the kerb ahead of a walker, runner or dog walker, then darts out and bites them.
@@ -84,7 +108,7 @@ export const RAT_FROM_SCORE = 4;
 export const RAT_INTERVAL: readonly [number, number] = [1800, 3300];
 /** Ticks the rat waits at the kerb, in sight, before it darts out. */
 export const RAT_LURK = 55;
-export const RAT_SPEED = 2.4;
+export const RAT_SPEED = 2.4 * ART;
 /** It gives up and runs off if it hasn't reached its target in this many ticks. */
 export const RAT_GIVE_UP = 150;
 export const DAZE_TICKS = 180;
@@ -111,17 +135,29 @@ export const BOOST = 1.6;
 /** Lanes per tick a mover slides sideways when changing lane. */
 export const LANE_RATE = 0.09;
 
+/**
+ * Collisions a run can take: the last one ends it. Before that, whoever was run into is stunned for `STUN_TICKS`
+ * and whoever hit them carries on through.
+ */
+export const MAX_HITS = 3;
+export const STUN_TICKS = 90;
+/** Ticks the burst shows where a collision happened. */
+export const IMPACT_TICKS = 40;
+
+/** Slippery patches appear on the road as the score reaches each of these, up to three. */
+export const PATCH_SCORES: readonly number[] = [25, 50, 100];
+
 /** Two movers collide when their lanes overlap by more than this, and their lengths by `COLLIDE_FACTOR`. */
 export const LATERAL_OVERLAP = 0.3;
 export const COLLIDE_FACTOR = 0.82;
 /** Warn when movers sharing a lane would touch within this many ticks. */
 export const WARN_TICKS = 75;
-export const WARN_MAX_GAP = 120;
+export const WARN_MAX_GAP = 120 * ART;
 
 /** A mover joining the road (from an entrance or a short cut) waits until nothing will reach it in this many ticks. */
 export const JOIN_TICKS = 100;
 /** How far before the end of its route a joining mover stops to wait. */
-export const JOIN_HOLD = 16;
+export const JOIN_HOLD = 16 * ART;
 
 /** The chance a walker or runner in the inner lane cuts across the park when it passes a short cut. */
 export const SHORTCUT_CHANCE = 0.3;
@@ -137,7 +173,7 @@ export const MAX_MOVERS = 22;
 export const LAPS_PER_EXTRA = 4;
 
 /** A press grabs the nearest mover within this distance of its body. */
-export const GRAB_RADIUS = 30;
+export const GRAB_RADIUS = 30 * ART;
 
 /** Ticks a mover wobbles after sliding on a patch. */
 export const SLIP_TICKS = 34;

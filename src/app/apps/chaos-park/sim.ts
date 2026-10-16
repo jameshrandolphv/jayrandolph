@@ -1,10 +1,15 @@
 import {
+  ART,
   BOOST,
   CARS_FROM_SCORE,
   COLLIDE_FACTOR,
   CRASH_TICKS,
   DAZE_TICKS,
   FIRST_SPAWN,
+  IMPACT_TICKS,
+  MAX_HITS,
+  PATCH_SCORES,
+  STUN_TICKS,
   GAME_OVER_LOCKOUT,
   GRAB_RADIUS,
   GROUP_FROM_SCORE,
@@ -45,6 +50,7 @@ import {
   type Kind,
 } from './constants';
 import {
+  DEFAULT_FRAME,
   generatePark,
   laneOffset,
   loopDelta,
@@ -52,6 +58,7 @@ import {
   wrap,
   type Entrance,
   type Park,
+  type ParkFrame,
   type Point,
   type Shortcut,
 } from './park';
@@ -67,7 +74,8 @@ export type SimEvent =
   | 'boost'
   | 'brake'
   | 'squeak'
-  | 'bite';
+  | 'bite'
+  | 'hit';
 
 /**
  * Where a mover is: walking in from the street, on the loop, cutting across the park, or heading out. Only movers on
@@ -161,6 +169,18 @@ export interface Rat {
   ticks: number;
 }
 
+/** A burst where two movers collided without ending the run. */
+export interface Impact {
+  id: number;
+  x: number;
+  y: number;
+  ticks: number;
+}
+
+/** How many of the park's patches are on the road at a given score. */
+export const patchesShown = (score: number): number =>
+  PATCH_SCORES.filter((at) => score >= at).length;
+
 /** The "+1" that floats up where a lap is completed. */
 export interface Pop {
   id: number;
@@ -174,6 +194,12 @@ export interface Pop {
 /** Movers allowed in the park at once (not counting carriages) at a given score. */
 export const maxMovers = (score: number): number =>
   Math.min(MAX_MOVERS, MAX_MOVERS_START + Math.floor(score / LAPS_PER_EXTRA));
+
+/** Ticks a new screen shape has to hold before the park on the title card is remade for it. */
+const FRAME_SETTLE = 20;
+
+const sameFrame = (a: ParkFrame, b: ParkFrame): boolean =>
+  Math.abs(a.w - b.w) < 2 && Math.abs(a.h - b.h) < 2 && a.hud === b.hud;
 
 /** How fast a mover is actually going: nothing while dazed. */
 export const pace = (m: Pick<Mover, 'speed' | 'daze'>): number => (m.daze > 0 ? 0 : m.speed);
@@ -197,6 +223,9 @@ export class ChaosParkSim {
   rats: Rat[] = [];
   pops: Pop[] = [];
   crash: { x: number; y: number; ids: [number, number] } | null = null;
+  /** Collisions so far this run; the run ends at `MAX_HITS`. */
+  hits = 0;
+  impacts: Impact[] = [];
   phaseTicks = 0;
   /** Ticks since creation; drives idle animation. */
   clock = 0;
@@ -210,6 +239,13 @@ export class ChaosParkSim {
   private ratTimer = 0;
   /** Pairs already warned about, so the alert sounds once per close call. */
   private warnedPairs = new Set<string>();
+  /** Pairs that have collided and are still overlapping as one passes the other; they don't collide again. */
+  private passing = new Set<string>();
+
+  /** The shape of screen the next park is made for (see `fitFrame`). */
+  frame: ParkFrame = DEFAULT_FRAME;
+  /** Ticks the screen has kept its current shape. */
+  private frameSteady = 0;
 
   constructor(private readonly rng: () => number = Math.random) {
     this.park = generatePark(rng);
@@ -225,7 +261,10 @@ export class ChaosParkSim {
   start(): void {
     if (this.phase === 'gameOver' && this.phaseTicks < GAME_OVER_LOCKOUT) return;
     if (this.phase !== 'title' && this.phase !== 'gameOver' && this.phase !== 'help') return;
-    if (this.phase === 'gameOver') this.park = generatePark(this.rng);
+    if (this.phase === 'gameOver') this.park = generatePark(this.rng, undefined, this.frame);
+    // A park made before the screen's shape was known is remade to fit it, in the same season.
+    else if (!sameFrame(this.park.frame, this.frame))
+      this.park = generatePark(this.rng, this.park.season, this.frame);
     this.reset();
     this.placeCarriage();
     this.enter('playing');
@@ -239,10 +278,27 @@ export class ChaosParkSim {
   toTitle(): boolean {
     if (this.phase === 'gameOver' && this.phaseTicks < GAME_OVER_LOCKOUT) return false;
     if (this.phase === 'title') return false;
-    if (this.phase !== 'help') this.park = generatePark(this.rng);
+    if (this.phase !== 'help') this.park = generatePark(this.rng, undefined, this.frame);
     this.reset();
     this.enter('title');
     return true;
+  }
+
+  /**
+   * Tells the sim the shape of the screen. New parks are made to fill it; on the title and how-to-play cards the
+   * park behind is remade straight away the first time, and otherwise once the screen has kept a new shape for a
+   * moment (so dragging a window's edge doesn't remake it every frame). A park in play keeps its shape.
+   */
+  fitFrame(frame: ParkFrame): void {
+    if (sameFrame(frame, this.frame)) this.frameSteady++;
+    else {
+      this.frame = frame;
+      this.frameSteady = 0;
+    }
+    const idle = this.phase === 'title' || this.phase === 'help';
+    if (!idle || sameFrame(this.park.frame, this.frame)) return;
+    if (this.clock === 0 || this.frameSteady >= FRAME_SETTLE)
+      this.park = generatePark(this.rng, this.park.season, this.frame);
   }
 
   setPaused(paused: boolean): void {
@@ -344,6 +400,8 @@ export class ChaosParkSim {
     }
     if (gone.size) this.movers = this.movers.filter((m) => !gone.has(m));
     this.moveRats();
+    for (const i of this.impacts) i.ticks++;
+    this.impacts = this.impacts.filter((i) => i.ticks < IMPACT_TICKS);
     for (const p of this.pops) p.ticks++;
     this.pops = this.pops.filter((p) => p.ticks < POP_TICKS);
     this.checkTraffic();
@@ -501,9 +559,9 @@ export class ChaosParkSim {
 
   private checkPatches(m: Mover): void {
     const { patches, track } = this.park;
-    for (const patch of patches) {
+    for (const patch of patches.slice(0, patchesShown(this.score))) {
       const over =
-        Math.abs(loopDelta(patch.s, m.s, track.length)) < (patch.len + m.len) / 2 - 4 &&
+        Math.abs(loopDelta(patch.s, m.s, track.length)) < (patch.len + m.len) / 2 - 4 * ART &&
         laneOverlap(m.p, m.width, patch.lane, patch.width) > 0.3;
       if (!over) {
         m.onPatch.delete(patch.id);
@@ -540,7 +598,7 @@ export class ChaosParkSim {
       const lo = Math.min(o.p, o.target);
       const hi = Math.max(o.p, o.target) + o.width;
       if (hi <= p + 0.05 || lo >= p + m.width - 0.05) continue;
-      const clearance = (o.len + m.len) / 2 + 10;
+      const clearance = (o.len + m.len) / 2 + 10 * ART;
       // How far it has to go to reach the joining spot, and how far past it it already is.
       const toReach = wrap((s - o.s) * o.dir, length);
       if (toReach < pace(o) * JOIN_TICKS + clearance) return false;
@@ -554,7 +612,38 @@ export class ChaosParkSim {
     return true;
   }
 
-  /** Crash if two movers on the loop touch; otherwise flag the ones about to. */
+  /**
+   * Two movers have touched. The last collision a run can take ends it; before that, whoever was run into is
+   * stunned and the one that hit them carries on through. Returns true when the run is over.
+   */
+  private collide(a: Mover, b: Mover, delta: number): boolean {
+    this.hits++;
+    const at = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    if (this.hits >= MAX_HITS) {
+      this.crash = { ...at, ids: [a.id, b.id] };
+      this.events.push('crash');
+      this.enter('crashed');
+      return true;
+    }
+    // The one moving into the other did the hitting: a lane change into someone alongside, otherwise whichever is
+    // heading toward the other faster.
+    const turning = (m: Mover) => Math.abs(m.p - m.target) > 1e-6;
+    const towards = (m: Mover, sign: number) => pace(m) * m.dir * sign;
+    const aHits =
+      turning(a) !== turning(b)
+        ? turning(a)
+        : towards(a, Math.sign(delta)) >= towards(b, -Math.sign(delta));
+    const victim = aHits ? b : a;
+    victim.daze = Math.max(victim.daze, STUN_TICKS);
+    victim.boosted = false;
+    victim.speed = victim.baseSpeed;
+    this.passing.add(`${a.id}:${b.id}`);
+    this.impacts.push({ id: this.nextId++, ...at, ticks: 0 });
+    this.events.push('hit');
+    return false;
+  }
+
+  /** Collide any two movers on the loop that touch; otherwise flag the ones about to. */
   private checkTraffic(): void {
     const live = this.movers.filter((m) => m.state === 'track');
     const length = this.park.track.length;
@@ -567,15 +656,20 @@ export class ChaosParkSim {
         const delta = loopDelta(a.s, b.s, length);
         const dist = Math.abs(delta);
         const half = (a.len + b.len) / 2;
+        const pair = `${a.id}:${b.id}`;
+        if (this.passing.has(pair)) {
+          // One is passing through the other after a collision; done once they are clear.
+          if (dist >= half || laneOverlap(a.p, a.width, b.p, b.width) <= 0)
+            this.passing.delete(pair);
+          continue;
+        }
         if (dist > half + WARN_MAX_GAP) continue;
         if (
           laneOverlap(a.p, a.width, b.p, b.width) > LATERAL_OVERLAP &&
           dist < half * COLLIDE_FACTOR
         ) {
-          this.crash = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, ids: [a.id, b.id] };
-          this.events.push('crash');
-          this.enter('crashed');
-          return;
+          if (this.collide(a, b, delta)) return;
+          continue;
         }
         // Warn on where they are heading as well as where they are.
         const aLo = Math.min(a.p, a.target);
@@ -585,7 +679,7 @@ export class ChaosParkSim {
         if (laneOverlap(aLo, aW, bLo, bW) <= 0.1) continue;
         const gap = dist - half;
         const closing = -Math.sign(delta) * (pace(b) * b.dir - pace(a) * a.dir);
-        if (gap < 6 || (closing > 0 && gap / closing < WARN_TICKS)) {
+        if (gap < 6 * ART || (closing > 0 && gap / closing < WARN_TICKS)) {
           a.warning = b.warning = true;
           const key = `${a.id}:${b.id}`;
           pairs.add(key);
@@ -771,7 +865,7 @@ export class ChaosParkSim {
     const m = people[Math.floor(this.rng() * people.length)]!;
     // Waits on whichever side of the road is nearer the person, where they will be when it darts out.
     const side = m.p + m.width / 2 <= LANES / 2 ? -1 : 1;
-    const at = pose(track, m.s + m.dir * m.speed * lead, side * (ROAD_HALF + 9));
+    const at = pose(track, m.s + m.dir * m.speed * lead, side * (ROAD_HALF + 9 * ART));
     const heading = at.angle + (side < 0 ? Math.PI / 2 : -Math.PI / 2);
     this.rats.push({
       id: this.nextId++,
@@ -805,7 +899,7 @@ export class ChaosParkSim {
           this.ratState(r, 'flee');
           continue;
         }
-        if (this.ratRun(r, target, target.width * 5 + 3)) {
+        if (this.ratRun(r, target, (target.width * 5 + 3) * ART)) {
           target.daze = DAZE_TICKS;
           // A bitten person loses any boost.
           target.boosted = false;
@@ -844,6 +938,9 @@ export class ChaosParkSim {
     this.rats = [];
     this.pops = [];
     this.crash = null;
+    this.hits = 0;
+    this.impacts = [];
+    this.passing.clear();
     this.paused = false;
     this.spawnTimer = FIRST_SPAWN;
     this.carriagesSent = 0;
