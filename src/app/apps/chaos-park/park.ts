@@ -207,12 +207,54 @@ export const edge = (track: Track, d: number): Point[] =>
     y: p.y + track.normals[i]!.y * d,
   }));
 
+/** Segments per chunk of a long outline's index. */
+const CHUNK = 16;
+const chunkIndex = new WeakMap<readonly Point[], Float64Array>();
+
+/**
+ * Bounds of each run of `CHUNK` segments of a long outline (closing segment included), so a query can skip whole
+ * runs that are nowhere near. Worked out once per outline, which is never changed once built: the park's edges are
+ * asked about thousands of times.
+ */
+const chunksOf = (line: readonly Point[]): Float64Array | undefined => {
+  const n = line.length;
+  if (n < CHUNK * 4) return undefined;
+  let boxes = chunkIndex.get(line);
+  if (boxes) return boxes;
+  const count = Math.ceil(n / CHUNK);
+  boxes = new Float64Array(count * 4);
+  for (let c = 0; c < count; c++) {
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (let k = c * CHUNK; k <= Math.min(n, (c + 1) * CHUNK); k++) {
+      const q = line[k % n]!;
+      x0 = Math.min(x0, q.x);
+      y0 = Math.min(y0, q.y);
+      x1 = Math.max(x1, q.x);
+      y1 = Math.max(y1, q.y);
+    }
+    boxes.set([x0, y0, x1, y1], c * 4);
+  }
+  chunkIndex.set(line, boxes);
+  return boxes;
+};
+
 export const insidePolygon = (poly: readonly Point[], x: number, y: number): boolean => {
   let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const a = poly[i]!;
-    const b = poly[j]!;
-    if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  const n = poly.length;
+  const boxes = chunksOf(poly);
+  // Segment k runs from point k to the next; only those crossing the horizontal through `y` count.
+  for (let k0 = 0; k0 < n; k0 += CHUNK) {
+    const c = (k0 / CHUNK) * 4;
+    if (boxes && (boxes[c + 1]! > y || boxes[c + 3]! <= y)) continue;
+    for (let k = k0; k < Math.min(n, k0 + CHUNK); k++) {
+      const a = poly[(k + 1) % n]!;
+      const b = poly[k]!;
+      if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x)
+        inside = !inside;
+    }
   }
   return inside;
 };
@@ -245,7 +287,21 @@ export const nearPolyline = (
 ): boolean => {
   const n = line.length;
   const d2 = d * d;
-  for (let i = 0; i < n - (closed ? 0 : 1); i++) {
+  const boxes = chunksOf(line);
+  const end = n - (closed ? 0 : 1);
+  for (let i = 0; i < end; i++) {
+    if (boxes && i % CHUNK === 0) {
+      const c = (i / CHUNK) * 4;
+      if (
+        p.x + d < boxes[c]! ||
+        p.y + d < boxes[c + 1]! ||
+        p.x - d > boxes[c + 2]! ||
+        p.y - d > boxes[c + 3]!
+      ) {
+        i += CHUNK - 1;
+        continue;
+      }
+    }
     const a = line[i]!;
     const b = line[(i + 1) % n]!;
     if (

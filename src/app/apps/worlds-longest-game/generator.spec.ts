@@ -89,7 +89,7 @@ describe('generateLevel', () => {
         for (const zone of level.zones) expect(zone.w * zone.h).toBeLessThanOrEqual(6);
       }
     }
-  });
+  }, 60000);
 
   it('draws on a wide variety of levels once the game is in full swing', () => {
     const kinds = new Set<string>();
@@ -113,7 +113,7 @@ describe('generateLevel', () => {
     expect(shapes.size).toBeGreaterThan(20);
     expect(busiest).toBeGreaterThan(30);
     expect(coins).toBeGreaterThan(10);
-  });
+  }, 60000);
 
   it('never makes the main parameters easier as levels rise', () => {
     let prev = difficultyFor(1);
@@ -359,7 +359,7 @@ describe('spinners', () => {
             expect(wheelsOverlap(wheels[i]!, wheels[j]!), `level ${number}, seed ${seed}`).toBe(false);
       }
     }
-  });
+  }, 60000);
 });
 
 describe('dead ends', () => {

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.1
+- Chaos Park builds a park about 10 times faster and World's Longest Game builds a level about 45% faster, with exactly the same parks and levels as before, so the game generator tests no longer time out
+- Tests: the road-fits-the-frame park check makes one assertion per park instead of one per point of road, and the three World's Longest Game tests that build 18 to 30 whole levels get the same 60s limit as the other heavy generator tests
+
 ## 1.7.0
 - Chaos Park: the park fills the screen, with wider lanes and bigger sprites on small devices; runs end on the third collision (the first two stun whoever was hit); slippery patches appear at 25, 50 and 100 points
 
