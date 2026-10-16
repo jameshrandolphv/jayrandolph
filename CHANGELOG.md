@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.7.2
+- Every pull request is now built and tested automatically on GitHub before it can be merged
+
 ## 1.7.1
 - Flights!: a simpler title card with just the name in script, a reworded how-to-play and a cleaner app icon
 
