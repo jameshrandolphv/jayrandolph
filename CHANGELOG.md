@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.7.1
+- Flights!: a simpler title card with just the name in script, a reworded how-to-play and a cleaner app icon
+
 ## 1.7.0
 - Chaos Park: the park fills the screen, with wider lanes and bigger sprites on small devices; runs end on the third collision (the first two stun whoever was hit); slippery patches appear at 25, 50 and 100 points
 
