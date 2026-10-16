@@ -65,22 +65,31 @@ export interface KindSpec {
   weight: number;
 }
 
-/** Walkers (and dog walkers), runners, bikers and cars are each faster; carriages go at a walk and never leave. */
+/**
+ * The overall pace of the game: every mover's speed (and the rats') is scaled by this, so the challenge comes from
+ * how many are about rather than how fast they go.
+ */
+export const PACE = 0.7;
+
 const spec = (
   speed: number,
   len: number,
   width: 1 | 2,
   laps: readonly [number, number],
   weight: number,
-): KindSpec => ({ speed: speed * ART, len: len * ART, width, laps, weight });
+): KindSpec => ({ speed: speed * ART * PACE, len: len * ART, width, laps, weight });
 
-/** Speeds and lengths are given at the design lane width and scaled to the one in use. */
+/**
+ * Walkers (and dog walkers), runners, bikers and cars are each faster; carriages go at a walk and never leave.
+ * Speeds and lengths are given at the design lane width and scaled to the one in use (and speeds by `PACE`).
+ */
 export const KIND_SPECS: Readonly<Record<Kind, KindSpec>> = {
   walker: spec(0.72, 14, 1, [1, 2], 0.3),
   dog: spec(0.72, 24, 2, [1, 1], 0.12),
   runner: spec(1.15, 14, 1, [1, 3], 0.3),
   biker: spec(1.8, 30, 1, [1, 4], 0.22),
-  car: spec(2.75, 46, 2, [1, 2], 0.07),
+  /** Only a little faster than a bike. */
+  car: spec(2.0, 46, 2, [1, 2], 0.07),
   carriage: spec(0.72, 62, 2, [Infinity, Infinity], 0),
   /** A run group; its length depends on how many are in it (see `groupLength`). */
   group: spec(1.15, 40, 2, [1, 1], 0),
@@ -90,12 +99,13 @@ export const KIND_SPECS: Readonly<Record<Kind, KindSpec>> = {
 export const SPEED_SPREAD = 0.08;
 
 /**
- * Run groups: 6 to 12 runners two abreast, doing one lap. They are rare: the first can come once the score reaches
- * `GROUP_FROM_SCORE`, then one every `GROUP_INTERVAL` ticks or so, never two at once. Each runner's lap scores.
+ * Run groups: 6 to 12 runners two abreast, doing one lap. The first comes as soon as the score reaches
+ * `GROUP_FROM_SCORE`, then one every `GROUP_INTERVAL` ticks (45 to 65 seconds), never two at once. Each runner's
+ * lap scores.
  */
 export const GROUP_SIZE: readonly [number, number] = [6, 12];
-export const GROUP_FROM_SCORE = 8;
-export const GROUP_INTERVAL: readonly [number, number] = [2400, 4200];
+export const GROUP_FROM_SCORE = 10;
+export const GROUP_INTERVAL: readonly [number, number] = [45 * 60, 65 * 60];
 /** Spacing between the rows of a run group, front to back, as drawn. */
 export const GROUP_ROW = 12;
 export const groupLength = (size: number): number => (Math.ceil(size / 2) * GROUP_ROW + 4) * ART;
@@ -108,7 +118,7 @@ export const RAT_FROM_SCORE = 4;
 export const RAT_INTERVAL: readonly [number, number] = [1800, 3300];
 /** Ticks the rat waits at the kerb, in sight, before it darts out. */
 export const RAT_LURK = 55;
-export const RAT_SPEED = 2.4 * ART;
+export const RAT_SPEED = 2.4 * ART * PACE;
 /** It gives up and runs off if it hasn't reached its target in this many ticks. */
 export const RAT_GIVE_UP = 150;
 export const DAZE_TICKS = 180;
