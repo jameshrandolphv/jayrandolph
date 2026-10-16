@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.7.2
+- Flights!: a simpler game-over card with just the headline, your landing count and the buttons
+
 ## 1.7.1
 - Flights!: a simpler title card with just the name in script, a reworded how-to-play and a cleaner app icon
 

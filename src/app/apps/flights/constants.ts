@@ -120,7 +120,7 @@ export const inOval = (o: Oval, x: number, y: number): boolean =>
 export const PLAY_BUTTON: Oval = { x: 600, y: 492, rx: 108, ry: 56, label: 'PLAY!' };
 export const HELP_BUTTON: Oval = { x: 345, y: 492, rx: 78, ry: 34, label: 'HOW TO PLAY' };
 export const BACK_BUTTON: Oval = { x: 480, y: 548, rx: 82, ry: 38, label: 'GOT IT!' };
-export const RETRY_BUTTON: Oval = { x: 400, y: 530, rx: 100, ry: 54, label: 'RETRY' };
-export const MENU_BUTTON: Oval = { x: 240, y: 548, rx: 62, ry: 32, label: 'MENU' };
+export const RETRY_BUTTON: Oval = { x: 600, y: 518, rx: 100, ry: 54, label: 'RETRY' };
+export const MENU_BUTTON: Oval = { x: 345, y: 518, rx: 62, ry: 32, label: 'MENU' };
 export const RESUME_BUTTON: Oval = { x: 560, y: 360, rx: 96, ry: 48, label: 'RESUME' };
 export const QUIT_BUTTON: Oval = { x: 360, y: 368, rx: 64, ry: 34, label: 'MENU' };

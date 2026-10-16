@@ -3,7 +3,6 @@ import type { Airfield } from './airfield';
 import {
   arrivalMarker,
   aircraftContext,
-  bubble,
   COLORS,
   cornerButton,
   drawAirfield,
@@ -13,7 +12,6 @@ import {
   howToRow,
   label,
   logo,
-  milkshake,
   ovalButton,
   paperCard,
   pauseIcon,
@@ -45,7 +43,6 @@ import {
 import type { FlightsGame } from './game';
 import { angleDiff, lerpAngle, type Point } from './geometry';
 import { landProgress, type Aircraft } from './sim';
-import { stewardess } from './stewardess';
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 const easeOut = (t: number): number => 1 - (1 - Math.min(1, Math.max(0, t))) ** 3;
@@ -493,19 +490,13 @@ export class FlightsView {
     [...pad(n)].forEach((digit, i) => (counter.cells[i]!.text = digit));
   }
 
-  private card(layer: Container, withLady: boolean): void {
+  private card(layer: Container): void {
     layer.addChild(paperCard(CARD.x, CARD.y, CARD.w, CARD.h));
-    if (!withLady) return;
-    const lady = stewardess();
-    lady.position.set(536, 60);
-    const mask = new Graphics().roundRect(CARD.x, CARD.y, CARD.w, CARD.h, 24).fill(0xffffff);
-    lady.mask = mask;
-    layer.addChild(mask, lady);
   }
 
   private buildTitle(): void {
     const layer = this.title;
-    this.card(layer, false);
+    this.card(layer);
     const mark = logo();
     mark.position.set(WIDTH / 2, 178);
     layer.addChild(mark);
@@ -518,7 +509,7 @@ export class FlightsView {
 
   private buildHelp(): void {
     const layer = this.help;
-    this.card(layer, false);
+    this.card(layer);
     const heading = label('HOW TO PLAY', 56, COLORS.red, {
       stroke: { color: COLORS.ink, width: 6, join: 'round' },
       letterSpacing: 2,
@@ -550,25 +541,19 @@ export class FlightsView {
 
   private buildGameOver(): void {
     const layer = this.gameOver;
-    this.card(layer, true);
+    this.card(layer);
     layer.addChild(this.overHeadline);
-    const talk = bubble(150, 86, 210, 10);
-    talk.position.set(330, 300);
+    const middle = WIDTH / 2;
+    const tally = new Graphics()
+      .ellipse(middle, 330, 170, 92)
+      .fill(0xffffff)
+      .stroke({ width: 3, color: COLORS.ink });
     const landed = label('YOU LANDED', 30, COLORS.ink, { letterSpacing: 1 });
-    landed.position.set(330, 248);
-    this.overCount.position.set(330, 300);
+    landed.position.set(middle, 276);
+    this.overCount.position.set(middle, 330);
     const word = label('AIRCRAFT', 30, COLORS.ink, { letterSpacing: 1 });
-    word.position.set(330, 352);
-    const shake = milkshake();
-    shake.scale.set(0.72);
-    shake.position.set(120, 492);
-    const offer = bubble(96, 46, -86, 24);
-    offer.position.set(250, 432);
-    const offerText = label('“PLEASE ENJOY THIS\nREFRESHING BEVERAGE”', 18, COLORS.ink, {
-      lineHeight: 21,
-    });
-    offerText.position.set(250, 432);
-    this.overCard.addChild(talk, landed, this.overCount, word, shake, offer, offerText);
+    word.position.set(middle, 384);
+    this.overCard.addChild(tally, landed, this.overCount, word);
     layer.addChild(
       this.overCard,
       ovalButton(MENU_BUTTON, 'blue', 28),
@@ -586,14 +571,14 @@ export class FlightsView {
     if (!result) return;
     if (result.isNewBest) {
       const top = label('NEW HIGH SCORE', 30, COLORS.red, { letterSpacing: 2 });
-      top.position.set(330, 92);
+      top.position.set(WIDTH / 2, 102);
       const main = label('Congratulations!', 58, COLORS.ink, { padding: 20 }, SCRIPT_FONT);
-      main.position.set(330, 148);
+      main.position.set(WIDTH / 2, 166);
       main.rotation = -0.04;
       this.overHeadline.addChild(top, main);
     } else {
       const main = label('Oh dear!', 70, COLORS.ink, { padding: 20 }, SCRIPT_FONT);
-      main.position.set(330, 128);
+      main.position.set(WIDTH / 2, 150);
       main.rotation = -0.04;
       this.overHeadline.addChild(main);
     }
