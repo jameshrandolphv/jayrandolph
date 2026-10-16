@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ART,
   BOOST,
+  MAX_HITS,
+  PATCH_SCORES,
+  STUN_TICKS,
   CRASH_TICKS,
   DAZE_TICKS,
   GAME_OVER_LOCKOUT,
@@ -11,9 +15,9 @@ import {
   groupLength,
   type Kind,
 } from './constants';
-import { ChaosParkGame, screenToPark } from './game';
+import { ChaosParkGame, frameFor, placePark, screenToPark } from './game';
 import { generatePark, laneOffset, pose, seededRng, wrap } from './park';
-import { ChaosParkSim, laneOverlap, lapsLeft, maxMovers, type Mover } from './sim';
+import { ChaosParkSim, laneOverlap, lapsLeft, maxMovers, patchesShown, type Mover } from './sim';
 
 const ticks = (sim: ChaosParkSim, n: number): void => {
   for (let i = 0; i < n; i++) sim.step();
@@ -106,6 +110,7 @@ describe('ChaosParkSim', () => {
 
   it('crashes when a faster mover runs into a slower one in the same lane', () => {
     const sim = playing();
+    sim.hits = MAX_HITS - 1;
     const s = 100;
     put(sim, 'walker', s + 60, 1);
     put(sim, 'runner', s, 1);
@@ -150,15 +155,17 @@ describe('ChaosParkSim', () => {
 
   it('crashes head-on with something going the wrong way', () => {
     const sim = playing();
+    sim.hits = MAX_HITS - 1;
     const s = 100;
     put(sim, 'runner', s, 0);
     put(sim, 'walker', s + 150, 0, { dir: -1 });
-    ticks(sim, 200);
+    while (sim.phase === 'playing' && sim.playTicks < 300) sim.step();
     expect(sim.phase).toBe('crashed');
   });
 
   it('counts a two-lane mover as in both its lanes', () => {
     const sim = playing();
+    sim.hits = MAX_HITS - 1;
     const s = 100;
     put(sim, 'walker', s + 80, 2);
     put(sim, 'car', s, 1);
@@ -235,6 +242,7 @@ describe('ChaosParkSim', () => {
     sim.start();
     sim.movers = [];
     noArrivals(sim);
+    sim.score = PATCH_SCORES[0]!;
     const patch = sim.park.patches[0]!;
     const m = put(sim, 'runner', wrap(patch.s - 40, sim.park.track.length), patch.lane);
     ticks(sim, 60);
@@ -279,6 +287,7 @@ describe('ChaosParkSim', () => {
 
   it('moves to game over after the crash and locks out a hasty retry', () => {
     const sim = playing();
+    sim.hits = MAX_HITS - 1;
     const s = 100;
     put(sim, 'walker', s + 30, 1);
     put(sim, 'car', s, 0);
@@ -450,6 +459,7 @@ describe('rats', () => {
 
   it('leave a dazed person who cannot be swiped and can be run into', () => {
     const sim = playing();
+    sim.hits = MAX_HITS - 1;
     const walker = put(sim, 'walker', 160, 1);
     const runner = put(sim, 'runner', 60, 1);
     walker.daze = DAZE_TICKS;
@@ -552,6 +562,7 @@ describe('speed swipes', () => {
 
   it('can rear-end something when boosted into it', () => {
     const sim = playing();
+    sim.hits = MAX_HITS - 1;
     put(sim, 'runner', 160, 1);
     const behind = put(sim, 'runner', 100, 1);
     sim.setBoost(behind.id, true);
@@ -607,11 +618,175 @@ describe('ChaosParkGame swipes', () => {
   });
 });
 
-describe('screenToPark', () => {
-  it('leaves landscape alone and turns portrait a quarter back', () => {
-    expect(screenToPark({ width: 860, height: 600 }, 10, 20)).toEqual({ x: 10, y: 20 });
-    // Portrait screens show the park turned clockwise: its top edge runs down the right of the screen.
-    expect(screenToPark({ width: 600, height: 860 }, 600, 0)).toEqual({ x: 0, y: 0 });
-    expect(screenToPark({ width: 600, height: 860 }, 0, 860)).toEqual({ x: 860, y: 600 });
+describe('collisions', () => {
+  it('stun whoever was run into, and the one that hit them carries on through', () => {
+    const sim = playing();
+    const walker = put(sim, 'walker', 160, 1);
+    const runner = put(sim, 'runner', 100, 1);
+    while (sim.hits === 0 && sim.playTicks < 300) sim.step();
+    expect(sim.phase).toBe('playing');
+    expect(sim.hits).toBe(1);
+    expect(sim.drainEvents()).toContain('hit');
+    expect(sim.impacts).toHaveLength(1);
+    expect(walker.daze).toBeGreaterThan(STUN_TICKS - 3);
+    expect(runner.daze).toBe(0);
+    // The runner goes on through and out the other side without a second collision.
+    const at = walker.s;
+    ticks(sim, 80);
+    expect(sim.hits).toBe(1);
+    expect(walker.s).toBe(at);
+    expect(runner.s).toBeGreaterThan(walker.s + (walker.len + runner.len) / 2);
+    ticks(sim, STUN_TICKS);
+    expect(walker.daze).toBe(0);
+  });
+
+  it('end the run on the third', () => {
+    const sim = playing();
+    for (let n = 1; n <= MAX_HITS; n++) {
+      sim.movers = [];
+      put(sim, 'walker', 160, 1);
+      put(sim, 'car', 60, 0);
+      while (sim.hits < n && sim.playTicks < 3000) sim.step();
+      expect(sim.hits).toBe(n);
+      expect(sim.phase).toBe(n < MAX_HITS ? 'playing' : 'crashed');
+    }
+  });
+
+  it('blame the one that turned into the other', () => {
+    const sim = playing();
+    const steady = put(sim, 'runner', 100, 1);
+    const turner = put(sim, 'runner', 100, 2);
+    sim.shift(turner.id, -1);
+    while (sim.hits === 0 && sim.playTicks < 60) sim.step();
+    expect(sim.hits).toBe(1);
+    expect(steady.daze).toBeGreaterThan(0);
+    expect(turner.daze).toBe(0);
+  });
+
+  it('blame the faster one in a head-on', () => {
+    const sim = playing();
+    const bike = put(sim, 'biker', 100, 1);
+    const walker = put(sim, 'walker', 200, 1, { dir: -1 });
+    while (sim.hits === 0 && sim.playTicks < 200) sim.step();
+    expect(walker.daze).toBeGreaterThan(0);
+    expect(bike.daze).toBe(0);
+  });
+
+  it('start afresh with every run', () => {
+    const sim = playing();
+    sim.hits = 2;
+    sim.impacts.push({ id: 1, x: 0, y: 0, ticks: 0 });
+    sim.toTitle();
+    sim.start();
+    expect(sim.hits).toBe(0);
+    expect(sim.impacts).toHaveLength(0);
+  });
+});
+
+describe('patches', () => {
+  it('appear at 25, 50 and 100 points', () => {
+    expect([0, 24, 25, 49, 50, 99, 100, 500].map(patchesShown)).toEqual([0, 0, 1, 1, 2, 2, 3, 3]);
+    expect(PATCH_SCORES).toEqual([25, 50, 100]);
+  });
+
+  it('do nothing until they appear', () => {
+    const sim = new ChaosParkSim(seededRng(5));
+    sim.start();
+    sim.movers = [];
+    noArrivals(sim);
+    const patch = sim.park.patches[0]!;
+    const m = put(sim, 'runner', wrap(patch.s - 40 * ART, sim.park.track.length), patch.lane);
+    ticks(sim, 60);
+    expect(m.target).toBe(patch.lane);
+    expect(sim.drainEvents()).not.toContain('slip');
+  });
+});
+
+describe('fitting the screen', () => {
+  const surface = (w: number, h: number) => {
+    // As the canvas does it: the 860 x 600 core (turned on a portrait screen) scaled to fit, the rest showing round it.
+    const portrait = h > w;
+    const size = portrait ? { width: 600, height: 860 } : { width: 860, height: 600 };
+    const fit = Math.min(w / size.width, h / size.height);
+    const ox = (w - size.width * fit) / 2;
+    const oy = (h - size.height * fit) / 2;
+    return {
+      size,
+      bounds: { left: -ox / fit, top: -oy / fit, right: (w - ox) / fit, bottom: (h - oy) / fit },
+    };
+  };
+
+  it('makes the frame the shape of the screen, turned for portrait', () => {
+    const phone = surface(390, 700);
+    const f = frameFor(phone.size, phone.bounds);
+    expect(f.hud).toBe('left');
+    expect(f.h).toBe(600);
+    expect(f.w).toBeGreaterThan(1050);
+    const laptop = surface(1280, 760);
+    const g = frameFor(laptop.size, laptop.bounds);
+    expect(g.hud).toBe('top');
+    expect(g.w / g.h).toBeCloseTo(1280 / 760, 1);
+    // A very wide window gets a frame no longer than twice its width.
+    const wide = surface(2600, 700);
+    const h = frameFor(wide.size, wide.bounds);
+    expect(h.w / h.h).toBeLessThanOrEqual(2);
+  });
+
+  it('places the park to fill the screen, and maps touches back onto it', () => {
+    for (const [w, h] of [
+      [390, 700],
+      [1280, 760],
+      [768, 1024],
+    ] as const) {
+      const { size, bounds } = surface(w, h);
+      const frame = frameFor(size, bounds);
+      const place = placePark(frame, size, bounds);
+      const toScreen = (x: number, y: number) =>
+        place.portrait
+          ? { x: place.x0 - y * place.scale, y: place.y0 + x * place.scale }
+          : { x: place.x0 + x * place.scale, y: place.y0 + y * place.scale };
+      const corners = [toScreen(0, 0), toScreen(frame.w, frame.h)];
+      const xs = corners.map((c) => c.x);
+      const ys = corners.map((c) => c.y);
+      expect(Math.min(...xs)).toBeCloseTo(bounds.left, 0);
+      expect(Math.max(...xs)).toBeCloseTo(bounds.right, 0);
+      expect(Math.min(...ys)).toBeCloseTo(bounds.top, 0);
+      expect(Math.max(...ys)).toBeCloseTo(bounds.bottom, 0);
+      const p = toScreen(123, 45);
+      const back = screenToPark(place, p.x, p.y);
+      expect(back.x).toBeCloseTo(123);
+      expect(back.y).toBeCloseTo(45);
+      // On a portrait screen the score runs along the park's left end, which is the top of the screen.
+      if (place.portrait) expect(toScreen(0, frame.h / 2).y).toBeCloseTo(bounds.top, 0);
+    }
+  });
+
+  it('remakes the park on the title card when the screen changes shape, but not during a run', () => {
+    const sim = new ChaosParkSim(seededRng(2));
+    const phone = { w: 1077, h: 600, hud: 'left' as const };
+    sim.fitFrame(phone);
+    // The very first frame fits straight away.
+    expect(sim.park.frame).toEqual(phone);
+    sim.step();
+    const tablet = { w: 860, h: 645, hud: 'left' as const };
+    const before = sim.park;
+    for (let i = 0; i < 5; i++) {
+      sim.fitFrame(tablet);
+      sim.step();
+    }
+    expect(sim.park).toBe(before);
+    for (let i = 0; i < 30; i++) {
+      sim.fitFrame(tablet);
+      sim.step();
+    }
+    expect(sim.park.frame).toEqual(tablet);
+    expect(sim.park.season).toBe(before.season);
+    sim.start();
+    const playing = sim.park;
+    for (let i = 0; i < 40; i++) {
+      sim.fitFrame(phone);
+      sim.step();
+    }
+    expect(sim.park).toBe(playing);
   });
 });

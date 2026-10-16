@@ -1,8 +1,8 @@
 import { Container, Graphics } from 'pixi.js';
 import { COLORS, label } from '../flights/art';
 import {
-  FRAME_H,
-  FRAME_W,
+  ART,
+  DESIGN_LANE,
   GROUP_ROW,
   LANES,
   LANE_W,
@@ -170,7 +170,7 @@ const PAVEMENT = 0xcfcac0;
 
 const drawCity = (g: Graphics, park: Park, snow: boolean): void => {
   const out = SCENERY_EXTENT;
-  g.rect(-out, -out, FRAME_W + out * 2, FRAME_H + out * 2).fill(STREET);
+  g.rect(-out, -out, park.frame.w + out * 2, park.frame.h + out * 2).fill(STREET);
   for (const b of park.blocks) g.roundRect(b.x, b.y, b.w, b.h, 6);
   g.fill(snow ? 0xe6ebef : PAVEMENT);
   for (const b of park.buildings) {
@@ -476,7 +476,7 @@ const blob = (rx: number, ry: number, seed: number, wobble = 0.16): number[] => 
 export const patchGraphic = (season: Season, len: number, seed = 0.37): Graphics => {
   const g = new Graphics();
   const rx = len / 2;
-  const ry = LANE_W / 2 - 2.5;
+  const ry = DESIGN_LANE / 2 - 2.5;
   switch (season) {
     case 'winter':
       g.poly(blob(rx, ry, seed))
@@ -538,18 +538,18 @@ export const patchGraphic = (season: Season, len: number, seed = 0.37): Graphics
   return g;
 };
 
-/** The season's patches, laid on the road where they sit. */
-const drawPatches = (park: Park): Container => {
-  const c = new Container();
-  for (const p of park.patches) {
-    const g = patchGraphic(park.season, p.len, p.id + p.s * 0.01);
+/**
+ * The season's patches, each placed on the road where it sits, in the order they appear. They are drawn at the
+ * design size, so the view scales each by `ART` (times its pop-in).
+ */
+export const patchSprites = (park: Park): Graphics[] =>
+  park.patches.map((p) => {
+    const g = patchGraphic(park.season, p.len / ART, p.id + p.s * 0.01);
     const at = pose(park.track, p.s, laneOffset(p.lane, p.width));
     g.position.set(at.x, at.y);
     g.rotation = at.angle;
-    c.addChild(g);
-  }
-  return c;
-};
+    return g;
+  });
 
 /** Stone pillars either side of each gate. */
 const drawGates = (g: Graphics, park: Park): void => {
@@ -654,7 +654,7 @@ export const drawPark = (park: Park): Container => {
   drawGates(road, park);
   const trees = new Graphics();
   drawTrees(trees, park.trees, pal);
-  c.addChild(city, ground, road, drawPatches(park), trees);
+  c.addChild(city, ground, road, trees);
   return c;
 };
 
@@ -720,7 +720,7 @@ const groupMembers = (crowd: number, look: Look['look']): Member[] => {
     const t = (Math.sin(i * 3.1 + look[2] * 9) + 1) / 2;
     return {
       x: front - row * GROUP_ROW + jitter(i, 1),
-      y: alone ? jitter(i, 2) : (i % 2 ? 1 : -1) * (LANE_W / 2) + jitter(i, 2),
+      y: alone ? jitter(i, 2) : (i % 2 ? 1 : -1) * (DESIGN_LANE / 2) + jitter(i, 2),
       top: black ? BLACK_KIT : pick(SPORT, (t + i * 0.37) % 1),
       hair: pick(HAIR, (t * 7.3) % 1),
       phase: i * 1.9,
@@ -745,7 +745,7 @@ export const moverBody = ({ kind, look, season, crowd = 1 }: Look): Graphics => 
       break;
     case 'dog': {
       const side = c < 0.5 ? -1 : 1;
-      const py = (side * LANE_W) / 2;
+      const py = (side * DESIGN_LANE) / 2;
       const dy = -py;
       const dog = pick(DOGS, b);
       // The lead, from the walker's hand to the collar.
@@ -947,7 +947,7 @@ export const drawLimbs = (
       break;
     case 'dog': {
       const side = look[2] < 0.5 ? -1 : 1;
-      const py = (side * LANE_W) / 2;
+      const py = (side * DESIGN_LANE) / 2;
       stride(0, py, 3, 1.8);
       // Four little paws and a wagging tail.
       const s = Math.sin(phase * 1.6);
@@ -1076,6 +1076,33 @@ export const speechBubble = (text: string): Container => {
   return c;
 };
 
+/** A heart for the HUD, red while that collision is still to come and an empty outline once it's used. */
+export const heart = (full: boolean): Graphics => {
+  const g = new Graphics();
+  const shape = (): void => {
+    g.moveTo(0, 9)
+      .bezierCurveTo(-13, 0, -10, -11, 0, -5)
+      .bezierCurveTo(10, -11, 13, 0, 0, 9)
+      .closePath();
+  };
+  if (full) {
+    shape();
+    g.fill(COLORS.red).stroke({ width: 3.5, color: 0xffffff, join: 'round' });
+    shape();
+    g.stroke({ width: 1.6, color: INK, join: 'round' });
+    g.ellipse(-4.5, -3.5, 2.6, 1.6).fill({ color: 0xffffff, alpha: 0.6 });
+  } else {
+    shape();
+    g.fill({ color: 0x000000, alpha: 0.25 }).stroke({
+      width: 3.5,
+      color: 0xffffff,
+      alpha: 0.7,
+      join: 'round',
+    });
+  }
+  return g;
+};
+
 /** A red "!" in a white disc, over a rat about to dart out. */
 export const ratAlert = (): Graphics =>
   new Graphics()
@@ -1106,11 +1133,18 @@ export const drawDaze = (g: Graphics, t: number): void => {
   }
 };
 
-/** A soft shadow under a mover, the shape of its footprint. */
-export const moverShadow = (kind: Kind, width: number, len: number): Graphics => {
+/**
+ * A soft shadow under a mover, the shape of its footprint: `len` long, at `scale` times the drawn size (the lane
+ * scale on the road, 1 on the cards).
+ */
+export const moverShadow = (kind: Kind, width: number, len: number, scale = ART): Graphics => {
   const g = new Graphics();
   const w =
-    kind === 'walker' || kind === 'runner' ? 16 : kind === 'biker' ? 12 : width * LANE_W - 6;
+    (kind === 'walker' || kind === 'runner'
+      ? 16
+      : kind === 'biker'
+        ? 12
+        : width * DESIGN_LANE - 4) * scale;
   g.roundRect(-len / 2, -w / 2, len, w, Math.min(w, len) / 2).fill(0x000000);
   return g;
 };
@@ -1118,7 +1152,7 @@ export const moverShadow = (kind: Kind, width: number, len: number): Graphics =>
 /** White speed lines trailing behind a boosted mover, drawn facing +x like the mover. */
 export const speedStreaks = (width: number, len: number): Graphics => {
   const g = new Graphics();
-  const half = (width * LANE_W) / 2 - 4;
+  const half = (width * DESIGN_LANE) / 2 - 4;
   const back = -len / 2 - 3;
   for (const [y, l] of [
     [-half * 0.7, 10],
@@ -1199,13 +1233,13 @@ export const roadStrip = (season: Season, w: number): Container => {
   const c = new Container();
   const pal = PALETTES[season];
   const g = new Graphics()
-    .roundRect(-w / 2 - 4, -LANE_W * 2 - 4, w + 8, LANE_W * 4 + 8, 14)
+    .roundRect(-w / 2 - 4, -DESIGN_LANE * 2 - 4, w + 8, DESIGN_LANE * 4 + 8, 14)
     .fill(pal.curb)
     .stroke({ width: 2.5, color: INK })
-    .roundRect(-w / 2, -LANE_W * 2, w, LANE_W * 4, 10)
+    .roundRect(-w / 2, -DESIGN_LANE * 2, w, DESIGN_LANE * 4, 10)
     .fill(pal.road);
   for (let lane = 1; lane < LANES; lane++) {
-    const y = (lane - 2) * LANE_W;
+    const y = (lane - 2) * DESIGN_LANE;
     for (let x = -w / 2 + 8; x < w / 2 - 12; x += 24) g.moveTo(x, y).lineTo(x + 12, y);
   }
   g.stroke({ width: 1.6, color: 0xffffff, alpha: 0.75 });
@@ -1219,13 +1253,13 @@ export const roadStrip = (season: Season, w: number): Container => {
     flip = false,
   ) => {
     const m = new Container();
-    const shadow = moverShadow(kind, width, kind === 'car' ? 46 : kind === 'biker' ? 30 : 14);
+    const shadow = moverShadow(kind, width, kind === 'car' ? 46 : kind === 'biker' ? 30 : 14, 1);
     shadow.alpha = 0.22;
     shadow.position.set(2, 3);
     const legs = new Graphics();
     drawLimbs(legs, { kind, look, season }, 1 + x * 0.1);
     m.addChild(shadow, legs, moverBody({ kind, look, season }));
-    m.position.set(x, (lane + width / 2 - 2) * LANE_W);
+    m.position.set(x, (lane + width / 2 - 2) * DESIGN_LANE);
     if (flip) m.rotation = Math.PI;
     c.addChild(m);
   };
@@ -1246,7 +1280,7 @@ export const sample = (
   const c = new Container();
   const width = kind === 'dog' || kind === 'car' || kind === 'carriage' ? 2 : 1;
   const len = kind === 'carriage' ? 62 : kind === 'car' ? 46 : kind === 'biker' ? 30 : 14;
-  const shadow = moverShadow(kind, width, len);
+  const shadow = moverShadow(kind, width, len, 1);
   shadow.alpha = 0.22;
   shadow.position.set(2, 3);
   const legs = new Graphics();

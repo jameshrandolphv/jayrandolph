@@ -4,8 +4,9 @@ import type { ScoreResult, ScoreStore } from '../../games/score.service';
 import type { Sfx, SfxName } from '../../games/sfx';
 import {
   BACK_BUTTON,
-  FRAME_H,
   HELP_BUTTON,
+  MAX_ASPECT,
+  MIN_ASPECT,
   MENU_BUTTON,
   PLAY_BUTTON,
   QUIT_BUTTON,
@@ -16,7 +17,7 @@ import {
   pauseButton,
   type Bounds,
 } from './constants';
-import type { Point } from './park';
+import type { ParkFrame, Point } from './park';
 import { ChaosParkSim, type SimEvent } from './sim';
 
 export const GAME_ID = 'chaos-park';
@@ -32,6 +33,7 @@ const SOUNDS: Readonly<Record<SimEvent, SfxName>> = {
   brake: 'brake',
   squeak: 'squeak',
   bite: 'bite',
+  hit: 'hit',
 };
 
 /**
@@ -43,13 +45,53 @@ const SWIPE_MIN = 12;
 /** The park is landscape; on a portrait screen it is turned a quarter clockwise. */
 export const isPortrait = (size: LogicalSize): boolean => size.height > size.width;
 
+/**
+ * The frame a park should be generated in to fill the screen: its long side by its short side (in logical px), kept
+ * between `MIN_ASPECT` and `MAX_ASPECT` so very wide or squarish windows still get a sensible loop.
+ */
+export const frameFor = (size: LogicalSize, bounds: Bounds): ParkFrame => {
+  const portrait = isPortrait(size);
+  const across = bounds.right - bounds.left;
+  const down = bounds.bottom - bounds.top;
+  let w = portrait ? down : across;
+  let h = portrait ? across : down;
+  w = Math.min(w, h * MAX_ASPECT);
+  h = Math.min(h, w / MIN_ASPECT);
+  return { w: Math.floor(w), h: Math.floor(h), hud: portrait ? 'left' : 'top' };
+};
+
+/**
+ * Where a park sits on screen: turned a quarter clockwise on a portrait screen, scaled to fit what is showing and
+ * centred in it. Park (x, y) lands on screen at (x0 + x * s, y0 + y * s), or (x0 - y * s, y0 + x * s) when turned.
+ */
+export interface Placement {
+  portrait: boolean;
+  scale: number;
+  x0: number;
+  y0: number;
+}
+
+export const placePark = (frame: ParkFrame, size: LogicalSize, bounds: Bounds): Placement => {
+  const portrait = isPortrait(size);
+  const across = bounds.right - bounds.left;
+  const down = bounds.bottom - bounds.top;
+  const pw = portrait ? frame.h : frame.w;
+  const ph = portrait ? frame.w : frame.h;
+  const scale = Math.min(across / pw, down / ph);
+  const left = bounds.left + (across - pw * scale) / 2;
+  const top = bounds.top + (down - ph * scale) / 2;
+  return { portrait, scale, x0: portrait ? left + pw * scale : left, y0: top };
+};
+
 /** A point on screen (logical px) in park coordinates. */
-export const screenToPark = (size: LogicalSize, x: number, y: number): Point =>
-  isPortrait(size) ? { x: y, y: FRAME_H - x } : { x, y };
+export const screenToPark = (p: Placement, x: number, y: number): Point =>
+  p.portrait
+    ? { x: (y - p.y0) / p.scale, y: (p.x0 - x) / p.scale }
+    : { x: (x - p.x0) / p.scale, y: (y - p.y0) / p.scale };
 
 /** A direction on screen in park coordinates. */
-const screenDirToPark = (size: LogicalSize, dx: number, dy: number): Point =>
-  isPortrait(size) ? { x: dy, y: -dx } : { x: dx, y: dy };
+const screenDirToPark = (p: Placement, dx: number, dy: number): Point =>
+  p.portrait ? { x: dy, y: -dx } : { x: dx, y: dy };
 
 interface Swipe {
   /** Where the pointer went down, on screen. */
@@ -81,7 +123,14 @@ export class ChaosParkGame {
     void scores.getBest(GAME_ID).then((best) => (this.best = Math.max(this.best, best)));
   }
 
+  /** Where the current park sits on screen. */
+  placement(): Placement {
+    return placePark(this.sim.park.frame, this.size, this.bounds);
+  }
+
   frame(deltaMs: number): number {
+    // On the title and how-to-play cards, the park behind is remade to fill the screen if its shape changes.
+    this.sim.fitFrame(frameFor(this.size, this.bounds));
     this.step.advance(deltaMs, () => {
       const before = this.sim.phase;
       this.sim.step();
@@ -118,7 +167,7 @@ export class ChaosParkGame {
           this.swipes.clear();
           sim.setPaused(true);
         } else {
-          const at = screenToPark(this.size, x, y);
+          const at = screenToPark(this.placement(), x, y);
           const mover = sim.grab(at.x, at.y);
           if (mover) this.swipes.set(pointer, { x, y, mover: mover.id, used: false });
         }
@@ -148,7 +197,7 @@ export class ChaosParkGame {
       this.swipes.delete(pointer);
       return;
     }
-    const dir = screenDirToPark(this.size, dx, dy);
+    const dir = screenDirToPark(this.placement(), dx, dy);
     const out = this.sim.outward(mover);
     const ahead = this.sim.forward(mover);
     const across = (dir.x * out.x + dir.y * out.y) / len;

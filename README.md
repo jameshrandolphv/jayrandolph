@@ -8,7 +8,7 @@ Personal website styled as a Mac OS X Aqua / Frutiger Aero desktop. Built with A
 - Apps are registered in `src/app/os/apps.ts`; folders come from the filesystem service in `src/app/os/filesystem.service.ts`.
 - Film Sim (`/film-sim`) is a Rust/WebAssembly film simulator (see `engine/`).
 - Flights! (`/flights`) is an air traffic control game after Flight Control (2009); its airfields are generated at random in `src/app/apps/flights/airfield.ts`.
-- Chaos Park (`/chaos-park`) is a traffic game on a four-lane loop round a park: swipe walkers, dog walkers, runners, bikes, cars and horse carriages between lanes (or forward and back to speed them up and slow them down) so nobody collides. Each run gets a new park and season, generated in `src/app/apps/chaos-park/park.ts`; the park is turned on its side on portrait screens (`GameCanvas`'s `rotate` input).
+- Chaos Park (`/chaos-park`) is a traffic game on a four-lane loop round a park: swipe walkers, dog walkers, runners, bikes, cars and horse carriages between lanes (or forward and back to speed them up and slow them down) so nobody collides; the third collision ends the run. Each run gets a new park and season, generated in `src/app/apps/chaos-park/park.ts` to fill the screen, turned on its side on portrait screens (`GameCanvas`'s `rotate` input).
 
 ## Photographs
 

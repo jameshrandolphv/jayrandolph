@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.7.0
+- Chaos Park: the park fills the screen, with wider lanes and bigger sprites on small devices; runs end on the third collision (the first two stun whoever was hit); slippery patches appear at 25, 50 and 100 points
+
 ## 1.6.3
 - World's Longest Game keeps every room in rhythm: all of a room's enemies move to one beat and fall back into step within a few loops (two in the first levels), instead of drifting slowly out of sync
 - Gentler first levels: slower enemies, new patterns and layouts introduced more gradually, a free square to stand in between pairs of lanes, and fewer odd extra enemies filling gaps; no room can ever be walked through without meeting an enemy
