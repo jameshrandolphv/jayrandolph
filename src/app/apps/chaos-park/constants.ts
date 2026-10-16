@@ -69,7 +69,7 @@ export interface KindSpec {
  * The overall pace of the game: every mover's speed (and the rats') is scaled by this, so the challenge comes from
  * how many are about rather than how fast they go.
  */
-export const PACE = 0.8;
+export const PACE = 0.7;
 
 const spec = (
   speed: number,
@@ -99,12 +99,13 @@ export const KIND_SPECS: Readonly<Record<Kind, KindSpec>> = {
 export const SPEED_SPREAD = 0.08;
 
 /**
- * Run groups: 6 to 12 runners two abreast, doing one lap. They are rare: the first can come once the score reaches
- * `GROUP_FROM_SCORE`, then one every `GROUP_INTERVAL` ticks or so, never two at once. Each runner's lap scores.
+ * Run groups: 6 to 12 runners two abreast, doing one lap. The first comes as soon as the score reaches
+ * `GROUP_FROM_SCORE`, then one every `GROUP_INTERVAL` ticks (45 to 65 seconds), never two at once. Each runner's
+ * lap scores.
  */
 export const GROUP_SIZE: readonly [number, number] = [6, 12];
-export const GROUP_FROM_SCORE = 8;
-export const GROUP_INTERVAL: readonly [number, number] = [2400, 4200];
+export const GROUP_FROM_SCORE = 10;
+export const GROUP_INTERVAL: readonly [number, number] = [45 * 60, 65 * 60];
 /** Spacing between the rows of a run group, front to back, as drawn. */
 export const GROUP_ROW = 12;
 export const groupLength = (size: number): number => (Math.ceil(size / 2) * GROUP_ROW + 4) * ART;

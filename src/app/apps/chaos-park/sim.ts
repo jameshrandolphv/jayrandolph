@@ -716,14 +716,13 @@ export class ChaosParkSim {
   private spawnSpecials(): void {
     const between = ([lo, hi]: readonly [number, number]) =>
       Math.round(lo + this.rng() * (hi - lo));
-    if (this.score >= GROUP_FROM_SCORE) {
-      if (this.groupTimer <= 0) this.groupTimer = between(GROUP_INTERVAL);
-      else if (--this.groupTimer <= 0) {
-        // One at a time; a busy moment just puts it off a little.
-        if (this.movers.some((m) => m.kind === 'group') || !this.arrive('group'))
-          this.groupTimer = 120;
-        else this.groupTimer = between(GROUP_INTERVAL);
-      }
+    // The first group comes the moment the score reaches GROUP_FROM_SCORE (the timer starts at zero), then one
+    // every GROUP_INTERVAL from each arrival.
+    if (this.score >= GROUP_FROM_SCORE && --this.groupTimer <= 0) {
+      if (this.movers.some((m) => m.kind === 'group')) this.groupTimer = 120;
+      // Every gate busy: try again in a moment.
+      else if (!this.arrive('group')) this.groupTimer = 10;
+      else this.groupTimer = between(GROUP_INTERVAL);
     }
     if (this.score >= RAT_FROM_SCORE) {
       if (this.ratTimer <= 0) this.ratTimer = between(RAT_INTERVAL) / 2;

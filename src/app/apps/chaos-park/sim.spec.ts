@@ -8,6 +8,8 @@ import {
   CRASH_TICKS,
   DAZE_TICKS,
   GAME_OVER_LOCKOUT,
+  GROUP_FROM_SCORE,
+  GROUP_INTERVAL,
   GROUP_SIZE,
   KIND_SPECS,
   LANES,
@@ -362,30 +364,62 @@ describe('run groups', () => {
     expect(g.state).toBe('leaving');
   });
 
-  it('are rare and never two at once', () => {
+  it('come the moment the score reaches 10, then every 45 to 65 seconds, never two at once', () => {
+    for (const seed of [6, 7, 8]) {
+      const sim = new ChaosParkSim(seededRng(seed));
+      sim.start();
+      // No crashes; the score is put back where it was set after every tick.
+      internals(sim).checkTraffic = () => undefined;
+      for (let t = 0; t < 600; t++) {
+        sim.score = GROUP_FROM_SCORE - 1;
+        sim.step();
+      }
+      expect(sim.movers.some((m) => m.kind === 'group')).toBe(false);
+      sim.score = GROUP_FROM_SCORE;
+      const arrivals: number[] = [];
+      const seen = new Set<number>();
+      for (let t = 0; t < 8 * 3600; t++) {
+        sim.step();
+        sim.score = GROUP_FROM_SCORE;
+        const now = sim.movers.filter((m) => m.kind === 'group');
+        expect(now.length).toBeLessThanOrEqual(1);
+        for (const g of now) {
+          if (seen.has(g.id)) continue;
+          seen.add(g.id);
+          arrivals.push(t);
+        }
+      }
+      // Straight away (give or take a moment if every gate is busy)...
+      expect(arrivals[0]!).toBeLessThan(30);
+      // ...then 45 to 65 seconds apart.
+      for (let k = 1; k < arrivals.length; k++) {
+        const gap = arrivals[k]! - arrivals[k - 1]!;
+        expect(gap).toBeGreaterThanOrEqual(GROUP_INTERVAL[0]);
+        expect(gap).toBeLessThanOrEqual(GROUP_INTERVAL[1] + 30);
+      }
+      expect(GROUP_INTERVAL).toEqual([45 * 60, 65 * 60]);
+      expect(arrivals.length).toBeGreaterThanOrEqual(8);
+    }
+  });
+});
+
+describe('rare visitors', () => {
+  it('include a rat every 30 to 55 seconds or so, one at a time', () => {
     const sim = new ChaosParkSim(seededRng(6));
     sim.start();
-    // No crashes, and a score high enough for groups and rats from the start.
-    internals(sim).checkTraffic = () => undefined;
+    (sim as unknown as { checkTraffic: () => void }).checkTraffic = () => undefined;
     sim.score = 20;
-    const groups = new Set<number>();
     let rats = 0;
     let lastRat = -1;
     const minutes = 10;
     for (let t = 0; t < minutes * 3600; t++) {
       sim.step();
       sim.drainEvents();
-      const now = sim.movers.filter((m) => m.kind === 'group');
-      expect(now.length).toBeLessThanOrEqual(1);
-      for (const g of now) groups.add(g.id);
       expect(sim.rats.length).toBeLessThanOrEqual(1);
       const rat = sim.rats[0]?.id ?? -1;
       if (rat !== -1 && rat !== lastRat) rats++;
       lastRat = rat;
     }
-    // Roughly one every 40 to 70 seconds for groups (after a full wait for the first), 30 to 55 for rats.
-    expect(groups.size).toBeGreaterThanOrEqual(minutes * 0.6);
-    expect(groups.size).toBeLessThanOrEqual(minutes * 1.6);
     expect(rats).toBeGreaterThanOrEqual(minutes);
     expect(rats).toBeLessThanOrEqual(minutes * 2.2);
   });
