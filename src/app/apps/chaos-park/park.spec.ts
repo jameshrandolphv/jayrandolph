@@ -19,30 +19,33 @@ import {
 
 const SEEDS = Array.from({ length: 60 }, (_, i) => i + 1);
 
-/** The default frame, a phone in portrait, a tablet and a wide window. */
+/** The default frame, a phone in portrait, a tablet, a wide window, a phone on its side and a square window. */
 const FRAMES: readonly ParkFrame[] = [
   { w: 860, h: 600, hud: 'top' },
   { w: 1077, h: 600, hud: 'left' },
   { w: 860, h: 645, hud: 'left' },
   { w: 1200, h: 600, hud: 'top' },
+  { w: 1300, h: 600, hud: 'top' },
+  { w: 600, h: 600, hud: 'top' },
 ];
 
 describe('generatePark', () => {
-  it('fits the loop inside the frame, leaving room for the score along one edge', () => {
-    for (const frame of FRAMES) {
+  // One test per frame, so each gets its own time limit.
+  for (const frame of FRAMES) {
+    it(`fits the loop inside a ${frame.w}x${frame.h} frame, leaving room for the score along one edge`, () => {
       const m = frameMargins(frame);
       expect(frame.hud === 'top' ? m.top : m.left).toBe(HUD_MARGIN);
       for (const seed of SEEDS) {
         const { track } = generatePark(seededRng(seed), undefined, frame);
-        // Checked in one go: an expect per point of 240 roads took longer than the parks themselves.
+        // Checked in one go: an expect per point of 60 roads took longer than the parks themselves.
         const outside = edge(track, ROAD_HALF).filter(
           (p) =>
             !(p.x > m.left && p.x < frame.w - m.right && p.y > m.top && p.y < frame.h - m.bottom),
         );
         expect(outside, `${frame.w}x${frame.h}, seed ${seed}`).toEqual([]);
       }
-    }
-  });
+    });
+  }
 
   it('reaches close to the edges of the screen', () => {
     for (const frame of FRAMES) {
@@ -58,6 +61,19 @@ describe('generatePark', () => {
       expect(across / SEEDS.length / frame.h).toBeGreaterThan(0.78);
     }
     expect(EDGE_MARGIN).toBeLessThan(30);
+  });
+
+  it('still reaches the ends of a very long screen', () => {
+    for (const frame of [
+      { w: 1800, h: 600, hud: 'top' },
+      { w: 2600, h: 600, hud: 'top' },
+    ] as const) {
+      for (const seed of SEEDS.slice(0, 10)) {
+        const out = edge(generatePark(seededRng(seed), undefined, frame).track, ROAD_HALF);
+        const along = Math.max(...out.map((p) => p.x)) - Math.min(...out.map((p) => p.x));
+        expect(along / frame.w, `${frame.w}x${frame.h}, seed ${seed}`).toBeGreaterThan(0.82);
+      }
+    }
   });
 
   it('never bends so tightly that the inner or outer lane folds over', () => {

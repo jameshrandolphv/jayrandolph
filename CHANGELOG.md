@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.6
+- Chaos Park: no more hedge round the screen, and the park now takes the exact shape of the screen however long or square it is (it used to stop at twice as long as wide, leaving city showing beside it on phones held sideways)
+- Chaos Park: on long, narrow screens the road reaches both ends, as a rounded rectangle, instead of shrinking to a small oval in the middle
+
 ## 1.7.5
 - Chaos Park gets a park look of its own instead of Flights!' borrowed menus: wooden noticeboard cards, green and wood sign buttons, a round green pause button, a hedge round the screen, and a yellow "!" bubble with a bike-bell ding for anyone about to collide
 - Chaos Park wording: "Pile-up!" on game over, "New park record!" with a trophy for a new best, "BEST" and "YOUR BEST" for the high score, and "Taking a breather" when paused

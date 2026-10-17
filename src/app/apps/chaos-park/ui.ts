@@ -2,7 +2,7 @@ import { Container, Graphics } from 'pixi.js';
 import { COLORS, label } from '../flights/art';
 import type { Plaque } from './constants';
 
-/** Park furniture: wooden noticeboards, sign plaques, a hedge round the screen. */
+/** Park furniture: wooden noticeboards, sign plaques. */
 export const PARK_UI = {
   wood: 0xa8743f,
   woodDark: 0x7a4f2b,
@@ -12,9 +12,6 @@ export const PARK_UI = {
   greenDark: 0x2f6e2a,
   plank: 0xb57a40,
   plankDark: 0x7f5229,
-  hedge: 0x3f6e35,
-  hedgeDark: 0x2a4d24,
-  hedgeLight: 0x6aa84f,
 } as const;
 
 /** A screw head with its slot, for the corners of a board. */
@@ -96,25 +93,6 @@ export const roundPauseButton = (): Container => {
       .fill(0xffffff),
   );
   return b;
-};
-
-/** A low hedge round the edge of the screen, with rounded inside corners. */
-export const drawHedge = (
-  g: Graphics,
-  b: { left: number; top: number; right: number; bottom: number },
-): Graphics => {
-  const w = b.right - b.left;
-  const h = b.bottom - b.top;
-  return g
-    .clear()
-    .rect(b.left - 20, b.top - 20, w + 40, h + 40)
-    .fill(PARK_UI.hedge)
-    .roundRect(b.left + 6, b.top + 6, w - 12, h - 12, 22)
-    .cut()
-    .roundRect(b.left + 5, b.top + 5, w - 10, h - 10, 23)
-    .stroke({ width: 2, color: PARK_UI.hedgeLight, alpha: 0.7 })
-    .roundRect(b.left + 6, b.top + 6, w - 12, h - 12, 22)
-    .stroke({ width: 2, color: PARK_UI.hedgeDark, alpha: 0.45 });
 };
 
 /** A small gold cup, for the best score. */
