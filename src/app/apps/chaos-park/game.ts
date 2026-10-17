@@ -5,8 +5,6 @@ import type { Sfx, SfxName } from '../../games/sfx';
 import {
   BACK_BUTTON,
   HELP_BUTTON,
-  MAX_ASPECT,
-  MIN_ASPECT,
   MENU_BUTTON,
   PLAY_BUTTON,
   QUIT_BUTTON,
@@ -46,17 +44,15 @@ const SWIPE_MIN = 12;
 export const isPortrait = (size: LogicalSize): boolean => size.height > size.width;
 
 /**
- * The frame a park should be generated in to fill the screen: its long side by its short side (in logical px), kept
- * between `MIN_ASPECT` and `MAX_ASPECT` so very wide or squarish windows still get a sensible loop.
+ * The frame a park should be generated in to fill the screen: its long side by its short side (in logical px), whatever
+ * the screen's shape.
  */
 export const frameFor = (size: LogicalSize, bounds: Bounds): ParkFrame => {
   const portrait = isPortrait(size);
   const across = bounds.right - bounds.left;
   const down = bounds.bottom - bounds.top;
-  let w = portrait ? down : across;
-  let h = portrait ? across : down;
-  w = Math.min(w, h * MAX_ASPECT);
-  h = Math.min(h, w / MIN_ASPECT);
+  const w = portrait ? down : across;
+  const h = portrait ? across : down;
   return { w: Math.floor(w), h: Math.floor(h), hud: portrait ? 'left' : 'top' };
 };
 

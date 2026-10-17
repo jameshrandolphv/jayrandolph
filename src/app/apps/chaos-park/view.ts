@@ -51,7 +51,7 @@ import {
   type Bounds,
 } from './constants';
 import { placePark, type ChaosParkGame } from './game';
-import { drawHedge, noticeBoard, plaqueButton, roundPauseButton, trophy } from './ui';
+import { noticeBoard, plaqueButton, roundPauseButton, trophy } from './ui';
 import type { Park } from './park';
 import { lapsLeft, patchesShown, type Mover } from './sim';
 
@@ -127,7 +127,6 @@ export class ChaosParkView {
   private readonly badges = new Container();
   private readonly popLayer = new Container();
   private readonly ratLayer = new Container();
-  private readonly frame = new Graphics();
   private readonly hud = new Container();
   private readonly hudLeft = new Container();
   private readonly hudRight = new Container();
@@ -210,7 +209,7 @@ export class ChaosParkView {
       this.popLayer,
     );
     this.cards.addChild(this.title, this.help, this.gameOver, this.paused);
-    root.addChild(this.world, this.frame, this.hud, this.dim, this.cards);
+    root.addChild(this.world, this.hud, this.dim, this.cards);
   }
 
   update(alpha: number, deltaMs: number, bounds: Bounds, size: LogicalSize): void {
@@ -259,7 +258,7 @@ export class ChaosParkView {
     }
   }
 
-  /** Turns the park to suit the screen and pins the frame, HUD and pause button to its edges. */
+  /** Turns the park to suit the screen and pins the HUD and pause button to its edges. */
   private fitScreen(b: Bounds, size: LogicalSize): void {
     const { frame } = this.game.sim.park;
     const key = `${b.left},${b.top},${b.right},${b.bottom},${size.width},${frame.w},${frame.h}`;
@@ -270,7 +269,6 @@ export class ChaosParkView {
     this.world.rotation = place.portrait ? Math.PI / 2 : 0;
     this.world.scale.set(place.scale);
     this.world.position.set(place.x0, place.y0);
-    drawHedge(this.frame, b);
     this.hudLeft.position.set(b.left, b.top);
     this.hudRight.position.set(b.right, b.top);
     const pause = pauseButton(b);

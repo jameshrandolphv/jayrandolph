@@ -452,15 +452,34 @@ const makeTrack = (rng: () => number, frame: ParkFrame): Track => {
     const track = buildTrack(loopOutline(rng, frame));
     if (fits(track, frame)) return track;
   }
-  // A plain oval always fits, made a little shorter if its ends would bend too tightly.
+  // A plain rounded rectangle always fits and, however long or square the screen, still reaches its edges.
   const { cx, cy, ax, by } = loopSpace(frame);
+  const a = ax * 0.95;
   const b = by * 0.95;
-  const a = Math.min(ax * 0.95, (b * b) / (MIN_RADIUS * 1.05));
+  const r = Math.min(a, b, Math.max(MIN_RADIUS * 1.05, Math.min(a, b) * 0.8));
   const raw: Point[] = [];
-  for (let j = 0; j < 1200; j++) {
-    const th = (-j / 1200) * Math.PI * 2;
-    raw.push({ x: cx + Math.cos(th) * a, y: cy + Math.sin(th) * b });
-  }
+  // Corners counterclockwise on screen from the top right, each turning a further quarter (angles decrease, y down).
+  const corners = [
+    { x: cx + a - r, y: cy - b + r },
+    { x: cx - a + r, y: cy - b + r },
+    { x: cx - a + r, y: cy + b - r },
+    { x: cx + a - r, y: cy + b - r },
+  ];
+  corners.forEach((c, i) => {
+    const next = corners[(i + 1) % 4]!;
+    for (let j = 0; j < 90; j++) {
+      const th = (-(i + j / 90) * Math.PI) / 2;
+      raw.push({ x: c.x + Math.cos(th) * r, y: c.y + Math.sin(th) * r });
+    }
+    // The straight to the next corner.
+    const th = (-(i + 1) * Math.PI) / 2;
+    const from = { x: c.x + Math.cos(th) * r, y: c.y + Math.sin(th) * r };
+    const to = { x: next.x + Math.cos(th) * r, y: next.y + Math.sin(th) * r };
+    const steps = Math.max(1, Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) / 2));
+    for (let j = 0; j < steps; j++) {
+      raw.push({ x: from.x + ((to.x - from.x) * j) / steps, y: from.y + ((to.y - from.y) * j) / steps });
+    }
+  });
   return buildTrack(raw);
 };
 

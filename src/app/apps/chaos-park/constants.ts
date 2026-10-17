@@ -6,11 +6,6 @@
 export const FRAME_W = 860;
 export const FRAME_H = 600;
 
-/** A park's frame is never longer than this times its width, however wide the screen; the city fills the rest. */
-export const MAX_ASPECT = 2;
-/** Nor squarer than this. */
-export const MIN_ASPECT = 1.2;
-
 /** How far past the frame the city is drawn, for screens of other shapes. */
 export const SCENERY_EXTENT = 900;
 

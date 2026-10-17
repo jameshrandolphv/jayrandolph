@@ -785,10 +785,13 @@ describe('fitting the screen', () => {
     const g = frameFor(laptop.size, laptop.bounds);
     expect(g.hud).toBe('top');
     expect(g.w / g.h).toBeCloseTo(1280 / 760, 1);
-    // A very wide window gets a frame no longer than twice its width.
+    // However wide or square the window, the park fills it.
     const wide = surface(2600, 700);
     const h = frameFor(wide.size, wide.bounds);
-    expect(h.w / h.h).toBeLessThanOrEqual(2);
+    expect(h.w / h.h).toBeCloseTo(2600 / 700, 1);
+    const square = surface(700, 700);
+    const k = frameFor(square.size, square.bounds);
+    expect(k.w / k.h).toBeCloseTo(1, 1);
   });
 
   it('places the park to fill the screen, and maps touches back onto it', () => {
@@ -796,6 +799,8 @@ describe('fitting the screen', () => {
       [390, 700],
       [1280, 760],
       [768, 1024],
+      [2600, 700],
+      [700, 700],
     ] as const) {
       const { size, bounds } = surface(w, h);
       const frame = frameFor(size, bounds);
