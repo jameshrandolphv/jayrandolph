@@ -200,6 +200,23 @@ export class IconDefs {}
           <circle cx="12" cy="40" r="2.6" fill="#ff8a00" stroke="#2e2a2c" stroke-width="0.8" />
           <circle cx="12.4" cy="36.4" r="1.7" fill="#3b2a20" stroke="#2e2a2c" stroke-width="0.6" />
         }
+        @case ('bat') {
+          <!-- Bat Out!: a ball and bat over a sunny ballpark tile. -->
+          <rect x="4" y="4" width="56" height="56" rx="13" fill="#8fd3ff" stroke="#2f6aa0" />
+          <g clip-path="url(#ico-app-clip)">
+            <path d="M-4 44Q32 30 68 44V68H-4z" fill="#4cb03a" />
+            <path d="M14 60L32 42L50 60z" fill="#d49a58" />
+            <path d="M22 60L32 50L42 60z" fill="#4cb03a" />
+            <ellipse cx="32" cy="12" rx="34" ry="20" fill="url(#ico-gloss)" opacity="0.35" />
+          </g>
+          <g transform="rotate(-40 32 32)">
+            <path d="M30 6h4l2.2 34h-8.4z" fill="#c9893d" stroke="#5a3a1a" stroke-width="1.2" stroke-linejoin="round" />
+            <rect x="29.2" y="40" width="5.6" height="12" rx="2" fill="#a86b2a" stroke="#5a3a1a" stroke-width="1.2" />
+            <rect x="28" y="51" width="8" height="3" rx="1.5" fill="#5a3a1a" />
+          </g>
+          <circle cx="46" cy="20" r="7.5" fill="#fff" stroke="#3a3a48" stroke-width="1.2" />
+          <path d="M41 16q3 4 0 8M51 16q-3 4 0 8" fill="none" stroke="#e0383e" stroke-width="1.1" />
+        }
         @case ('write') {
           <rect x="6" y="14" width="34" height="44" rx="1.5" fill="url(#ico-note)" stroke="#a8923a" stroke-width="0.8" transform="rotate(-14 23 36)" />
           <g transform="rotate(-9 28 28)">
