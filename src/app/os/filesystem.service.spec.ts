@@ -6,7 +6,7 @@ import type { AppDef } from './apps';
 import { fsNodeExists } from './fs-page';
 import { buildTree, FileSystemService, resolvePath, type PhotoManifest } from './filesystem.service';
 
-const apps: AppDef[] = [{ id: 'film-sim', name: 'Film Sim', icon: 'film', load: () => Promise.reject() }];
+const apps: AppDef[] = [{ id: 'film-sim', name: 'Film Sim', icon: 'film', added: '2026-10-05', load: () => Promise.reject() }];
 
 const manifest: PhotoManifest = {
   albums: [

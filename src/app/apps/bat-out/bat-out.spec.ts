@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { BATTING_CAMERA, PITCHING_CAMERA, project, toPlatePlane, vec } from './camera';
-import { BASES, RELEASE } from './constants';
+import { BASES, PITCH_SLOW, RELEASE } from './constants';
 import { flyBall } from './flight';
 import { computerPitch, hitsBatter, inZone, makePitch, pitchAt, PITCHES } from './pitch';
 import { resolvePlay, type Bases } from './play';
 import { seededRng } from './rng';
 import { applyPitch, applyPlay, newGame, nextHalf } from './rules';
 import { BatOutSim } from './sim';
-import { computerSwing, contact, HEIGHT_WINDOW, TIMING_WINDOW } from './swing';
+import { computerSwing, contact, HEIGHT_WINDOW, TIMING_WINDOW, USER_WINDOW } from './swing';
 import { readPitchSwipe, readSwing, type TracePoint } from './swipe';
 
 /** A swipe through points [x, y, ms]. */
@@ -184,11 +184,60 @@ describe('swings', () => {
         [at.x + 30, at.y - 4, 1.03],
       ]),
       toPlate,
-      pitch.end,
+      () => pitch.end,
     )!;
     expect(read.t).toBeCloseTo(1.015, 3);
     expect(Math.abs(read.dz)).toBeLessThan(0.05);
     expect(read.lift).toBeGreaterThan(0);
+  });
+
+  it('meet the ball where you see it, even a little early', () => {
+    // Swiping straight across the ball as it appears a beat before it reaches the plate.
+    const sim = new BatOutSim(seededRng(9));
+    sim.start('hitting');
+    while (sim.phase !== 'pitch') sim.step();
+    const p = sim.pitch!;
+    const t = p.seconds - 0.1;
+    const seen = project(BATTING_CAMERA, pitchAt(p, t / p.seconds));
+    const read = readSwing(
+      swipe([
+        [seen.x - 40, seen.y, t - 0.02],
+        [seen.x - 10, seen.y, t - 0.005],
+        [seen.x + 10, seen.y, t + 0.005],
+        [seen.x + 40, seen.y, t + 0.02],
+      ]),
+      toPlate,
+      (time) => sim.ballSight(time),
+    )!;
+    expect(Math.abs(read.dz)).toBeLessThan(0.1);
+    // Against where the pitch ends, the same swipe would have gone well over it.
+    expect(toPlate(seen.x, seen.y)!.z - p.end.z).toBeGreaterThan(0.3);
+    expect(
+      contact(
+        { dt: (read.t - p.seconds) / PITCH_SLOW, dz: read.dz, lift: 0, power: 1 },
+        p,
+        seededRng(1),
+        USER_WINDOW,
+      ),
+    ).not.toBeNull();
+  });
+
+  it('meet the ball with the width of the bat when the swipe stops short of it', () => {
+    const at = project(BATTING_CAMERA, vec(0, 0, 2.5));
+    const px = project(BATTING_CAMERA, vec(0, 0, 2.5)).scale;
+    const short = swipe([
+      [at.x - 60, at.y, 1.0],
+      [at.x - 0.2 * px, at.y, 1.02],
+    ]);
+    expect(readSwing(short, toPlate, () => pitch.end)).toBeNull();
+    expect(readSwing(short, toPlate, () => pitch.end, USER_WINDOW.height)).not.toBeNull();
+  });
+
+  it('give you a wider window than the computer', () => {
+    const rng = seededRng(5);
+    const swing = { dt: TIMING_WINDOW * 1.2, dz: HEIGHT_WINDOW * 1.3, lift: 0, power: 1 };
+    expect(contact(swing, pitch, rng)).toBeNull();
+    expect(contact(swing, pitch, rng, USER_WINDOW)).not.toBeNull();
   });
 
   it('miss outside the timing and height windows', () => {

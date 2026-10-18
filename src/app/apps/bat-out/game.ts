@@ -18,6 +18,7 @@ import {
 } from './layout';
 import type { Mode } from './rules';
 import { BatOutSim, type SimEvent } from './sim';
+import { USER_WINDOW } from './swing';
 import { pitchFromRead, readPitchSwipe, readSwing, SWING_MIN, type TracePoint } from './swipe';
 
 export const HITTING_ID = 'bat-out-hitting';
@@ -145,7 +146,12 @@ export class BatOutGame {
     for (let i = 1; i < live.length; i++)
       len += Math.hypot(live[i].x - live[i - 1].x, live[i].y - live[i - 1].y);
     if (len >= SWING_MIN) sim.commitSwing();
-    const read = readSwing(live, (sx, sy) => toPlatePlane(BATTING_CAMERA, sx, sy), sim.pitch.end);
+    const read = readSwing(
+      live,
+      (sx, sy) => toPlatePlane(BATTING_CAMERA, sx, sy),
+      (t) => sim.ballSight(t),
+      USER_WINDOW.height,
+    );
     if (read) sim.userSwing(read.t, read.dz, read.lift, read.power);
   }
 

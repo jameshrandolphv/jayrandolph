@@ -53,6 +53,7 @@ import {
 import { ballAt, trackAt, type Play } from './play';
 import { MODES, isGame, outcome, userBats, type GameState } from './rules';
 import { MITT_U, type BatOutSim } from './sim';
+import { USER_WINDOW } from './swing';
 
 const INK = PAL.ink;
 const clamp01 = (t: number): number => Math.min(1, Math.max(0, t));
@@ -136,6 +137,8 @@ const MAX_PX = 80;
 /** The ball is drawn larger than life so it is easy to follow. */
 const BALL_SCALE = 1.7;
 const NEAR = 1;
+/** The radius (ft) of the ring showing roughly where a pitch is heading. */
+const TARGET_FT = 0.5;
 
 /** Points on an arc about (cx, cy) at radius r between two angles (degrees from straight out, + to the right). */
 const arc = (cx: number, cy: number, r: number, from: number, to: number, n = 16): Vec3[] => {
@@ -727,11 +730,24 @@ export class BatOutView {
           join: 'round',
         });
     }
-    if (sim.state && this.cam === BATTING_CAMERA && sim.userBatting) this.bat(sim);
+    if (sim.state && this.cam === BATTING_CAMERA && sim.userBatting) {
+      this.pitchTarget(sim);
+      this.bat(sim);
+    }
     if (sim.state && this.cam === PITCHING_CAMERA && sim.phase === 'ready') this.hand(view);
 
-    // The trail behind your finger.
+    // The trail behind your finger. Batting, a soft band round it shows how wide the bat is.
     const trail = this.game.trail;
+    const band =
+      sim.userBatting && this.cam === BATTING_CAMERA
+        ? USER_WINDOW.height * 2 * project(BATTING_CAMERA, vec(0, 0, 2.5)).scale
+        : 0;
+    if (band && trail.length > 1) {
+      // One path, so the overlapping strokes don't build up into blobs.
+      g.moveTo(trail[0].x, trail[0].y);
+      for (const p of trail.slice(1)) g.lineTo(p.x, p.y);
+      g.stroke({ width: band, color: 0xffffff, alpha: 0.16, cap: 'round', join: 'round' });
+    }
     for (let i = 1; i < trail.length; i++) {
       const a = trail[i - 1];
       const b = trail[i];
@@ -761,6 +777,37 @@ export class BatOutView {
           this.res,
         );
       }
+    }
+  }
+
+  /**
+   * Roughly where the pitch is heading, shown on the plate as it is thrown: a ring a little bigger than the ball, a
+   * little off from where it will really cross, which you can swipe through.
+   */
+  private pitchTarget(sim: BatOutSim): void {
+    const pitch = sim.pitch;
+    if (!pitch || sim.phase !== 'pitch' || sim.swing) return;
+    // Off by a set amount for each pitch, so it is a guide rather than the answer.
+    const seed = Math.sin(pitch.end.x * 91.7 + pitch.end.z * 47.3 + pitch.mph) * 43758.5;
+    const a = (seed - Math.floor(seed)) * Math.PI * 2;
+    const off = 0.18;
+    const s = project(
+      BATTING_CAMERA,
+      vec(pitch.end.x + Math.cos(a) * off, 0, pitch.end.z + Math.sin(a) * off),
+    );
+    const r = TARGET_FT * s.scale;
+    const alpha = clamp01(sim.time / 0.25) * (1 - clamp01((sim.time - pitch.seconds) / 0.15));
+    if (alpha <= 0) return;
+    const g = this.belowG;
+    g.circle(s.x, s.y, r)
+      .fill({ color: PAL.gold, alpha: 0.22 * alpha })
+      .stroke({ width: 1.4, color: PAL.gold, alpha: 0.9 * alpha });
+    // Ticks round the ring, like a sight.
+    for (let i = 0; i < 4; i++) {
+      const t = (i * Math.PI) / 2;
+      g.moveTo(s.x + Math.cos(t) * r * 0.7, s.y + Math.sin(t) * r * 0.7)
+        .lineTo(s.x + Math.cos(t) * r * 1.2, s.y + Math.sin(t) * r * 1.2)
+        .stroke({ width: 1.2, color: PAL.gold, alpha: 0.9 * alpha, cap: 'round' });
     }
   }
 
@@ -1173,13 +1220,13 @@ export class BatOutView {
     );
     const lines: [string, number?][] = [
       ['HITTING', PAL.greenDark],
-      ['SWIPE THROUGH THE BALL JUST AS'],
-      ['IT REACHES THE PLATE. UNDER IT'],
-      ['LIFTS IT, OVER IT HITS A GROUNDER.'],
-      ['EARLY PULLS IT TO LEFT, LATE GOES'],
-      ['TO RIGHT. A HARD SWIPE HITS HARDER.'],
-      ["DON'T SWIPE: THE UMP CALLS A BALL"],
-      ['OR A STRIKE.'],
+      ['THE GOLD RING SHOWS ABOUT WHERE THE'],
+      ['PITCH IS COMING. SWIPE THROUGH THE'],
+      ['BALL AS IT REACHES THE PLATE. UNDER'],
+      ['IT LIFTS IT, OVER IT HITS A GROUNDER.'],
+      ['EARLY PULLS IT TO LEFT, LATE GOES TO'],
+      ['RIGHT. A HARD SWIPE HITS HARDER.'],
+      ["DON'T SWIPE: THE UMP CALLS IT."],
       [''],
       ['PITCHING', PAL.greenDark],
       ['SWIPE UP AND LET GO WHERE YOU WANT'],
