@@ -124,7 +124,7 @@ export const pitchFromRead = (
 export const SWING_MIN = 18;
 
 export interface SwingRead {
-  /** Seconds (game time) when the bat crossed the line of the pitch. */
+  /** Seconds (game time) when the bat met the ball's path. */
   t: number;
   /** How far the bat was below the ball (ft): + means under it (lifting it), - over it. */
   dz: number;
@@ -134,47 +134,71 @@ export interface SwingRead {
   power: number;
 }
 
+/** Where the ball looks to be at a game time, read back onto the plate (ft), as the swipe is. */
+export type BallSight = (t: number) => { x: number; z: number } | null;
+
 /**
- * Where a batting swipe met the line the pitch ends on: the first time the swipe crosses its `x` on the plate, with
- * the height of the bat there. Times in the trace are game seconds. Null until it crosses.
+ * Where a batting swipe met the ball as you see it: the first time the swipe crosses the ball's left-right position,
+ * or passes within `reach` (ft) of it, with the height of the bat against the ball there. The ball is followed where
+ * it appears on screen at each moment, so swiping through the ball you see meets it, early or late. Times in the
+ * trace are game seconds. Null until then.
  */
 export const readSwing = (
   trace: readonly TracePoint[],
   toPlate: ToPlate,
-  end: { x: number; z: number },
+  ball: BallSight,
+  reach = 0,
 ): SwingRead | null => {
   if (trace.length < 2 || pathLength(trace) < SWING_MIN) return null;
+  const read = (i: number, f: number, z: number, bz: number): SwingRead => {
+    const p0 = trace[i - 1];
+    const p1 = trace[i];
+    const t = p0.t + (p1.t - p0.t) * f;
+    // Direction and speed over the few points either side of the meeting.
+    const s0 = trace[Math.max(0, i - 4)];
+    const s1 = trace[Math.min(trace.length - 1, i + 2)];
+    const dx = s1.x - s0.x;
+    const dy = s1.y - s0.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const secs = Math.max(s1.t - s0.t, 1 / 120);
+    return {
+      t,
+      dz: bz - z,
+      lift: clamp(-dy / len, -1, 1),
+      // A gentle swipe is ~150 px a second and a hard flick 600 or more.
+      power: clamp((len / secs - 120) / 480, 0, 1),
+    };
+  };
   let prev = toPlate(trace[0].x, trace[0].y);
+  let prevBall = ball(trace[0].t);
   for (let i = 1; i < trace.length; i++) {
     const cur = toPlate(trace[i].x, trace[i].y);
-    if (!prev || !cur) {
-      prev = cur;
-      continue;
-    }
-    const a = prev.x - end.x;
-    const b = cur.x - end.x;
-    if (a === 0 || a * b < 0 || b === 0) {
-      const f = a === b ? 0 : a / (a - b);
-      const z = prev.z + (cur.z - prev.z) * f;
-      const p0 = trace[i - 1];
-      const p1 = trace[i];
-      const t = p0.t + (p1.t - p0.t) * f;
-      // Direction and speed over the few points either side of the crossing.
-      const s0 = trace[Math.max(0, i - 4)];
-      const s1 = trace[Math.min(trace.length - 1, i + 2)];
-      const dx = s1.x - s0.x;
-      const dy = s1.y - s0.y;
-      const len = Math.hypot(dx, dy) || 1;
-      const secs = Math.max(s1.t - s0.t, 1 / 120);
-      return {
-        t,
-        dz: end.z - z,
-        lift: clamp(-dy / len, -1, 1),
-        // A gentle swipe is ~150 px a second and a hard flick 600 or more.
-        power: clamp((len / secs - 120) / 480, 0, 1),
-      };
+    const curBall = ball(trace[i].t);
+    if (prev && cur && prevBall && curBall) {
+      const a = prev.x - prevBall.x;
+      const b = cur.x - curBall.x;
+      if (a === 0 || a * b < 0 || b === 0) {
+        const f = a === b ? 0 : a / (a - b);
+        return read(i, f, prev.z + (cur.z - prev.z) * f, prevBall.z + (curBall.z - prevBall.z) * f);
+      }
+      // A swipe that stops short of the ball, or goes up or down past it, still meets it when the bat's width
+      // reaches: the nearest point of this stretch of the swipe to the ball.
+      if (reach > 0) {
+        const ex = cur.x - prev.x;
+        const ez = cur.z - prev.z;
+        const l2 = ex * ex + ez * ez || 1;
+        const f = clamp(((curBall.x - prev.x) * ex + (curBall.z - prev.z) * ez) / l2, 0, 1);
+        const x = prev.x + ex * f;
+        const z = prev.z + ez * f;
+        if (
+          Math.hypot(curBall.x - x, curBall.z - z) <= reach &&
+          Math.abs(curBall.x - x) <= reach * 0.5
+        )
+          return read(i, f, z, curBall.z);
+      }
     }
     prev = cur;
+    prevBall = curBall;
   }
   return null;
 };

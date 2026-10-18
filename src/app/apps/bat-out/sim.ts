@@ -14,8 +14,8 @@ import {
   type GameState,
   type Mode,
 } from './rules';
-import { TIMING_WINDOW, computerSwing, contact, type Contact, type Swing } from './swing';
-import type { Vec3 } from './camera';
+import { USER_WINDOW, computerSwing, contact, type Contact, type Swing } from './swing';
+import { BATTING_CAMERA, project, toPlatePlane, type Vec3 } from './camera';
 
 /**
  * title: the menu. help: how to play. ready: the pitcher on the mound before a pitch (you swipe to pitch here).
@@ -88,6 +88,19 @@ export class BatOutSim {
     return pitchAt(this.pitch, Math.min(this.time / this.pitch.seconds, MITT_U));
   }
 
+  /**
+   * Where the pitch looks to be from the plate `t` game seconds after release, read back onto the plate: the ball you
+   * see, which is what a swipe has to go through. Null before release.
+   */
+  ballSight(t: number): { x: number; z: number } | null {
+    if (!this.pitch || t < 0) return null;
+    const s = project(
+      BATTING_CAMERA,
+      pitchAt(this.pitch, Math.min(t / this.pitch.seconds, MITT_U)),
+    );
+    return s.depth > 0 ? toPlatePlane(BATTING_CAMERA, s.x, s.y) : null;
+  }
+
   drainEvents(): SimEvent[] {
     const out = this.events;
     this.events = [];
@@ -145,7 +158,7 @@ export class BatOutSim {
       return;
     this.committed = true;
     const swing: Swing = { dt: (at - this.pitch.seconds) / PITCH_SLOW, dz, lift, power };
-    const c = contact(swing, this.pitch, this.rng);
+    const c = contact(swing, this.pitch, this.rng, USER_WINDOW);
     this.swing = { at: Math.min(at, this.time), hit: c !== null };
     this.events.push(c ? 'crack' : 'swish');
     if (c) this.startPlay(c);
@@ -222,7 +235,7 @@ export class BatOutSim {
     // A late swing can still meet it just behind the plate, so the pitch isn't over until that chance has gone.
     if (
       this.time <
-      Math.max(pitch.seconds * MITT_U, pitch.seconds + TIMING_WINDOW * PITCH_SLOW + 0.05)
+      Math.max(pitch.seconds * MITT_U, pitch.seconds + USER_WINDOW.time * PITCH_SLOW + 0.05)
     )
       return;
     this.events.push('mitt');

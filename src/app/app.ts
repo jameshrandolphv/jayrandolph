@@ -4,6 +4,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter, map } from 'rxjs';
 import { SoundSettings } from './core/sound-settings';
+import { DOCK_APP_IDS } from './os/apps';
 import { ContextMenu, ContextMenuService } from './os/context-menu';
 import { Desktop } from './os/desktop';
 import { FileSystemService } from './os/filesystem.service';
@@ -74,7 +75,7 @@ export class App {
 
   protected readonly dockItems = computed(() => [
     { id: 'desktop', name: 'Desktop', path: '', icon: 'desktop' },
-    ...this.fs.root().children.filter((c) => c.kind === 'app' && c.dock !== false),
+    ...this.fs.root().children.filter((c) => c.kind === 'app' && DOCK_APP_IDS.has(c.id)),
   ]);
 
   /** Opens on press like a Mac menu, and a second press closes it. */

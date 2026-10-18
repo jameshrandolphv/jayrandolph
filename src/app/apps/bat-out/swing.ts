@@ -25,6 +25,16 @@ export interface Contact {
 export const TIMING_WINDOW = 0.075;
 /** ...and with the bat within this far (ft) of the middle of the ball. */
 export const HEIGHT_WINDOW = 0.5;
+
+/** How forgiving a swing is: the timing (real seconds) and height (ft) either side of perfect that still hit it. */
+export interface SwingWindow {
+  time: number;
+  height: number;
+}
+/** The computer batter's bat. */
+export const CPU_WINDOW: SwingWindow = { time: TIMING_WINDOW, height: HEIGHT_WINDOW };
+/** Yours is more forgiving: a finger is a rougher bat than the computer's, and the game should be fun to hit in. */
+export const USER_WINDOW: SwingWindow = { time: 0.11, height: 0.8 };
 /** Contact this thin only nicks it: a foul tip straight back. */
 const TIP = 0.88;
 
@@ -36,9 +46,14 @@ export const realTiming = (gameSeconds: number): number => gameSeconds / PITCH_S
  * hard swipe hits it hardest; under the ball lifts it, over it beats it into the ground; early pulls it (to left,
  * for a right-handed batter) and late pushes it the other way, foul when too far either way.
  */
-export const contact = (swing: Swing, pitch: Pitch, rng: Rng): Contact | null => {
-  const t = swing.dt / TIMING_WINDOW;
-  const h = swing.dz / HEIGHT_WINDOW;
+export const contact = (
+  swing: Swing,
+  pitch: Pitch,
+  rng: Rng,
+  window: SwingWindow = CPU_WINDOW,
+): Contact | null => {
+  const t = swing.dt / window.time;
+  const h = swing.dz / window.height;
   if (Math.abs(t) > 1 || Math.abs(h) > 1) return null;
   if (Math.abs(h) > TIP)
     return { ev: 50 + rng() * 30, la: 15 + rng() * 35, spray: 180 - 30 + rng() * 60 };
