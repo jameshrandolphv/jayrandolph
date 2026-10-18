@@ -1,68 +1,79 @@
-import { Pixels } from '../../games/pixels';
+import type { Graphics } from 'pixi.js';
+import { COLORS } from '../flights/art';
+import { PARK_UI } from '../chaos-park/ui';
 
-/** A chunky handheld palette: bright grass, sandy dirt and two teams in red and blue. */
+/** Chaos Park's cartoon look: soft spring greens, warm infield dirt, everything outlined in ink. */
 export const PAL = {
-  sky: 0x8fd3ff,
-  skyLow: 0xc4ecff,
+  ink: COLORS.ink,
+  sky: 0x8fd0f0,
+  skyLow: 0xd2eef9,
   cloud: 0xffffff,
-  grass: 0x4cb03a,
-  grassDark: 0x3f9a31,
-  dirt: 0xd49a58,
-  dirtDark: 0xb87d40,
-  track: 0xc0864a,
+  grass: 0x93d465,
+  grassDark: 0x86c859,
+  grassLight: 0xa6df7a,
+  dirt: 0xe2b77c,
+  dirtDark: 0xc99a5c,
+  track: 0xd7a96d,
   chalk: 0xffffff,
-  wall: 0x2d6a3a,
-  wallTop: 0xf2c83c,
-  stands: 0x7c6ca4,
-  standsDark: 0x5c4f80,
-  crowd: [0xf2c6a0, 0xffe066, 0xff8a80, 0x80d8ff, 0xffffff],
-  ink: 0x1b1b2a,
-  panel: 0xfff4d6,
-  panelEdge: 0x8a5a2b,
-  button: 0xd8382e,
-  buttonDark: 0x8e1f19,
-  buttonAlt: 0x2f62c9,
-  buttonAltDark: 0x1c3c80,
+  wall: PARK_UI.greenDark,
+  wallTop: COLORS.gold,
+  canopies: [0x5fa83b, 0x6cb544, 0x4f9a34],
+  blossom: [0xf6b3cb, 0xf9c9dc, 0xf3a0bf],
   zone: 0xffffff,
-  shadow: 0x1b3a12,
+  shadow: 0x2f5a1f,
   ball: 0xffffff,
-  seam: 0xe0383e,
-  marker: 0xffe94a,
+  seam: 0xd8433a,
+  marker: COLORS.gold,
+  wood: PARK_UI.wood,
+  woodDark: PARK_UI.woodDark,
+  cream: PARK_UI.cream,
+  brass: PARK_UI.brass,
+  green: PARK_UI.green,
+  greenDark: PARK_UI.greenDark,
+  plank: PARK_UI.plank,
+  plankDark: PARK_UI.plankDark,
+  red: COLORS.red,
+  redDark: COLORS.redDark,
+  blue: COLORS.blue,
+  blueDark: COLORS.blueDark,
+  gold: COLORS.gold,
 } as const;
 
 /** Team colours: you (the home side) in red, the computer in blue. */
 export interface Kit {
-  cap: string;
-  jersey: string;
-  trim: string;
-  pants: string;
-  socks: string;
+  cap: number;
+  jersey: number;
+  trim: number;
+  pants: number;
+  socks: number;
 }
 
 export const HOME_KIT: Kit = {
-  cap: '#c62a22',
-  jersey: '#ffffff',
-  trim: '#c62a22',
-  pants: '#f2f2f2',
-  socks: '#c62a22',
+  cap: COLORS.red,
+  jersey: 0xffffff,
+  trim: COLORS.red,
+  pants: 0xf1ede4,
+  socks: COLORS.red,
 };
 export const AWAY_KIT: Kit = {
-  cap: '#1f4fb4',
-  jersey: '#9cc4ff',
-  trim: '#1f4fb4',
-  pants: '#d6d6d6',
-  socks: '#1f4fb4',
+  cap: COLORS.blueDark,
+  jersey: 0x9cc4ef,
+  trim: COLORS.blueDark,
+  pants: 0xdcdcdc,
+  socks: COLORS.blueDark,
 };
 
-const SKINS = ['#f1c8a0', '#d9a271', '#a8714a', '#7a4a2c', '#f6d7b8'];
-export const skinFor = (id: number): string =>
+const SKINS = [0xf1c8a0, 0xd9a271, 0xa8714a, 0x7a4a2c, 0xf6d7b8];
+export const skinFor = (id: number): number =>
   SKINS[((id % SKINS.length) + SKINS.length) % SKINS.length];
 
-const BAT = '#c9893d';
-const GLOVE = '#7a4a22';
-const SHOE = '#222222';
-const OUTLINE = '#1b1b2a';
+const BAT = 0xc9893d;
+const GLOVE = 0x8a5228;
+const SHOE = 0x2e2a2c;
+const GEAR = 0x3a3a48;
+const INK = PAL.ink;
 
+/**
 /**
  * A pose as joint positions in figure units: x right, y up from the feet, the figure 1 tall. `l` and `r` are the
  * figure's own left and right as drawn on screen.
@@ -387,69 +398,53 @@ export const POSES = {
 
 export type PoseName = keyof typeof POSES;
 
-/** A thick line of round dots. */
-const limb = (
-  px: Pixels,
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-  w: number,
-  color: string,
-): void => {
-  const steps = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0)));
-  const r = Math.max(0.5, w / 2);
-  for (let i = 0; i <= steps; i++) {
-    const f = i / steps;
-    px.ellipse(x0 + (x1 - x0) * f, y0 + (y1 - y0) * f, r, r, color);
-  }
-};
-
 export interface FigureStyle {
   kit: Kit;
-  skin: string;
+  skin: number;
   /** Catcher's gear: a mask and chest protector. */
   gear?: boolean;
 }
 
 /**
- * Paints a ballplayer `h` px tall in a pose, outlined in ink. The canvas leaves room for a bat or a raised glove;
- * `foot` is where his feet are on it, so sprites can be anchored there.
+ * Draws a ballplayer `h` tall in a pose, his feet at (x, y), as Chaos Park draws its people: flat colours with an ink
+ * outline. Each part is stroked twice, wide in ink and then narrower in its colour, so the outline follows the shape.
  */
-export const figure = (
+export const drawFigure = (
+  g: Graphics,
   pose: Pose,
+  x: number,
+  y: number,
   h: number,
   style: FigureStyle,
-): { pixels: Pixels; footX: number; footY: number } => {
-  const w = Math.ceil(h * 1.6) + 4;
-  const tall = Math.ceil(h * 1.15) + 4;
-  const px = new Pixels(w, tall);
-  const ox = w / 2;
-  const oy = tall - 2;
-  const at = ([x, y]: [number, number]): [number, number] => [ox + x * h, oy - y * h];
-  const t = Math.max(1, h * 0.075);
+): void => {
+  const at = ([px, py]: [number, number]): [number, number] => [x + px * h, y - py * h];
+  const t = h * 0.08;
+  const o = Math.min(1.4, Math.max(0.5, h * 0.025));
   const { kit, skin } = style;
-
-  const leg = (hip: [number, number], knee: [number, number], foot: [number, number]): void => {
-    const [hx, hy] = at(hip);
-    const [kx, ky] = at(knee);
-    const [fx, fy] = at(foot);
-    limb(px, hx, hy, kx, ky, t * 1.25, kit.pants);
-    limb(px, kx, ky, fx, fy - t * 0.6, t * 1.05, kit.socks);
-    px.ellipse(fx, fy - t * 0.4, t * 0.9, t * 0.55, SHOE);
+  const seg = (a: [number, number], b: [number, number], w: number, color: number): void => {
+    const [ax, ay] = at(a);
+    const [bx, by] = at(b);
+    g.moveTo(ax, ay)
+      .lineTo(bx, by)
+      .stroke({ width: w + o * 2, color: INK, cap: 'round' })
+      .moveTo(ax, ay)
+      .lineTo(bx, by)
+      .stroke({ width: w, color, cap: 'round' });
   };
-  const arm = (
-    shoulder: [number, number],
-    elbow: [number, number],
-    hand: [number, number],
-    glove: boolean,
-  ): void => {
-    const [sx, sy] = at(shoulder);
-    const [ex, ey] = at(elbow);
-    const [hx, hy] = at(hand);
-    limb(px, sx, sy, ex, ey, t, kit.jersey);
-    limb(px, ex, ey, hx, hy, t * 0.85, skin);
-    if (glove) px.ellipse(hx, hy, t * 1.1, t * 1.1, GLOVE);
+  const dot = (p: [number, number], rx: number, ry: number, color: number): void => {
+    const [px, py] = at(p);
+    g.ellipse(px, py, rx, ry).fill(color).stroke({ width: o, color: INK });
+  };
+
+  const leg = (hip: Pose['pl'], knee: Pose['kl'], foot: Pose['fl']): void => {
+    seg(knee, [foot[0], foot[1] + 0.03], t * 1.05, kit.socks);
+    seg(hip, knee, t * 1.3, kit.pants);
+    dot([foot[0], foot[1] + 0.015], t * 0.85, t * 0.5, SHOE);
+  };
+  const arm = (shoulder: Pose['sl'], elbow: Pose['el'], hand: Pose['hl'], glove: boolean): void => {
+    seg(elbow, hand, t * 0.8, skin);
+    seg(shoulder, elbow, t, kit.jersey);
+    if (glove) dot(hand, t * 1.05, t * 1.05, GLOVE);
   };
 
   // Back to front: legs, then (seen from behind) the arms, the body and head, then (from the front) the arms and bat.
@@ -463,55 +458,60 @@ export const figure = (
   const [srx, sry] = at(pose.sr);
   const [plx, ply] = at(pose.pl);
   const [prx, pry] = at(pose.pr);
-  px.tri(
-    slx - t * 0.4,
-    sly - t * 0.3,
-    srx + t * 0.4,
-    sry - t * 0.3,
-    prx + t * 0.3,
-    pry,
-    kit.jersey,
-  );
-  px.tri(slx - t * 0.4, sly - t * 0.3, prx + t * 0.3, pry, plx - t * 0.3, ply, kit.jersey);
-  // A belt and, on the front, a placket of trim.
-  px.rect(
-    Math.min(plx, prx) - t * 0.3,
-    Math.min(ply, pry) - t * 0.35,
-    Math.abs(prx - plx) + t * 0.6,
-    Math.max(1, t * 0.5),
-    kit.trim,
-  );
-  if (style.gear) px.tri(slx, sly, srx, sry, (plx + prx) / 2, (ply + pry) / 2, '#3a3a48');
-  else if (pose.front)
-    px.rect(
-      (slx + srx) / 2 - Math.max(0.5, t * 0.2),
-      sly,
-      Math.max(1, t * 0.4),
-      ply - sly,
-      kit.trim,
-    );
-  else px.rect((slx + srx) / 2 - t * 0.6, sly + t * 0.6, t * 1.2, t * 1.4, kit.trim);
+  const pad = t * 0.45;
+  const body = [
+    slx - pad,
+    sly - pad * 0.6,
+    srx + pad,
+    sry - pad * 0.6,
+    prx + pad * 0.7,
+    pry + pad * 0.3,
+    plx - pad * 0.7,
+    ply + pad * 0.3,
+  ];
+  g.poly(body)
+    .fill(style.gear ? GEAR : kit.jersey)
+    .stroke({ width: o, color: INK, join: 'round' });
+  // A belt and, on the front, a stripe of trim down the buttons; on the back, a number.
+  g.moveTo(plx - pad * 0.6, ply + pad * 0.1)
+    .lineTo(prx + pad * 0.6, pry + pad * 0.1)
+    .stroke({ width: t * 0.45, color: kit.trim });
+  if (!style.gear) {
+    if (pose.front)
+      g.moveTo((slx + srx) / 2, (sly + sry) / 2)
+        .lineTo((plx + prx) / 2, (ply + pry) / 2)
+        .stroke({ width: Math.max(0.4, t * 0.3), color: kit.trim });
+    else
+      g.roundRect((slx + srx) / 2 - t * 0.6, sly + t * 0.5, t * 1.2, t * 1.5, t * 0.2).fill(
+        kit.trim,
+      );
+  }
 
   const [hx, hy] = at(pose.head);
-  const hr = h * 0.085;
-  px.ellipse(hx, hy, hr, hr * 1.08, skin);
+  const hr = h * 0.09;
+  g.ellipse(hx, hy, hr, hr * 1.05)
+    .fill(skin)
+    .stroke({ width: o, color: INK });
   // The cap: its crown over the top of the head and, from the front, the brim.
-  px.ellipse(hx, hy - hr * 0.35, hr * 1.02, hr * 0.75, kit.cap);
-  px.rect(hx - hr * 1.02, hy - hr * 0.35, hr * 2.04, hr * 0.35, kit.cap);
-  if (pose.front) px.rect(hx - hr * 1.2, hy - hr * 0.1, hr * 2.4, Math.max(1, hr * 0.32), kit.cap);
-  else px.ellipse(hx, hy + hr * 0.1, hr, hr * 0.5, '#5a3a22');
-  if (style.gear && pose.front) {
-    for (let k = -1; k <= 1; k++)
-      px.rect(hx - hr, hy + hr * 0.2 * k + hr * 0.25, hr * 2, Math.max(1, hr * 0.15), '#3a3a48');
-  } else if (pose.front && h >= 20) {
-    px.rect(
-      hx - hr * 0.45,
-      hy + hr * 0.15,
-      Math.max(1, hr * 0.25),
-      Math.max(1, hr * 0.25),
-      OUTLINE,
-    );
-    px.rect(hx + hr * 0.2, hy + hr * 0.15, Math.max(1, hr * 0.25), Math.max(1, hr * 0.25), OUTLINE);
+  g.moveTo(hx - hr * 1.02, hy - hr * 0.05)
+    .arc(hx, hy - hr * 0.05, hr * 1.02, Math.PI, 0)
+    .closePath()
+    .fill(kit.cap)
+    .stroke({ width: o, color: INK, join: 'round' });
+  if (pose.front) {
+    g.roundRect(hx - hr * 1.25, hy - hr * 0.2, hr * 2.5, hr * 0.38, hr * 0.15)
+      .fill(kit.cap)
+      .stroke({ width: o, color: INK });
+    if (style.gear) {
+      for (let k = 0; k < 3; k++)
+        g.moveTo(hx - hr * 0.8, hy + hr * (0.35 + k * 0.22))
+          .lineTo(hx + hr * 0.8, hy + hr * (0.35 + k * 0.22))
+          .stroke({ width: Math.max(0.4, hr * 0.12), color: GEAR });
+    } else if (h >= 14) {
+      g.circle(hx - hr * 0.35, hy + hr * 0.4, hr * 0.13)
+        .circle(hx + hr * 0.35, hy + hr * 0.4, hr * 0.13)
+        .fill(INK);
+    }
   }
 
   if (pose.front) {
@@ -519,30 +519,27 @@ export const figure = (
     arm(pose.sr, pose.er, pose.hr, pose.glove === 'r');
   }
   if (pose.bat) {
-    const [ax, ay] = at([(pose.hl[0] + pose.hr[0]) / 2, (pose.hl[1] + pose.hr[1]) / 2]);
-    const [bx, by] = at(pose.bat);
-    const dx = bx - ax;
-    const dy = by - ay;
+    const hands: [number, number] = [(pose.hl[0] + pose.hr[0]) / 2, (pose.hl[1] + pose.hr[1]) / 2];
+    const mid: [number, number] = [
+      hands[0] + (pose.bat[0] - hands[0]) * 0.45,
+      hands[1] + (pose.bat[1] - hands[1]) * 0.45,
+    ];
     // Thin at the handle, thick at the barrel.
-    limb(px, ax, ay, ax + dx * 0.45, ay + dy * 0.45, t * 0.55, BAT);
-    limb(px, ax + dx * 0.45, ay + dy * 0.45, bx, by, t * 0.95, BAT);
+    seg(mid, pose.bat, t * 0.95, BAT);
+    seg(hands, mid, t * 0.5, BAT);
   }
-  return { pixels: h >= 10 ? px.outlined(OUTLINE) : px, footX: ox, footY: oy };
 };
 
-/** A baseball: white with red stitches when it is big enough to see them. */
-export const ballPixels = (r: number): Pixels => {
-  const size = Math.ceil(r * 2) + 2;
-  const p = new Pixels(size, size);
-  const c = size / 2;
-  p.ellipse(c, c, r, r, '#ffffff');
-  if (r >= 3) {
-    p.set(c - r * 0.5, c - r * 0.3, '#e0383e')
-      .set(c - r * 0.55, c + r * 0.1, '#e0383e')
-      .set(c - r * 0.45, c + r * 0.45, '#e0383e');
-    p.set(c + r * 0.5, c - r * 0.4, '#e0383e')
-      .set(c + r * 0.55, c, '#e0383e')
-      .set(c + r * 0.45, c + r * 0.4, '#e0383e');
+/** A baseball, white with red stitches when it is big enough to see them. */
+export const drawBall = (g: Graphics, x: number, y: number, r: number): void => {
+  g.circle(x, y, r)
+    .fill(PAL.ball)
+    .stroke({ width: Math.min(1, Math.max(0.35, r * 0.25)), color: INK });
+  if (r >= 2.5) {
+    g.moveTo(x - r * 0.55, y - r * 0.6)
+      .quadraticCurveTo(x - r * 0.2, y, x - r * 0.55, y + r * 0.6)
+      .moveTo(x + r * 0.55, y - r * 0.6)
+      .quadraticCurveTo(x + r * 0.2, y, x + r * 0.55, y + r * 0.6)
+      .stroke({ width: Math.max(0.4, r * 0.12), color: PAL.seam });
   }
-  return r >= 2 ? p.outlined('#5a5a6a') : p;
 };

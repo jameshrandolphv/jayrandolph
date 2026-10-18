@@ -1,14 +1,13 @@
-import { Container, Graphics, RenderTexture, Sprite, Texture, type Application } from 'pixi.js';
+import { Container, Graphics, Text, TextStyle, type Application } from 'pixi.js';
 import type { LogicalSize } from '../../games/game-canvas';
-import { renderText, textWidth } from '../../games/pixel-font';
-import type { Pixels } from '../../games/pixels';
+import { HEADLINE_FONT, SCRIPT_FONT } from '../flights/art';
 import {
   AWAY_KIT,
   HOME_KIT,
   PAL,
   POSES,
-  ballPixels,
-  figure,
+  drawBall,
+  drawFigure,
   mirror,
   skinFor,
   type Kit,
@@ -55,18 +54,36 @@ import { ballAt, trackAt, type Play } from './play';
 import { MODES, isGame, outcome, userBats, type GameState } from './rules';
 import { MITT_U, type BatOutSim } from './sim';
 
-const hex = (n: number): string => `#${n.toString(16).padStart(6, '0')}`;
-const ease = (t: number): number => 1 - (1 - Math.min(1, Math.max(0, t))) ** 3;
-
-const texture = (pixels: Pixels): Texture => {
-  const tex = Texture.from(pixels.toCanvas());
-  tex.source.scaleMode = 'nearest';
-  return tex;
+const INK = PAL.ink;
+const clamp01 = (t: number): number => Math.min(1, Math.max(0, t));
+const ease = (t: number): number => 1 - (1 - clamp01(t)) ** 3;
+/** Overshoots a little before settling, for calls popping onto the screen. */
+const pop = (t: number): number => {
+  const u = clamp01(t);
+  return 1 + 2.2 * (u - 1) ** 3 + 1.2 * (u - 1) ** 2;
 };
 
-/** Sprites handed out afresh each frame and hidden when not used, so drawing reads top to bottom. */
-class SpritePool {
-  private readonly sprites: Sprite[] = [];
+interface Label {
+  text: string;
+  size: number;
+  fill: number;
+  font?: string;
+  /** An outline round the letters, `width` in font px. */
+  stroke?: { color: number; width: number };
+  /** 0 left, 0.5 centre, 1 right. */
+  align?: number;
+  alpha?: number;
+  rotation?: number;
+  scale?: number;
+  letterSpacing?: number;
+}
+
+/**
+ * Text objects handed out afresh each frame and hidden when not used, so drawing reads top to bottom. A slot keeps
+ * its text until it is given something different, so steady text is not rasterised again every frame.
+ */
+class TextPool {
+  private readonly slots: { t: Text; key: string }[] = [];
   private used = 0;
   constructor(private readonly layer: Container) {}
 
@@ -74,42 +91,48 @@ class SpritePool {
     this.used = 0;
   }
 
-  take(tex: Texture): Sprite {
-    let s = this.sprites[this.used];
-    if (!s) {
-      s = new Sprite(tex);
-      this.sprites.push(s);
-      this.layer.addChild(s);
+  take(l: Label, x: number, y: number, resolution: number): Text {
+    let slot = this.slots[this.used];
+    if (!slot) {
+      slot = { t: new Text({ text: '' }), key: '' };
+      this.slots.push(slot);
+      this.layer.addChild(slot.t);
     }
     this.used++;
-    s.texture = tex;
-    s.visible = true;
-    s.alpha = 1;
-    s.scale.set(1);
-    s.anchor.set(0);
-    s.zIndex = 0;
-    return s;
+    const { t } = slot;
+    const key = `${l.text}|${l.size}|${l.fill}|${l.font}|${l.stroke?.color}|${l.stroke?.width}|${l.letterSpacing}|${resolution}`;
+    if (slot.key !== key) {
+      slot.key = key;
+      t.style = new TextStyle({
+        fontFamily: l.font ?? HEADLINE_FONT,
+        fontSize: l.size,
+        fill: l.fill,
+        align: 'center',
+        letterSpacing: l.letterSpacing ?? 0,
+        stroke: l.stroke ? { ...l.stroke, join: 'round' } : undefined,
+        padding: 4,
+      });
+      t.resolution = resolution;
+      t.text = l.text;
+    }
+    t.visible = true;
+    t.anchor.set(l.align ?? 0.5, 0.5);
+    t.position.set(x, y);
+    t.alpha = l.alpha ?? 1;
+    t.rotation = l.rotation ?? 0;
+    t.scale.set(l.scale ?? 1);
+    return t;
   }
 
   end(): void {
-    for (let i = this.used; i < this.sprites.length; i++) this.sprites[i].visible = false;
+    for (let i = this.used; i < this.slots.length; i++) this.slots[i].t.visible = false;
   }
 }
 
-interface TextOpts {
-  scale?: number;
-  fill?: string | readonly [string, string];
-  outline?: string | null;
-  /** 0 left, 0.5 centre, 1 right. */
-  align?: number;
-  alpha?: number;
-}
-
-/** Figure texture heights (px); a figure is drawn from the nearest one and scaled the rest of the way. */
-const SIZES = [10, 14, 20, 28, 40, 60, 90, 130] as const;
 /** Players are drawn this tall (ft) when the camera is close enough; far off they never shrink below `MIN_PX`. */
 const PLAYER_FT = 6.2;
 const MIN_PX = 11;
+const MAX_PX = 80;
 /** The ball is drawn larger than life so it is easy to follow. */
 const BALL_SCALE = 1.7;
 const NEAR = 1;
@@ -147,71 +170,96 @@ const WALL: Vec3[] = (() => {
   ];
 })();
 
+/** Moves a point on the wall straight out from the middle of the park. */
+const beyond = (p: Vec3, out: number, z = 0): Vec3 => {
+  const r = Math.hypot(p.x, p.y - 30) || 1;
+  return vec(p.x + (p.x / r) * out, p.y + ((p.y - 30) / r) * out, z);
+};
+
+interface Tree {
+  at: Vec3;
+  /** Canopy radius (ft). */
+  r: number;
+  color: number;
+}
+
+/** The park's trees, in rows round the outside of the wall, as Chaos Park's park is ringed with them. */
+const TREES: Tree[] = (() => {
+  const trees: Tree[] = [];
+  let seed = 7;
+  const rnd = (): number => {
+    seed = (seed * 16807) % 2147483647;
+    return seed / 2147483647;
+  };
+  for (let i = 0; i < WALL.length; i++) {
+    const a = WALL[i];
+    const b = WALL[(i + 1) % WALL.length];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    for (let d = 0; d < len; d += 22) {
+      const f = d / len;
+      const p = vec(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f);
+      for (let row = 0; row < 2; row++) {
+        const r = 11 + rnd() * 6 + row * 4;
+        const blossom = rnd() < 0.3;
+        const palette = blossom ? PAL.blossom : PAL.canopies;
+        trees.push({
+          at: beyond(p, 16 + row * 26 + rnd() * 10, r + 8),
+          r,
+          color: palette[Math.floor(rnd() * palette.length)],
+        });
+      }
+    }
+  }
+  return trees;
+})();
+
 export class BatOutView {
   private readonly scene = new Container();
   private readonly fieldG = new Graphics();
   private readonly belowG = new Graphics();
-  private readonly actors = new Container();
+  private readonly actorsG = new Graphics();
   private readonly aboveG = new Graphics();
-  private readonly hud = new Container();
   private readonly hudG = new Graphics();
+  private readonly hudLayer = new Container();
   private readonly cardG = new Graphics();
-  private readonly cards = new Container();
-  private readonly actorPool: SpritePool;
-  private readonly hudText: SpritePool;
-  private readonly cardText: SpritePool;
-  private readonly display: Sprite;
-  private rt: RenderTexture;
-  private readonly textCache = new Map<string, Texture>();
-  private readonly figCache = new Map<
-    string,
-    { tex: Texture; fx: number; fy: number; h: number }
-  >();
-  private readonly ballTex = [1, 1.5, 2, 3, 4, 5].map((r) => ({ r, tex: texture(ballPixels(r)) }));
+  private readonly cardLayer = new Container();
+  private readonly hudText = new TextPool(this.hudLayer);
+  private readonly cardText = new TextPool(this.cardLayer);
+  private readonly actors: { depth: number; draw: () => void }[] = [];
   private cam: Camera = BATTING_CAMERA;
   private playTarget = vec(0, 60);
   private clock = 0;
   private lastPlay: Play | null = null;
+  /** Text is rasterised at this many pixels per logical px, so it stays sharp however far the game is scaled up. */
+  private res = 2;
 
   constructor(
     private readonly app: Application,
-    root: Container,
+    private readonly root: Container,
     private readonly game: BatOutGame,
   ) {
-    this.actors.sortableChildren = true;
     this.scene.addChild(
       this.fieldG,
       this.belowG,
-      this.actors,
+      this.actorsG,
       this.aboveG,
       this.hudG,
-      this.hud,
+      this.hudLayer,
       this.cardG,
-      this.cards,
+      this.cardLayer,
     );
-    this.actorPool = new SpritePool(this.actors);
-    this.hudText = new SpritePool(this.hud);
-    this.cardText = new SpritePool(this.cards);
-    this.rt = RenderTexture.create({
-      width: WIDTH,
-      height: HEIGHT,
-      resolution: 1,
-      scaleMode: 'nearest',
-    });
-    this.display = new Sprite(this.rt);
-    root.addChild(this.display);
+    root.addChild(this.scene);
   }
 
   update(alpha: number, deltaMs: number, bounds: Bounds, size: LogicalSize): void {
     void alpha;
     this.clock += deltaMs / 1000;
-    const w = Math.max(1, Math.ceil(bounds.right - bounds.left));
-    const h = Math.max(1, Math.ceil(bounds.bottom - bounds.top));
-    if (this.rt.width !== w || this.rt.height !== h) this.rt.resize(w, h);
-    this.display.texture = this.rt;
-    this.display.position.set(bounds.left, bounds.top);
+    this.res = Math.min(
+      12,
+      Math.max(2, Math.ceil(this.root.scale.x * this.app.renderer.resolution)),
+    );
     // Drawn about the middle of the logical screen.
-    this.scene.position.set(size.width / 2 - bounds.left, size.height / 2 - bounds.top);
+    this.scene.position.set(size.width / 2, size.height / 2);
     const view = {
       left: bounds.left - size.width / 2,
       right: bounds.right - size.width / 2,
@@ -221,22 +269,20 @@ export class BatOutView {
 
     const { sim } = this.game;
     this.cam = this.chooseCamera(sim, deltaMs / 1000);
-    for (const g of [this.fieldG, this.belowG, this.aboveG, this.hudG, this.cardG]) g.clear();
-    this.actorPool.begin();
+    for (const g of [this.fieldG, this.belowG, this.actorsG, this.aboveG, this.hudG, this.cardG])
+      g.clear();
     this.hudText.begin();
     this.cardText.begin();
 
     this.drawField(view);
     this.drawActors(sim);
-    this.drawEffects(sim);
-    if (sim.state && sim.phase !== 'title' && sim.phase !== 'help')
+    this.drawEffects(sim, view);
+    if (sim.state && sim.phase !== 'title' && sim.phase !== 'help' && sim.phase !== 'over')
       this.drawHud(sim, sim.state, view);
     this.drawCards(sim, view);
 
-    this.actorPool.end();
     this.hudText.end();
     this.cardText.end();
-    this.app.renderer.render({ container: this.scene, target: this.rt, clear: true });
   }
 
   // Cameras.
@@ -291,9 +337,12 @@ export class BatOutView {
     return out;
   }
 
-  private fillPoly(g: Graphics, pts: readonly Vec3[], color: number, alpha = 1): void {
+  /** Fills a projected polygon, outlined in ink `outline` px wide if given. */
+  private fillPoly(g: Graphics, pts: readonly Vec3[], color: number, outline = 0, alpha = 1): void {
     const flat = this.poly(pts);
-    if (flat.length >= 6) g.poly(flat).fill({ color, alpha });
+    if (flat.length < 6) return;
+    g.poly(flat).fill({ color, alpha });
+    if (outline) g.stroke({ width: outline, color: INK, join: 'round' });
   }
 
   /** A strip of ground between two points, `width` ft across. */
@@ -326,50 +375,38 @@ export class BatOutView {
       cam,
       vec(cam.pos.x + (cam.at.x - cam.pos.x) * 50, cam.pos.y + (cam.at.y - cam.pos.y) * 50, 0),
     ).y;
-    g.rect(view.left, horizon - 30, view.right - view.left, 30).fill(PAL.skyLow);
-    // Clouds drift slowly.
+    g.rect(view.left, horizon - 40, view.right - view.left, 40).fill(PAL.skyLow);
+    // Soft clouds drift slowly.
     for (let i = 0; i < 4; i++) {
       const cx = view.left + ((i * 61 + this.clock * 3) % (view.right - view.left + 60)) - 30;
-      const cy = horizon - 50 - ((i * 37) % 40);
-      g.ellipse(cx, cy, 14, 4)
-        .fill(PAL.cloud)
-        .ellipse(cx + 8, cy - 3, 8, 4)
-        .fill(PAL.cloud);
+      const cy = horizon - 56 - ((i * 37) % 44);
+      g.ellipse(cx, cy, 13, 4.5)
+        .ellipse(cx + 7, cy - 3.5, 7, 4.5)
+        .ellipse(cx - 6, cy - 2, 6, 3.5)
+        .fill({ color: PAL.cloud, alpha: 0.9 });
     }
 
-    // Stands behind the wall, rising away from the field, with the crowd in them.
-    const rise = (p: Vec3, out: number, z: number): Vec3 => {
-      const r = Math.hypot(p.x, p.y - 30) || 1;
-      return vec(p.x + (p.x / r) * out, p.y + ((p.y - 30) / r) * out, z);
-    };
-    for (let i = 0; i < WALL.length; i++) {
-      const a = WALL[i];
-      const b = WALL[(i + 1) % WALL.length];
-      const quad = [
-        rise(a, 2, FENCE_HEIGHT),
-        rise(b, 2, FENCE_HEIGHT),
-        rise(b, 90, 60),
-        rise(a, 90, 60),
-      ];
-      this.fillPoly(g, quad, i % 2 ? PAL.stands : PAL.standsDark);
-    }
-    // Crowd: a speckle of heads.
-    for (let i = 0; i < WALL.length; i++) {
-      const a = WALL[i];
-      const b = WALL[(i + 1) % WALL.length];
-      for (let k = 0; k < 6; k++) {
-        const f = (k + 0.5) / 6;
-        const row = 1 + ((i * 7 + k * 3) % 5);
-        const p = rise(
-          vec(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f),
-          6 + row * 14,
-          FENCE_HEIGHT + row * 9,
-        );
-        const s = project(cam, p);
-        if (s.depth < NEAR) continue;
-        const r = Math.max(0.8, s.scale * 2.2);
-        g.rect(s.x - r / 2, s.y - r, r, r).fill(PAL.crowd[(i + k) % PAL.crowd.length]);
-      }
+    // Park grass out past the wall, and the trees standing on it, the farthest first.
+    this.fillPoly(
+      g,
+      WALL.map((p) => beyond(p, 160)),
+      PAL.grassDark,
+    );
+    const trees = TREES.map((t) => ({ t, s: project(cam, t.at) }))
+      // Those right by the camera, behind home when it pulls back for a play, would only block the view.
+      .filter(({ t, s }) => s.depth > 60 && t.r * s.scale < 24)
+      .sort((a, b) => b.s.depth - a.s.depth);
+    for (const { t, s } of trees) {
+      const r = t.r * s.scale;
+      const trunk = project(cam, vec(t.at.x, t.at.y, 0));
+      const o = Math.min(1.2, Math.max(0.35, r * 0.08));
+      if (r > 3)
+        g.rect(s.x - r * 0.12, s.y, r * 0.24, Math.max(0, trunk.y - s.y))
+          .fill(PAL.woodDark)
+          .stroke({ width: o, color: INK });
+      g.circle(s.x, s.y, r).fill(t.color).stroke({ width: o, color: INK });
+      if (r > 4)
+        g.circle(s.x - r * 0.3, s.y - r * 0.32, r * 0.38).fill({ color: 0xffffff, alpha: 0.16 });
     }
 
     // The playing surface inside the wall.
@@ -377,7 +414,7 @@ export class BatOutView {
     // Mowing stripes across the outfield.
     for (let y = 150; y < 420; y += 40) {
       const band = [vec(-400, y), vec(400, y), vec(400, y + 20), vec(-400, y + 20)];
-      this.fillPoly(g, clipToFair(band, 6), PAL.grassDark);
+      this.fillPoly(g, clipToFair(band, 6), PAL.grassLight);
     }
     // Warning track.
     const outer: Vec3[] = [];
@@ -418,7 +455,8 @@ export class BatOutView {
       ] as const)
         this.strip(g, a, b, 0.22, PAL.chalk);
     }
-    // Bases, the rubber and home plate.
+    // Bases, the rubber and home plate, outlined like everything in the park.
+    const thin = (p: Vec3): number => Math.min(1.2, Math.max(0.4, project(cam, p).scale * 0.06));
     for (const b of BASES.slice(1)) {
       const s = 0.9;
       this.fillPoly(
@@ -430,6 +468,7 @@ export class BatOutView {
           vec(b.x - s, b.y, 0.2),
         ],
         PAL.chalk,
+        thin(b),
       );
     }
     this.fillPoly(
@@ -441,14 +480,16 @@ export class BatOutView {
         vec(-1, MOUND + 0.3, 0.9),
       ],
       PAL.chalk,
+      thin(vec(0, MOUND)),
     );
     this.fillPoly(
       g,
       [vec(-0.71, 0.71), vec(0.71, 0.71), vec(0.71, 0), vec(0, -0.71), vec(-0.71, 0)],
       PAL.chalk,
+      thin(vec(0, 0)),
     );
 
-    // The wall itself, with its yellow top, and the foul poles.
+    // The wall itself, with its yellow top and an ink line along it, and the foul poles.
     for (let i = 0; i < WALL.length; i++) {
       const a = WALL[i];
       const b = WALL[(i + 1) % WALL.length];
@@ -465,75 +506,62 @@ export class BatOutView {
       this.fillPoly(
         g,
         [
-          vec(a.x, a.y, FENCE_HEIGHT - 0.8),
-          vec(b.x, b.y, FENCE_HEIGHT - 0.8),
+          vec(a.x, a.y, FENCE_HEIGHT - 0.9),
+          vec(b.x, b.y, FENCE_HEIGHT - 0.9),
           vec(b.x, b.y, FENCE_HEIGHT),
           vec(a.x, a.y, FENCE_HEIGHT),
         ],
         PAL.wallTop,
       );
+      const top = this.poly([vec(a.x, a.y, FENCE_HEIGHT), vec(b.x, b.y, FENCE_HEIGHT)]);
+      if (top.length >= 4)
+        g.moveTo(top[0], top[1])
+          .lineTo(top[2], top[3])
+          .stroke({ width: 0.8, color: INK, cap: 'round' });
     }
     for (const side of [-1, 1]) {
-      const a = vec(side * pole, pole, 0);
-      const top = vec(side * pole, pole, 45);
-      const pa = project(cam, a);
-      const pt = project(cam, top);
-      if (pa.depth > NEAR)
+      const pa = project(cam, vec(side * pole, pole, 0));
+      const pt = project(cam, vec(side * pole, pole, 45));
+      if (pa.depth > NEAR) {
+        const w = Math.max(1.2, pa.scale * 1.2);
         g.moveTo(pa.x, pa.y)
           .lineTo(pt.x, pt.y)
-          .stroke({ width: Math.max(1, pa.scale * 1.2), color: PAL.wallTop });
+          .stroke({ width: w + 1.2, color: INK, cap: 'round' })
+          .moveTo(pa.x, pa.y)
+          .lineTo(pt.x, pt.y)
+          .stroke({ width: w, color: PAL.wallTop, cap: 'round' });
+      }
     }
   }
 
   // Players and the ball.
 
-  private figureTex(pose: Pose, poseKey: string, h: number, kit: Kit, skin: string, gear = false) {
-    const key = `${poseKey}|${h}|${kit.jersey}|${skin}|${gear}`;
-    let f = this.figCache.get(key);
-    if (!f) {
-      const fig = figure(pose, h, { kit, skin, gear });
-      f = { tex: texture(fig.pixels), fx: fig.footX, fy: fig.footY, h };
-      this.figCache.set(key, f);
-    }
-    return f;
-  }
-
-  /** Draws a player standing at a field position, sized for the camera, at least `MIN_PX` tall. */
+  /** Queues a player standing at a field position, sized for the camera, at least `MIN_PX` tall. */
   private player(
     at: Vec3,
     name: PoseName,
     kit: Kit,
     id: number,
-    opts: {
-      flip?: boolean;
-      back?: boolean;
-      gear?: boolean;
-      px?: number;
-      minPx?: number;
-      alpha?: number;
-    } = {},
+    opts: { flip?: boolean; back?: boolean; gear?: boolean; minPx?: number } = {},
   ): void {
     const s = project(this.cam, at);
-    if (s.depth < NEAR + 2) return;
-    const want = opts.px ?? Math.max(opts.minPx ?? MIN_PX, s.scale * PLAYER_FT);
-    const h = SIZES.find((z) => z >= want * 0.85) ?? SIZES[SIZES.length - 1];
+    // Anyone right by the camera, such as the batter setting off as it pulls back, would fill the screen.
+    if (s.depth < NEAR + 8) return;
+    const h = Math.min(MAX_PX, Math.max(opts.minPx ?? MIN_PX, s.scale * PLAYER_FT));
     let pose: Pose = POSES[name];
     if (opts.flip) pose = mirror(pose);
     if (opts.back) pose = { ...pose, front: false };
-    const f = this.figureTex(
-      pose,
-      `${name}${opts.flip ? 'f' : ''}${opts.back ? 'b' : ''}`,
-      h,
-      kit,
-      skinFor(id),
-      opts.gear,
-    );
-    const sp = this.actorPool.take(f.tex);
-    const k = want / h;
-    sp.scale.set(k);
-    sp.position.set(Math.round(s.x - f.fx * k), Math.round(s.y - f.fy * k));
-    sp.zIndex = -s.depth;
-    if (opts.alpha !== undefined) sp.alpha = opts.alpha;
+    // A soft shadow at his feet sits him on the grass.
+    this.belowG.ellipse(s.x, s.y, h * 0.2, h * 0.06).fill({ color: PAL.shadow, alpha: 0.28 });
+    this.actors.push({
+      depth: s.depth,
+      draw: () =>
+        drawFigure(this.actorsG, pose, s.x, s.y, h, {
+          kit,
+          skin: skinFor(id),
+          gear: opts.gear,
+        }),
+    });
   }
 
   private drawActors(sim: BatOutSim): void {
@@ -545,8 +573,9 @@ export class BatOutView {
     const play = this.lastPlay;
     const t = play ? (sim.phase === 'play' ? sim.playTime : play.duration) : 0;
     const batter = state ? state[batting ? 'home' : 'away'].next : 0;
+    this.actors.length = 0;
 
-    // Fielders: on their spots, or wherever the play has them.
+    // Fielders: on their spots, or wherever the play has them. On the mound you are the pitcher, so he isn't drawn.
     for (let f = 0; f < 9; f++) {
       if (pitchView && f > 1) continue;
       const id = 20 + f + (batting ? 0 : 10);
@@ -564,11 +593,10 @@ export class BatOutView {
         });
         continue;
       }
-      if (f === 0) this.pitcher(sim, fieldKit, pitchView);
-      else if (f === 1) {
-        if (pitchView) {
-          this.player(vec(0, -3.2), 'crouch', fieldKit, id, { gear: true });
-        }
+      if (f === 0) {
+        if (!pitchView) this.pitcher(sim, fieldKit);
+      } else if (f === 1) {
+        if (pitchView) this.player(vec(0, -3.2), 'crouch', fieldKit, id, { gear: true });
       } else
         this.player(
           FIELDER_SPOTS[f],
@@ -611,47 +639,34 @@ export class BatOutView {
       });
     }
 
-    // The batter at the plate.
-    if (!play && sim.phase !== 'title' && sim.phase !== 'help')
-      this.batterAtPlate(sim, batKit, batter, pitchView);
-    else if (!play) this.batterAtPlate(sim, HOME_KIT, 0, false);
+    // The computer's batter, seen from the mound. Your own batter isn't drawn: you are looking out of his eyes.
+    if (!play && pitchView && sim.phase !== 'title' && sim.phase !== 'help')
+      this.computerBatter(sim, batKit, batter);
 
     this.ball(sim);
+    this.actors.sort((a, b) => b.depth - a.depth);
+    for (const a of this.actors) a.draw();
   }
 
-  private pitcher(sim: BatOutSim, kit: Kit, pitchView: boolean): void {
+  private pitcher(sim: BatOutSim, kit: Kit): void {
     let pose: PoseName = 'pitchSet';
     if (sim.phase === 'windup') {
       const total = sim.userBatting ? 0.75 : 0.35;
       pose = sim.time < total * 0.6 ? 'pitchKick' : 'pitchRelease';
     } else if (sim.phase === 'pitch' && sim.time < 0.35) pose = 'pitchRelease';
-    if (pitchView) {
-      // From centre field we see his back, big in the foreground.
-      this.player(vec(0, MOUND + 0.5, 0.8), pose, kit, 30, { back: true, flip: true });
-    } else this.player(vec(0, MOUND, 0.8), pose, kit, 20, { minPx: 20 });
+    this.player(vec(0, MOUND, 0.8), pose, kit, 20, { minPx: 20 });
   }
 
-  private batterAtPlate(sim: BatOutSim, kit: Kit, id: number, pitchView: boolean): void {
+  private computerBatter(sim: BatOutSim, kit: Kit, id: number): void {
     let pose: PoseName = 'batStance';
     const swing = sim.swing;
     if (swing) {
       const since = (sim.phase === 'pitch' ? sim.time : Infinity) - swing.at;
       pose = since < 0 ? 'batStance' : since < 0.07 ? 'batSwing1' : 'batSwing2';
-    } else if (sim.committed) pose = 'batSwing1';
-    if (sim.phase === 'call' && swing) pose = 'batSwing2';
-    if (pitchView) {
-      // From centre field: facing us, on the right of the plate.
-      this.player(BATTER, pose, kit, id, { flip: true, back: false });
-      return;
     }
-    // Behind him: drawn a little smaller than life so the zone stays clear, his feet at the bottom left.
-    const s = project(this.cam, BATTER);
-    const h = 130;
-    const pz: Pose = POSES[pose];
-    const f = this.figureTex(pz, pose, h, kit, skinFor(id));
-    const sp = this.actorPool.take(f.tex);
-    sp.position.set(Math.round(s.x + 4 - f.fx), Math.round(s.y + 6 - f.fy));
-    sp.zIndex = 1000;
+    if (sim.phase === 'call' && swing) pose = 'batSwing2';
+    // From centre field: facing us, on the right of the plate.
+    this.player(BATTER, pose, kit, id, { flip: true });
   }
 
   private ball(sim: BatOutSim): void {
@@ -665,38 +680,34 @@ export class BatOutView {
       if (play.landing && play.flight.land >= 0 && t < play.flight.land / 60) {
         const m = project(this.cam, play.landing);
         if (m.depth > NEAR) {
-          const r = Math.max(2, m.scale * 3);
-          this.belowG.ellipse(m.x, m.y, r, r * 0.5).stroke({ width: 1, color: PAL.marker });
+          const r = Math.max(2.5, m.scale * 3);
+          const a = 0.6 + 0.4 * Math.sin(this.clock * 10);
           this.belowG
-            .moveTo(m.x - r * 0.6, m.y)
-            .lineTo(m.x + r * 0.6, m.y)
-            .stroke({ width: 1, color: PAL.marker });
+            .ellipse(m.x, m.y, r, r * 0.5)
+            .stroke({ width: 1.2, color: PAL.marker, alpha: a })
+            .ellipse(m.x, m.y, r * 0.45, r * 0.22)
+            .fill({ color: PAL.marker, alpha: a * 0.8 });
         }
       }
       if (play.flight.homeRun && t > (play.flight.pts.length - 1) / 60) p = null;
-    } else if (sim.phase === 'windup' || sim.phase === 'ready') p = null;
+    }
     if (!p) return;
+    if (sim.phase === 'pitch' && sim.time > (sim.pitch?.seconds ?? 1) * MITT_U) return;
     const s = project(this.cam, p);
     if (s.depth < NEAR) return;
     // Its shadow on the ground shows how high it is.
     const g = project(this.cam, vec(p.x, p.y, 0));
     if (g.depth > NEAR) {
       const r = Math.max(1, g.scale * 0.25 * BALL_SCALE);
-      this.belowG.ellipse(g.x, g.y, r, r * 0.5).fill({ color: PAL.shadow, alpha: 0.45 });
+      this.belowG.ellipse(g.x, g.y, r, r * 0.5).fill({ color: PAL.shadow, alpha: 0.35 });
     }
-    const r = Math.max(1, 0.121 * s.scale * BALL_SCALE);
-    const pick = this.ballTex.reduce((a, b) => (Math.abs(b.r - r) < Math.abs(a.r - r) ? b : a));
-    const sp = this.actorPool.take(pick.tex);
-    sp.anchor.set(0.5);
-    sp.scale.set(Math.max(0.6, r / pick.r));
-    sp.position.set(Math.round(s.x), Math.round(s.y));
-    sp.zIndex = -s.depth + 0.5;
-    if (sim.phase === 'pitch' && sim.time > (sim.pitch?.seconds ?? 1) * MITT_U) sp.visible = false;
+    const r = Math.max(1.2, 0.121 * s.scale * BALL_SCALE);
+    this.actors.push({ depth: s.depth - 0.5, draw: () => drawBall(this.actorsG, s.x, s.y, r) });
   }
 
-  // Swipe trail, the strike zone, marks and the hint.
+  // Your bat and your pitching hand, the swipe trail, the strike zone and the marks.
 
-  private drawEffects(sim: BatOutSim): void {
+  private drawEffects(sim: BatOutSim, view: Bounds): void {
     const g = this.aboveG;
     const live = sim.phase === 'ready' || sim.phase === 'windup' || sim.phase === 'pitch';
     if (live && sim.state) {
@@ -709,8 +720,16 @@ export class BatOutView {
       ];
       const flat = this.poly(c);
       if (flat.length >= 8)
-        g.poly(flat).stroke({ width: 1, color: PAL.zone, alpha: sim.userBatting ? 0.55 : 0.9 });
+        g.poly(flat).stroke({
+          width: 1,
+          color: PAL.zone,
+          alpha: sim.userBatting ? 0.5 : 0.85,
+          join: 'round',
+        });
     }
+    if (sim.state && this.cam === BATTING_CAMERA && sim.userBatting) this.bat(sim);
+    if (sim.state && this.cam === PITCHING_CAMERA && sim.phase === 'ready') this.hand(view);
+
     // The trail behind your finger.
     const trail = this.game.trail;
     for (let i = 1; i < trail.length; i++) {
@@ -718,7 +737,7 @@ export class BatOutView {
       const b = trail[i];
       g.moveTo(a.x, a.y)
         .lineTo(b.x, b.y)
-        .stroke({ width: 2, color: 0xffffff, alpha: (i / trail.length) * 0.8 });
+        .stroke({ width: 2.5, color: 0xffffff, alpha: (i / trail.length) * 0.75, cap: 'round' });
     }
     // OUT and SAFE over the bases as the play goes.
     const play = this.lastPlay;
@@ -727,314 +746,492 @@ export class BatOutView {
         if (sim.playTime < m.t || sim.playTime > m.t + 1.4) continue;
         const s = project(this.cam, vec(m.at.x, m.at.y, 9));
         if (s.depth < NEAR) continue;
-        this.text(this.hudText, m.text, s.x, s.y - 6, {
-          fill: m.text === 'OUT' ? '#ff4a3d' : '#ffe94a',
-          align: 0.5,
-        });
+        const out = m.text === 'OUT';
+        this.hudText.take(
+          {
+            text: m.text,
+            size: 13,
+            fill: out ? PAL.red : PAL.gold,
+            stroke: { color: INK, width: 3 },
+            scale: pop((sim.playTime - m.t) / 0.2),
+            rotation: -0.06,
+          },
+          s.x,
+          s.y - 4,
+          this.res,
+        );
       }
     }
   }
 
-  // Text.
-
-  private textTex(
-    text: string,
-    scale: number,
-    fill: string | readonly [string, string],
-    outline: string | null,
-  ): Texture {
-    const key = `${text}|${scale}|${fill}|${outline}`;
-    let tex = this.textCache.get(key);
-    if (!tex) {
-      tex = texture(renderText(text, { fill, scale, outlines: outline ? [outline] : [] }));
-      this.textCache.set(key, tex);
+  /**
+   * Your bat, coming in from the bottom left as you swing: you see it, not yourself. It sweeps level through the
+   * zone at the moment of the swing and follows through.
+   */
+  private bat(sim: BatOutSim): void {
+    const swing = sim.swing;
+    let angle: number;
+    let alpha = 1;
+    if (swing) {
+      const since = sim.phase === 'pitch' ? sim.time - swing.at : 1;
+      if (since < 0) angle = -2.1 + 2.1 * clamp01((since + 0.1) / 0.1);
+      else {
+        angle = 0.55 * clamp01(since / 0.08);
+        alpha = 1 - clamp01((since - 0.25) / 0.2);
+      }
+    } else if (sim.committed && sim.phase === 'pitch') angle = -1.2;
+    else return;
+    if (alpha <= 0) return;
+    const cam = BATTING_CAMERA;
+    // The knob is just off the left of the screen, level with the zone, so the barrel comes through it.
+    const hands = project(cam, vec(-3.1, 0.2, 2.5));
+    const reach = project(cam, vec(1.3, 0.2, 2.5));
+    const len = Math.hypot(reach.x - hands.x, reach.y - hands.y);
+    const g = this.aboveG;
+    // A swoosh behind the barrel shows the path it came along.
+    if (swing && angle > -2) {
+      const from = Math.max(-2.1, angle - 1.1);
+      g.moveTo(hands.x, hands.y)
+        .arc(hands.x, hands.y, len, from, angle)
+        .closePath()
+        .fill({ color: 0xffffff, alpha: 0.18 * alpha });
     }
-    return tex;
+    const dx = Math.cos(angle);
+    const dy = Math.sin(angle);
+    const nx = -dy;
+    const ny = dx;
+    const knob = len * 0.05;
+    const handle = len * 0.03;
+    const barrel = len * 0.07;
+    const start = -len * 0.08;
+    const shape: number[] = [];
+    const at = (along: number, half: number): void => {
+      shape.push(hands.x + dx * along + nx * half, hands.y + dy * along + ny * half);
+    };
+    at(start, knob);
+    at(len * 0.35, handle);
+    at(len * 0.75, barrel);
+    at(len, barrel * 0.95);
+    at(len, -barrel * 0.95);
+    at(len * 0.75, -barrel);
+    at(len * 0.35, -handle);
+    at(start, -knob);
+    g.poly(shape)
+      .fill({ color: 0xc9893d, alpha })
+      .stroke({ width: 1.4, color: INK, join: 'round', alpha });
+    // The grain along the barrel and the tape on the handle.
+    g.moveTo(
+      hands.x + dx * len * 0.5 + nx * barrel * 0.3,
+      hands.y + dy * len * 0.5 + ny * barrel * 0.3,
+    )
+      .lineTo(
+        hands.x + dx * len * 0.95 + nx * barrel * 0.4,
+        hands.y + dy * len * 0.95 + ny * barrel * 0.4,
+      )
+      .stroke({ width: 1, color: 0xe6b06a, alpha, cap: 'round' });
+    g.moveTo(hands.x + dx * start, hands.y + dy * start)
+      .lineTo(hands.x + dx * len * 0.22, hands.y + dy * len * 0.22)
+      .stroke({ width: handle * 2.2, color: INK, alpha: 0.85 * alpha, cap: 'round' });
   }
 
-  private text(
-    pool: SpritePool,
-    text: string,
-    x: number,
-    y: number,
-    o: TextOpts = {},
-  ): Sprite | null {
-    if (!text) return null;
-    const scale = o.scale ?? 1;
-    const tex = this.textTex(
-      text,
-      scale,
-      o.fill ?? '#ffffff',
-      o.outline === undefined ? hex(PAL.ink) : o.outline,
-    );
-    const sp = pool.take(tex);
-    sp.position.set(Math.round(x - tex.width * (o.align ?? 0)), Math.round(y));
-    if (o.alpha !== undefined) sp.alpha = o.alpha;
-    return sp;
+  /** Your pitching hand: the ball in a glove at the bottom of the screen, or under your finger as you swipe. */
+  private hand(view: Bounds): void {
+    const g = this.aboveG;
+    const trace = this.game.trace;
+    const last = trace[trace.length - 1];
+    const bottom = Math.min(view.bottom, HEIGHT / 2 + 40);
+    if (last) {
+      drawBall(g, last.x, last.y, 7);
+      return;
+    }
+    const x = 0;
+    const y = bottom - 46;
+    g.ellipse(x + 2, y + 5, 15, 12)
+      .fill(0x8a5228)
+      .stroke({ width: 1.4, color: INK })
+      .moveTo(x - 9, y + 2)
+      .lineTo(x + 11, y + 2)
+      .stroke({ width: 0.9, color: 0x5a3418 });
+    drawBall(g, x, y - 2, 7);
   }
 
-  // The scoreboard bug, the count, the bases and the call.
+  // The scoreboard, the count, the bases and the call.
+
+  private hudLabel(l: Label, x: number, y: number): Text {
+    return this.hudText.take(l, x, y, this.res);
+  }
 
   private drawHud(sim: BatOutSim, s: GameState, view: Bounds): void {
     const g = this.hudG;
-    const top = Math.max(view.top, -HEIGHT / 2 - 40) + 3;
-    const left = Math.max(view.left, -WIDTH / 2 - 30) + 3;
+    const top = Math.max(view.top, -HEIGHT / 2 - 40) + 4;
+    const left = Math.max(view.left, -WIDTH / 2 - 30) + 4;
     const game = isGame(s);
-    // Score panel: the score (or this mode's numbers), the inning and count, the bases and outs.
-    g.roundRect(left, top, 108, 27, 3).fill(PAL.ink);
-    const row1 = top + 4;
-    const row2 = top + 16;
+    // A park scoreboard: green boards with white figures, the outs and the bases on the right.
+    const w = 114;
+    const h = 32;
+    g.roundRect(left + 1.5, top + 2.5, w, h, 6)
+      .fill({ color: 0x000000, alpha: 0.22 })
+      .roundRect(left, top, w, h, 6)
+      .fill(PAL.greenDark)
+      .stroke({ width: 1.4, color: INK })
+      .roundRect(left + 2.5, top + 2.5, w - 5, h - 5, 4)
+      .stroke({ width: 0.8, color: PAL.green });
+    const row1 = top + 10;
+    const row2 = top + 22;
+    const white = { size: 10, fill: 0xffffff, align: 0, letterSpacing: 0.5 } as const;
     if (game) {
-      this.text(this.hudText, `CPU ${s.away.runs}`, left + 4, row1, {
-        fill: '#9cc4ff',
-        outline: null,
-      });
-      this.text(this.hudText, `YOU ${s.home.runs}`, left + 4, row2, {
-        fill: '#ff8a80',
-        outline: null,
-      });
-      this.text(this.hudText, `${s.top ? 'TOP' : 'BOT'} ${s.inning}`, left + 50, row1, {
-        fill: '#ffe94a',
-        outline: null,
-      });
+      this.hudLabel({ ...white, text: `CPU ${s.away.runs}`, fill: 0xb9d6ff }, left + 6, row1);
+      this.hudLabel({ ...white, text: `YOU ${s.home.runs}`, fill: 0xffb3a8 }, left + 6, row2);
+      this.hudLabel(
+        { ...white, text: `${s.top ? 'TOP' : 'BOT'} ${s.inning}`, fill: PAL.gold },
+        left + 46,
+        row1,
+      );
     } else if (s.mode === 'hitting') {
-      this.text(this.hudText, `RUNS ${s.home.runs}`, left + 4, row1, {
-        fill: '#ff8a80',
-        outline: null,
-      });
-      this.text(this.hudText, `BEST ${this.game.best.hitting}`, left + 4, row2, {
-        fill: '#c8c8d8',
-        outline: null,
-      });
+      this.hudLabel({ ...white, text: `RUNS ${s.home.runs}`, fill: 0xffb3a8 }, left + 6, row1);
+      this.hudLabel(
+        { ...white, text: `BEST ${this.game.best.hitting}`, fill: 0xd8e8cf },
+        left + 6,
+        row2,
+      );
     } else {
-      this.text(this.hudText, `K ${s.strikeouts}`, left + 4, row1, {
-        fill: '#9cc4ff',
-        outline: null,
-      });
-      this.text(this.hudText, `RUNS ${s.away.runs}`, left + 4, row2, {
-        fill: '#c8c8d8',
-        outline: null,
-      });
+      this.hudLabel({ ...white, text: `K ${s.strikeouts}`, fill: 0xb9d6ff }, left + 6, row1);
+      this.hudLabel({ ...white, text: `RUNS ${s.away.runs}`, fill: 0xd8e8cf }, left + 6, row2);
     }
-    this.text(
-      this.hudText,
-      `${s.balls}-${s.strikes}`,
-      left + (game ? 50 : 56),
+    this.hudLabel(
+      { ...white, text: `${s.balls}-${s.strikes}` },
+      left + (game ? 46 : 52),
       game ? row2 : row1,
-      { fill: '#ffffff', outline: null },
     );
     // Outs, as two lights.
     for (let i = 0; i < 2; i++)
-      g.circle(left + 91 + i * 8, row2 + 3.5, 2.5).fill(i < s.outs ? 0xff4a3d : 0x4a4a5a);
+      g.circle(left + 92 + i * 9, row2, 3)
+        .fill(i < s.outs ? PAL.red : 0x24521f)
+        .stroke({ width: 0.9, color: INK });
     // The bases diamond.
-    const bx = left + 95;
-    const by = top + 8;
+    const bx = left + 96.5;
+    const by = top + 9;
     const sq = (x: number, y: number, on: boolean): void => {
-      g.poly([x, y - 3, x + 3, y, x, y + 3, x - 3, y]).fill(on ? 0xffe94a : 0x4a4a5a);
+      g.poly([x, y - 3.5, x + 3.5, y, x, y + 3.5, x - 3.5, y])
+        .fill(on ? PAL.gold : 0x24521f)
+        .stroke({ width: 0.9, color: INK, join: 'round' });
     };
-    sq(bx + 5, by + 1, s.bases[0] !== null);
+    sq(bx + 6, by + 2, s.bases[0] !== null);
     sq(bx, by - 3, s.bases[1] !== null);
-    sq(bx - 5, by + 1, s.bases[2] !== null);
+    sq(bx - 6, by + 2, s.bases[2] !== null);
 
-    // Pause button.
+    // The round green pause button, as in Chaos Park.
     const pb = pauseButton(view, 0, 0);
-    g.roundRect(pb.x - 8, pb.y - 8, 16, 16, 3).fill(PAL.ink);
-    g.rect(pb.x - 3.5, pb.y - 4, 2.5, 8)
-      .fill(0xffffff)
-      .rect(pb.x + 1, pb.y - 4, 2.5, 8)
+    const pr = pb.w / 2;
+    g.circle(pb.x + 0.8, pb.y + 1.5, pr)
+      .fill({ color: 0x000000, alpha: 0.2 })
+      .circle(pb.x, pb.y, pr)
+      .fill({ color: PAL.green, alpha: 0.95 })
+      .stroke({ width: 1.3, color: 0xffffff, alpha: 0.9 })
+      .roundRect(pb.x - 4, pb.y - 5, 3, 10, 1)
+      .roundRect(pb.x + 1, pb.y - 5, 3, 10, 1)
       .fill(0xffffff);
 
     const bottom = Math.min(view.bottom, HEIGHT / 2 + 40);
+    const caption = {
+      size: 12,
+      fill: 0xffffff,
+      stroke: { color: INK, width: 3.5 },
+      letterSpacing: 0.5,
+    };
     // What was thrown.
-    if (sim.pitchLabel && (sim.phase === 'pitch' || sim.phase === 'call') && !sim.play) {
-      this.text(this.hudText, sim.pitchLabel, 0, bottom - 13, { fill: '#ffffff', align: 0.5 });
-    }
+    if (sim.pitchLabel && (sim.phase === 'pitch' || sim.phase === 'call') && !sim.play)
+      this.hudLabel({ ...caption, text: sim.pitchLabel }, 0, bottom - 12);
     // A hint before each pitch.
     if (sim.phase === 'ready') {
       const blink = Math.floor(this.clock * 2) % 2 === 0;
       const hint = sim.userBatting ? 'SWIPE THROUGH THE BALL' : 'SWIPE UP TO PITCH';
       if (blink || !sim.userBatting)
-        this.text(this.hudText, hint, 0, bottom - 13, { fill: '#ffe94a', align: 0.5 });
-      if (!sim.userBatting) {
-        // An arrow from the pitcher up to the zone.
-        const y0 = 70;
+        this.hudLabel({ ...caption, text: hint, fill: PAL.gold }, 0, bottom - 12);
+      if (!sim.userBatting && !this.game.trace.length) {
+        // An arrow from your hand up to the zone.
+        const y0 = bottom - 66;
         const y1 = -20;
-        const a = 0.5 + 0.5 * Math.sin(this.clock * 5);
+        const a = 0.45 + 0.4 * (0.5 + 0.5 * Math.sin(this.clock * 5));
         g.moveTo(0, y0)
-          .lineTo(0, y1)
-          .stroke({ width: 2, color: 0xffe94a, alpha: 0.4 + a * 0.4 });
-        g.poly([-5, y1 + 6, 0, y1, 5, y1 + 6]).fill({ color: 0xffe94a, alpha: 0.4 + a * 0.4 });
+          .lineTo(0, y1 + 4)
+          .stroke({ width: 2.5, color: PAL.gold, alpha: a, cap: 'round' })
+          .poly([-5, y1 + 7, 0, y1, 5, y1 + 7])
+          .fill({ color: PAL.gold, alpha: a });
       }
     }
-    // The call.
-    const a = sim.announcement;
-    if (sim.phase === 'call' && a) {
-      const pop = ease(sim.time / 0.15);
-      const scale = a.big ? 3 : 2;
-      const width = textWidth(a.text, scale);
-      const fit = width > WIDTH - 8 ? Math.max(1, scale - 1) : scale;
+    // The call, popping onto the screen with a tilt, as Chaos Park's signs do.
+    const an = sim.announcement;
+    if (sim.phase === 'call' && an) {
+      const k = pop(sim.time / 0.22);
       const y = -40;
-      const sp = this.text(this.hudText, a.text, 0, y, {
-        scale: fit,
-        fill: a.big ? ['#fff36a', '#ff9a2e'] : ['#ffffff', '#e8e8f0'],
-        align: 0.5,
-      });
-      if (sp) sp.alpha = pop;
-      if (a.sub)
-        this.text(this.hudText, a.sub, 0, y + 7 * fit + 8, {
-          fill: '#ffe94a',
-          align: 0.5,
-          alpha: pop,
-        });
+      const t = this.hudLabel(
+        {
+          text: an.text,
+          size: an.big ? 34 : 26,
+          fill: an.big ? PAL.gold : 0xffffff,
+          stroke: { color: INK, width: an.big ? 6 : 5 },
+          rotation: -0.06,
+          letterSpacing: 1,
+        },
+        0,
+        y,
+      );
+      const fit = Math.min(1, (WIDTH - 10) / Math.max(1, t.width));
+      t.scale.set(k * fit);
+      if (an.sub)
+        this.hudLabel(
+          {
+            text: an.sub,
+            size: 13,
+            fill: 0xffffff,
+            stroke: { color: INK, width: 3.5 },
+            rotation: -0.06,
+            alpha: clamp01(sim.time / 0.2),
+          },
+          0,
+          y + (an.big ? 26 : 22),
+        );
     }
   }
 
-  // Menus and cards.
+  // Menus and cards: park noticeboards with sign plaques, as Chaos Park's are.
 
-  private panel(x: number, y: number, w: number, h: number): void {
-    const g = this.cardG;
-    g.rect(x + 2, y + 2, w, h).fill({ color: 0x000000, alpha: 0.35 });
-    g.rect(x, y, w, h).fill(PAL.panelEdge);
-    g.rect(x + 2, y + 2, w - 4, h - 4).fill(PAL.panel);
+  private cardLabel(l: Label, x: number, y: number): Text {
+    return this.cardText.take(l, x, y, this.res);
   }
 
-  private button(b: Button, alt = false): void {
-    const g = this.cardG;
-    const x = b.x - b.w / 2;
-    const y = b.y - b.h / 2;
-    g.rect(x, y + 2, b.w, b.h).fill(alt ? PAL.buttonAltDark : PAL.buttonDark);
-    g.rect(x, y, b.w, b.h).fill(alt ? PAL.buttonAlt : PAL.button);
-    g.rect(x + 2, y + 2, b.w - 4, 2).fill({ color: 0xffffff, alpha: 0.35 });
-    this.text(this.cardText, b.label, b.x, b.y - 3, { align: 0.5, fill: '#ffffff' });
-  }
-
-  private dim(view: Bounds, alpha = 0.45): void {
+  private dim(view: Bounds, alpha = 0.25): void {
     this.cardG
       .rect(view.left, view.top, view.right - view.left, view.bottom - view.top)
-      .fill({ color: 0x0b1a33, alpha });
+      .fill({ color: 0x1d2b14, alpha });
+  }
+
+  /** A wooden frame round a cream panel, with a brass screw in each corner. */
+  private board(x: number, y: number, w: number, h: number): void {
+    const g = this.cardG;
+    const rim = 9;
+    g.roundRect(x + 3, y + 5, w, h, 9)
+      .fill({ color: 0x000000, alpha: 0.25 })
+      .roundRect(x, y, w, h, 9)
+      .fill(PAL.wood);
+    for (let ly = y + 3.5; ly < y + h - 2; ly += 4) g.moveTo(x + 3, ly).lineTo(x + w - 3, ly);
+    g.stroke({ width: 0.6, color: PAL.woodDark, alpha: 0.28 });
+    g.roundRect(x, y, w, h, 9).stroke({ width: 1.5, color: INK });
+    g.roundRect(x + rim, y + rim, w - rim * 2, h - rim * 2, 5)
+      .fill(PAL.cream)
+      .stroke({ width: 1.25, color: PAL.woodDark });
+    for (const [sx, sy] of [
+      [x + rim / 2, y + rim / 2],
+      [x + w - rim / 2, y + rim / 2],
+      [x + rim / 2, y + h - rim / 2],
+      [x + w - rim / 2, y + h - rim / 2],
+    ] as const) {
+      g.circle(sx, sy, 2.2).fill(PAL.brass).stroke({ width: 0.75, color: PAL.woodDark });
+      g.moveTo(sx - 1.3, sy - 0.7)
+        .lineTo(sx + 1.3, sy + 0.7)
+        .stroke({ width: 0.7, color: PAL.woodDark });
+    }
+  }
+
+  /** A sign plaque: green for the main actions, plain wood for the others. */
+  private plaque(b: Button, color: 'green' | 'wood'): void {
+    const g = this.cardG;
+    const [main, dark] =
+      color === 'green' ? [PAL.green, PAL.greenDark] : [PAL.plank, PAL.plankDark];
+    const rx = b.w / 2;
+    const ry = b.h / 2;
+    const r = Math.min(ry * 0.5, 8);
+    const x = b.x;
+    const y = b.y;
+    g.roundRect(x - rx + 1.5, y - ry + 3, rx * 2, ry * 2, r)
+      .fill({ color: 0x000000, alpha: 0.2 })
+      .roundRect(x - rx, y - ry, rx * 2, ry * 2, r)
+      .fill(dark)
+      .roundRect(x - rx + 1.5, y - ry + 1, rx * 2 - 3, ry * 2 - 4, Math.max(1, r - 1))
+      .fill(main)
+      .roundRect(x - rx + 5, y - ry + 3, rx * 2 - 10, ry * 0.35, Math.max(1, r * 0.5))
+      .fill({ color: 0xffffff, alpha: 0.18 })
+      .roundRect(x - rx, y - ry, rx * 2, ry * 2, r)
+      .stroke({ width: 1.5, color: INK });
+    // Nails holding the plaque up, one at each end.
+    for (const nx of [x - rx + 4.5, x + rx - 4.5]) g.circle(nx, y - 1, 1.3).fill(PAL.brass);
+    this.cardLabel(
+      {
+        text: b.label,
+        size: b.h * 0.62,
+        fill: 0xffffff,
+        stroke: { color: dark, width: 2.5 },
+        letterSpacing: 0.5,
+      },
+      x,
+      y - 1,
+    );
   }
 
   private drawCards(sim: BatOutSim, view: Bounds): void {
     switch (sim.phase) {
       case 'title':
-        this.dim(view, 0.25);
-        this.logo(-104);
-        MODE_BUTTONS.forEach((b, i) => this.button(b, i === 1));
-        this.button(HELP_BUTTON, true);
+        this.dim(view, 0.15);
+        this.title();
         return;
       case 'help':
         this.dim(view);
         this.help();
         return;
-      case 'scorecard':
+      case 'scorecard': {
         this.dim(view);
-        this.scorecard(sim.state!, false);
-        this.button(CONTINUE_BUTTON);
+        const s = sim.state!;
+        const w = tableWidth(s) + 26;
+        this.board(-w / 2, -96, w, 160);
+        const title = s.top
+          ? `MIDDLE OF THE ${ordinal(s.inning)}`
+          : `END OF THE ${ordinal(s.inning)}`;
+        this.cardLabel({ text: title, size: 15, fill: INK, letterSpacing: 0.5 }, 0, -74);
+        this.scorecard(s, -52);
+        this.cardLabel(
+          {
+            text: s.top ? 'YOU BAT NEXT' : 'YOU PITCH NEXT',
+            size: 12,
+            fill: PAL.woodDark,
+            letterSpacing: 0.5,
+          },
+          0,
+          4,
+        );
+        this.plaque(CONTINUE_BUTTON, 'green');
         return;
+      }
       case 'over':
         this.dim(view);
         this.gameOver(sim);
-        this.button(AGAIN_BUTTON);
-        this.button(MENU_BUTTON, true);
+        this.plaque(AGAIN_BUTTON, 'green');
+        this.plaque(MENU_BUTTON, 'wood');
         return;
       default:
         break;
     }
     if (sim.paused) {
-      this.dim(view);
-      this.panel(-60, -46, 120, 84);
-      this.text(this.cardText, 'TIME OUT', 0, -36, { scale: 2, align: 0.5, fill: '#ffffff' });
-      this.button(RESUME_BUTTON);
-      this.button(QUIT_BUTTON, true);
+      this.dim(view, 0.35);
+      this.board(-64, -54, 128, 100);
+      this.cardLabel({ text: 'TIME OUT', size: 22, fill: INK, letterSpacing: 1 }, 0, -32);
+      this.plaque(RESUME_BUTTON, 'green');
+      this.plaque(QUIT_BUTTON, 'wood');
     }
   }
 
-  private logo(y: number): void {
-    this.text(this.cardText, 'BAT OUT!', 0, y, {
-      scale: 3,
-      fill: ['#fff36a', '#ff9a2e'],
-      align: 0.5,
-    });
-    this.text(this.cardText, 'ARCADE BASEBALL', 0, y + 28, { fill: '#ffffff', align: 0.5 });
+  /** The script logo, green with a white edge and an ink one outside that, as Chaos Park's is. */
+  private logo(text: string, y: number, size: number, fill: number): void {
+    this.cardLabel(
+      { text, size, fill: INK, font: SCRIPT_FONT, stroke: { color: INK, width: size * 0.36 } },
+      0.6,
+      y + 1.5,
+    );
+    this.cardLabel(
+      { text, size, fill, font: SCRIPT_FONT, stroke: { color: 0xffffff, width: size * 0.2 } },
+      0,
+      y,
+    );
+  }
+
+  private title(): void {
+    this.board(-86, -150, 172, 268);
+    this.logo('Bat Out!', -116, 27, PAL.green);
+    drawBall(this.cardG, -64, -96, 5);
+    drawBall(this.cardG, 66, -132, 6);
+    this.cardLabel(
+      { text: '~ ARCADE BASEBALL ~', size: 11, fill: PAL.blue, letterSpacing: 1 },
+      0,
+      -82,
+    );
+    MODE_BUTTONS.forEach((b) => this.plaque(b, 'green'));
+    this.cardLabel(
+      {
+        text: `BEST: ${this.game.best.hitting} RUNS  ·  ${this.game.best.pitching} K`,
+        size: 9.5,
+        fill: PAL.woodDark,
+        letterSpacing: 0.5,
+      },
+      0,
+      70,
+    );
+    this.plaque(HELP_BUTTON, 'wood');
   }
 
   private help(): void {
-    this.panel(-86, -150, 172, 290);
-    const lines: [string, string?][] = [
-      ['HITTING', '#c62a22'],
-      ['SWIPE THROUGH THE BALL'],
-      ['JUST AS IT REACHES THE'],
-      ['PLATE. UNDER IT LIFTS IT,'],
-      ['OVER IT HITS A GROUNDER.'],
-      ['EARLY PULLS IT TO LEFT,'],
-      ['LATE GOES TO RIGHT. A'],
-      ['HARD SWIPE HITS HARDER.'],
-      ["DON'T SWIPE: THE UMP CALLS"],
-      ['A BALL OR A STRIKE.'],
+    this.board(-88, -154, 176, 308);
+    this.cardLabel(
+      {
+        text: 'HOW TO PLAY',
+        size: 22,
+        fill: PAL.red,
+        stroke: { color: INK, width: 3.5 },
+        letterSpacing: 0.5,
+      },
+      0,
+      -132,
+    );
+    const lines: [string, number?][] = [
+      ['HITTING', PAL.greenDark],
+      ['SWIPE THROUGH THE BALL JUST AS'],
+      ['IT REACHES THE PLATE. UNDER IT'],
+      ['LIFTS IT, OVER IT HITS A GROUNDER.'],
+      ['EARLY PULLS IT TO LEFT, LATE GOES'],
+      ['TO RIGHT. A HARD SWIPE HITS HARDER.'],
+      ["DON'T SWIPE: THE UMP CALLS A BALL"],
+      ['OR A STRIKE.'],
       [''],
-      ['PITCHING', '#1f4fb4'],
-      ['SWIPE UP FROM THE PITCHER'],
-      ['AND LET GO WHERE YOU WANT'],
-      ['IT. SWIPE FAST, THROW HARD.'],
+      ['PITCHING', PAL.greenDark],
+      ['SWIPE UP AND LET GO WHERE YOU WANT'],
+      ['IT. SWIPE FAST TO THROW HARD.'],
       ['STRAIGHT: FASTBALL'],
-      ['SLOW + STRAIGHT: CHANGEUP'],
+      ['SLOW AND STRAIGHT: CHANGEUP'],
       ['HOOK THE END: SLIDER'],
       ['HOOK IT MORE: CURVEBALL'],
       ['FLICK BACK DOWN: SINKER'],
-      ['STOP, THEN LET GO: KNUCKLER'],
+      ['STOP, THEN LET GO: KNUCKLEBALL'],
       [''],
-      ['3 OUTS RETIRE THE SIDE.'],
+      ['THREE OUTS RETIRE THE SIDE.', PAL.woodDark],
     ];
-    lines.forEach(([line, color], i) =>
-      this.text(this.cardText, line, -80, -142 + i * 11, {
-        fill: color ?? '#2a2a3a',
-        outline: null,
-      }),
-    );
-    this.button(BACK_BUTTON);
+    lines.forEach(([line, color], i) => {
+      if (!line) return;
+      this.cardLabel(
+        {
+          text: line,
+          size: color ? 12 : 9.5,
+          fill: color ?? INK,
+          align: 0,
+          letterSpacing: 0.3,
+        },
+        -74,
+        -108 + i * 10.6,
+      );
+    });
+    this.plaque(BACK_BUTTON, 'green');
   }
 
-  /** The line score: runs by inning for both sides, with runs and hits. */
-  private scorecard(s: GameState, final: boolean): void {
-    const innings = Math.max(s.innings, s.away.line.length, s.home.line.length);
-    const first = Math.max(0, innings - 9);
-    const cols = Math.min(9, innings);
-    const cw = 11;
-    const w = 30 + cols * cw + 34;
+  /** The line score: runs by inning for both sides, with runs and hits, its header row at `y0`. */
+  private scorecard(s: GameState, y0: number): void {
+    const { first, cols } = tableColumns(s);
+    const w = tableWidth(s);
     const x = -w / 2;
-    this.panel(x - 4, -86, w + 8, final ? 84 : 100);
-    const title = final
-      ? 'FINAL'
-      : s.top
-        ? `MIDDLE OF THE ${ordinal(s.inning)}`
-        : `END OF THE ${ordinal(s.inning)}`;
-    this.text(this.cardText, title, 0, -78, { align: 0.5, fill: '#2a2a3a', outline: null });
-    const y0 = -58;
-    for (let i = 0; i < cols; i++) {
-      this.text(this.cardText, `${first + i + 1}`, x + 30 + i * cw + cw / 2, y0, {
-        align: 0.5,
-        fill: '#8a5a2b',
-        outline: null,
-      });
-    }
-    this.text(this.cardText, 'R', x + 30 + cols * cw + 8, y0, {
-      align: 0.5,
-      fill: '#8a5a2b',
-      outline: null,
-    });
-    this.text(this.cardText, 'H', x + 30 + cols * cw + 24, y0, {
-      align: 0.5,
-      fill: '#8a5a2b',
-      outline: null,
-    });
-    const rows: ['CPU' | 'YOU', GameState['away'], string][] = [
-      ['CPU', s.away, '#1f4fb4'],
-      ['YOU', s.home, '#c62a22'],
+    const head = { size: 10, fill: PAL.woodDark } as const;
+    for (let i = 0; i < cols; i++)
+      this.cardLabel(
+        { ...head, text: `${first + i + 1}` },
+        x + NAME_W + i * CELL_W + CELL_W / 2,
+        y0,
+      );
+    this.cardLabel({ ...head, text: 'R' }, x + NAME_W + cols * CELL_W + 7, y0);
+    this.cardLabel({ ...head, text: 'H' }, x + NAME_W + cols * CELL_W + 21, y0);
+    const rows: ['CPU' | 'YOU', GameState['away'], number][] = [
+      ['CPU', s.away, PAL.blue],
+      ['YOU', s.home, PAL.red],
     ];
     rows.forEach(([name, t, color], r) => {
-      const y = y0 + 14 + r * 14;
-      this.cardG.rect(x, y - 3, w, 13).fill({ color: r ? 0xffe7c2 : 0xffeed2 });
-      this.text(this.cardText, name, x + 2, y, { fill: color, outline: null });
+      const y = y0 + 15 + r * 15;
+      this.cardG.roundRect(x - 2, y - 6.5, w + 4, 13, 3).fill({ color: r ? 0xeadfbf : 0xf0e6c9 });
+      this.cardLabel({ size: 11, fill: color, text: name, align: 0 }, x + 2, y);
       for (let i = 0; i < cols; i++) {
         const v = t.line[first + i];
         // An inning not reached is blank; the bottom of a last inning not needed is an X.
@@ -1044,90 +1241,87 @@ export class BatOutView {
               ? 'X'
               : ''
             : `${v}`;
-        this.text(this.cardText, text, x + 30 + i * cw + cw / 2, y, {
-          align: 0.5,
-          fill: '#2a2a3a',
-          outline: null,
-        });
+        if (text)
+          this.cardLabel({ size: 11, fill: INK, text }, x + NAME_W + i * CELL_W + CELL_W / 2, y);
       }
-      this.text(this.cardText, `${t.runs}`, x + 30 + cols * cw + 8, y, {
-        align: 0.5,
-        fill: color,
-        outline: null,
-      });
-      this.text(this.cardText, `${t.hits}`, x + 30 + cols * cw + 24, y, {
-        align: 0.5,
-        fill: '#2a2a3a',
-        outline: null,
-      });
+      this.cardLabel(
+        { size: 11, fill: color, text: `${t.runs}` },
+        x + NAME_W + cols * CELL_W + 7,
+        y,
+      );
+      this.cardLabel(
+        { size: 11, fill: INK, text: `${t.hits}` },
+        x + NAME_W + cols * CELL_W + 21,
+        y,
+      );
     });
-    if (!final) {
-      const next = s.top ? 'YOU BAT NEXT' : 'YOU PITCH NEXT';
-      this.text(this.cardText, next, 0, y0 + 46, { align: 0.5, fill: '#2a2a3a', outline: null });
-    }
   }
 
   private gameOver(sim: BatOutSim): void {
     const s = sim.state!;
-    const result = outcome(s);
     if (isGame(s)) {
-      this.text(this.cardText, result === 'win' ? 'YOU WIN!' : 'YOU LOSE', 0, -128, {
-        scale: 3,
-        fill: result === 'win' ? ['#fff36a', '#ff9a2e'] : ['#ffffff', '#c8c8d8'],
-        align: 0.5,
-      });
-      this.scorecard(s, true);
+      const w = Math.max(150, tableWidth(s) + 26);
+      this.board(-w / 2, -110, w, 222);
+      const win = outcome(s) === 'win';
+      this.logo(win ? 'You win!' : 'You lose', -78, 28, win ? PAL.green : PAL.red);
+      this.cardLabel({ text: 'FINAL', size: 13, fill: PAL.woodDark, letterSpacing: 1 }, 0, -40);
+      this.scorecard(s, -16);
       return;
     }
+    this.board(-84, -134, 168, 246);
+    this.logo('Side retired!', -104, 22, PAL.green);
     const name = MODES.find((m) => m.id === s.mode)!.name;
-    this.panel(-80, -96, 160, 140);
-    this.text(this.cardText, 'SIDE RETIRED', 0, -86, {
-      scale: 2,
-      align: 0.5,
-      fill: '#c62a22',
-      outline: null,
-    });
-    this.text(this.cardText, name, 0, -64, { align: 0.5, fill: '#8a5a2b', outline: null });
-    const isNew = this.game.result?.isNewBest ?? false;
-    if (s.mode === 'hitting') {
-      this.text(this.cardText, `RUNS ${s.home.runs}`, 0, -44, {
-        scale: 2,
-        align: 0.5,
-        fill: '#2a2a3a',
-        outline: null,
-      });
-      this.text(this.cardText, `HITS ${s.home.hits}`, 0, -22, {
-        align: 0.5,
-        fill: '#2a2a3a',
-        outline: null,
-      });
-      this.text(this.cardText, `BEST ${this.game.best.hitting}`, 0, -8, {
-        align: 0.5,
-        fill: '#2a2a3a',
-        outline: null,
-      });
-    } else {
-      this.text(this.cardText, `STRIKEOUTS ${s.strikeouts}`, 0, -44, {
-        scale: 2,
-        align: 0.5,
-        fill: '#2a2a3a',
-        outline: null,
-      });
-      this.text(this.cardText, `RUNS ALLOWED ${s.away.runs}  HITS ${s.away.hits}`, 0, -22, {
-        align: 0.5,
-        fill: '#2a2a3a',
-        outline: null,
-      });
-      this.text(this.cardText, `BEST ${this.game.best.pitching} K`, 0, -8, {
-        align: 0.5,
-        fill: '#2a2a3a',
-        outline: null,
-      });
-    }
-    if (isNew)
-      this.text(this.cardText, 'NEW RECORD!', 0, 12, { align: 0.5, fill: ['#fff36a', '#ff9a2e'] });
+    this.cardLabel({ text: name, size: 12, fill: PAL.woodDark, letterSpacing: 0.5 }, 0, -76);
+    const hitting = s.mode === 'hitting';
+    this.cardLabel(
+      { text: hitting ? 'RUNS SCORED' : 'STRIKEOUTS', size: 15, fill: INK, letterSpacing: 0.5 },
+      0,
+      -54,
+    );
+    this.cardLabel(
+      {
+        text: `${hitting ? s.home.runs : s.strikeouts}`,
+        size: 44,
+        fill: PAL.red,
+        stroke: { color: INK, width: 4 },
+        rotation: -0.06,
+      },
+      0,
+      -20,
+    );
+    const detail = hitting
+      ? `HITS ${s.home.hits}`
+      : `RUNS ALLOWED ${s.away.runs}  ·  HITS ${s.away.hits}`;
+    this.cardLabel({ text: detail, size: 11, fill: INK, letterSpacing: 0.5 }, 0, 10);
+    const best = hitting ? this.game.best.hitting : this.game.best.pitching;
+    this.cardLabel(
+      { text: `YOUR BEST  ${best}`, size: 11, fill: PAL.woodDark, letterSpacing: 0.5 },
+      0,
+      26,
+    );
+    if (this.game.result?.isNewBest)
+      this.cardLabel(
+        {
+          text: 'NEW RECORD!',
+          size: 13,
+          fill: PAL.gold,
+          stroke: { color: INK, width: 3 },
+          rotation: -0.06,
+        },
+        0,
+        42,
+      );
   }
 }
+
+/** Line score columns: the name, then up to nine innings, then runs and hits. */
+const NAME_W = 26;
+const CELL_W = 10;
+const tableColumns = (s: GameState): { first: number; cols: number } => {
+  const innings = Math.max(s.innings, s.away.line.length, s.home.line.length);
+  return { first: Math.max(0, innings - 9), cols: Math.min(9, innings) };
+};
+const tableWidth = (s: GameState): number => NAME_W + tableColumns(s).cols * CELL_W + 28;
 
 const ordinal = (n: number): string =>
   `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'TH' : (['TH', 'ST', 'ND', 'RD'][n % 10] ?? 'TH')}`;

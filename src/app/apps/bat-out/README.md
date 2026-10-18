@@ -21,7 +21,7 @@ for line and check them against the same seeded runs.
 | `rules.ts`                        | Count, outs, bases, innings, line score, walk-offs and extra innings                          | none          |
 | `sim.ts`                          | The 60 Hz game loop and its phases                                                            | none          |
 | `game.ts`                         | Input, sound and high scores                                                                  | web           |
-| `art.ts`, `view.ts`, `bat-out.ts` | Pixel-art figures, the Pixi renderer and the Angular component                                | web           |
+| `art.ts`, `view.ts`, `bat-out.ts` | Cartoon figures, the Pixi renderer and the Angular component                                  | web           |
 
 Everything above `game.ts` uses only plain arithmetic and the seeded random source, so a port given the same seed
 and inputs makes the same plays.

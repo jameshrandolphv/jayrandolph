@@ -12,6 +12,28 @@ import { BatOutView } from './view';
 const PRIMARY_KEYS = new Set(['Space', 'Enter']);
 const PAUSE_KEYS = new Set(['Escape', 'KeyP']);
 
+/** Chaos Park's lettering, self-hosted so the game works offline; both are under the SIL Open Font License. */
+const FONTS: readonly [family: string, url: string][] = [
+  ['Bangers', 'fonts/bangers.woff2'],
+  ['Pacifico', 'fonts/pacifico.woff2'],
+];
+const FONT_TIMEOUT_MS = 4000;
+
+/** Text is rasterised when it is first drawn, so the fonts have to be ready before the view starts. */
+const loadFonts = async (): Promise<void> => {
+  if (typeof FontFace === 'undefined' || typeof document === 'undefined') return;
+  const load = Promise.all(
+    FONTS.map(async ([family, url]) => {
+      const face = new FontFace(family, `url(${url})`);
+      document.fonts.add(await face.load());
+    }),
+  );
+  // A missing font falls back to the system ones rather than holding up the game.
+  await Promise.race([load, new Promise((resolve) => setTimeout(resolve, FONT_TIMEOUT_MS))]).catch(
+    () => undefined,
+  );
+};
+
 @Component({
   selector: 'app-bat-out',
   imports: [WindowFrame, GameCanvas],
@@ -29,6 +51,7 @@ const PAUSE_KEYS = new Set(['Escape', 'KeyP']);
         [logicalHeight]="height"
         [background]="background"
         [integerScale]="false"
+        [antialias]="true"
         [fill]="true"
         [fillCentre]="true"
         label="Bat Out!"
@@ -45,16 +68,20 @@ export class BatOut {
   protected game?: BatOutGame;
   private readonly scores = inject(ScoreService);
   private readonly sound = inject(SoundSettings);
+  private destroyed = false;
   private detach?: () => void;
 
   constructor() {
     inject(DestroyRef).onDestroy(() => {
+      this.destroyed = true;
       this.detach?.();
       this.game?.dispose();
     });
   }
 
-  protected onReady(surface: GameSurface): void {
+  protected async onReady(surface: GameSurface): Promise<void> {
+    await loadFonts();
+    if (this.destroyed) return;
     const { app, root } = surface;
     const game = new BatOutGame(this.scores, new Sfx(this.sound));
     const view = new BatOutView(app, root, game);
