@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.8.0
+- Added Bat Out!, an arcade baseball game in a handheld pixel-art style: swipe through the pitch to hit it, or swipe up from the pitcher to throw (a straight flick for a fastball, a hook for a slider or curveball, a flick back down for a sinker, a pause for a knuckleball)
+- Five ways to play from the menu: one turn at bat, one turn on the mound, or a 3, 6 or 9 inning game against the computer with a line score at every change of sides, walk-offs and extra innings
+- Every ball in play is fielded by the defence by the rules: fly outs, line outs, ground outs, double plays, sac flies, runners tagging up and taking extra bases, singles to home runs and grand slams
+
 ## 1.7.6
 - Chaos Park: no more hedge round the screen, and the park now takes the exact shape of the screen however long or square it is (it used to stop at twice as long as wide, leaving city showing beside it on phones held sideways)
 - Chaos Park: on long, narrow screens the road reaches both ends, as a rounded rectangle, instead of shrinking to a small oval in the middle

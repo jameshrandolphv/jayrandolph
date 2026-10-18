@@ -18,7 +18,10 @@ export type SfxName =
   | 'brake'
   | 'squeak'
   | 'bite'
-  | 'bell';
+  | 'bell'
+  | 'crack'
+  | 'mitt'
+  | 'swish';
 
 interface Tone {
   from: number;
@@ -86,6 +89,14 @@ const TONES: Readonly<Record<SfxName, readonly Tone[]>> = {
     { from: 900, to: 250, seconds: 0.08, type: 'square', volume: 0.06 },
     { from: 600, to: 120, seconds: 0.3, type: 'triangle', volume: 0.06, delay: 0.06 },
   ],
+  // A bat on a ball: a sharp knock with a bright ring.
+  crack: [
+    { from: 1800, to: 400, seconds: 0.05, type: 'square', volume: 0.09 },
+    { from: 2600, to: 1900, seconds: 0.12, type: 'triangle', volume: 0.05 },
+  ],
+  // The ball popping into a leather mitt.
+  mitt: [{ from: 320, to: 90, seconds: 0.08, type: 'square', volume: 0.08 }],
+  swish: [{ from: 300, to: 900, seconds: 0.14, type: 'sawtooth', volume: 0.025 }],
   slip: [
     { from: 1400, to: 500, seconds: 0.18, type: 'triangle', volume: 0.06 },
     { from: 900, to: 1300, seconds: 0.12, type: 'sine', volume: 0.04, delay: 0.14 },
