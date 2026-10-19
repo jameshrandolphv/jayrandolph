@@ -666,10 +666,13 @@ export class ChaosParkView {
     const strip = roadStrip(park.season, 400);
     strip.scale.set(1.12);
     strip.y = -22;
+    // The cup and the heading are centred together.
     const heading = label('YOUR BEST', 30, COLORS.ink, { letterSpacing: 2 });
-    heading.position.set(0, 64);
     const cup = trophy();
-    cup.position.set(-heading.width / 2 - 26, 62);
+    const gap = 8;
+    const left = -(cup.width + gap + heading.width) / 2;
+    cup.position.set(left + cup.width / 2, 62);
+    heading.position.set(left + cup.width + gap + heading.width / 2, 64);
     this.titleBest.position.set(0, 106);
     layer.addChild(season, strip, heading, cup, this.titleBest);
     layer.addChild(
@@ -686,7 +689,7 @@ export class ChaosParkView {
       stroke: { color: COLORS.ink, width: 6, join: 'round' },
       letterSpacing: 2,
     });
-    heading.position.set(0, -218);
+    heading.position.set(0, -212);
     layer.addChild(heading);
     const { season } = park;
     const group = (...parts: [Container, number, number, number?][]): Container => {
@@ -776,15 +779,15 @@ export class ChaosParkView {
       ],
     ];
 
-    let y = -188;
+    let y = -184;
     for (const [icon, text] of rows) {
       const lines = text.split('\n').length;
-      const h = lines > 1 ? 52 : 33;
+      const h = lines > 1 ? 48 : 31;
       const mid = y + h / 2;
       icon.position.set(-178, mid);
-      const caption = label(text, 19, COLORS.ink, {
+      const caption = label(text, 18, COLORS.ink, {
         letterSpacing: 1,
-        lineHeight: 22,
+        lineHeight: 21,
         align: 'left',
       });
       caption.anchor.set(0, 0.5);

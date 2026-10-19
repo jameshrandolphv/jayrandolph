@@ -16,6 +16,7 @@ import {
   laneOffset,
   pose,
   type Entrance,
+  type Field,
   type Park,
   type Point,
   type Season,
@@ -295,30 +296,82 @@ const drawFields = (g: Graphics, park: Park, pal: Palette): void => {
       }
       g.poly([...left, ...right]).fill(pal.fieldStripe);
     }
-    if (f.diamond && !pal.snow) {
-      // A ball field in one end: infield dirt, the diamond and its bases.
-      const hx = f.x - f.rx * 0.55;
-      const hy = f.y + f.ry * 0.45;
-      const a = Math.atan2(f.y - hy, f.x - hx);
-      const r = Math.min(f.rx, f.ry) * 0.85;
-      g.moveTo(hx, hy)
-        .arc(hx, hy, r, a - Math.PI / 4, a + Math.PI / 4)
-        .closePath()
-        .fill(0xd9b27c);
-      const base = (t: number) => ({
-        x: hx + Math.cos(a + t) * r * 0.55,
-        y: hy + Math.sin(a + t) * r * 0.55,
-      });
-      const b1 = base(-Math.PI / 4);
-      const b3 = base(Math.PI / 4);
-      const b2 = { x: b1.x + b3.x - hx, y: b1.y + b3.y - hy };
-      g.poly([hx, hy, b1.x, b1.y, b2.x, b2.y, b3.x, b3.y])
-        .fill(pal.field)
-        .stroke({ width: 1.4, color: 0xffffff });
-      for (const p of [b1, b2, b3, { x: hx, y: hy }])
-        g.rect(p.x - 1.8, p.y - 1.8, 3.6, 3.6).fill(0xffffff);
-    }
+    if (f.diamond && !pal.snow) drawDiamond(g, f, pal);
   }
+};
+
+/** Clay on a ball field, scaled from a real one: 90 ft between bases. */
+const CLAY = 0xcf8f5c;
+
+/**
+ * A ball field in one end of a field: home plate toward the edge and the outfield toward the middle. As on a real
+ * one, the infield clay is an arc about the pitcher's mound out past the bases, with grass inside the base paths,
+ * clay circles round home and the mound, and chalk foul lines from home out to the edge of the grass.
+ */
+const drawDiamond = (g: Graphics, f: Field, pal: Palette): void => {
+  const hx = f.x - f.rx * 0.55;
+  const hy = f.y + f.ry * 0.45;
+  const a = Math.atan2(f.y - hy, f.x - hx);
+  // Home to first base; the rest follows a real field's measurements in feet.
+  const d = Math.min(f.rx, f.ry) * 0.85 * 0.6;
+  const ft = d / 90;
+  const at = (dist: number, turn: number) => ({
+    x: hx + Math.cos(a + turn) * dist,
+    y: hy + Math.sin(a + turn) * dist,
+  });
+  const mound = at(60.5 * ft, 0);
+  // The clay: between the foul lines, out to 95 ft from the mound.
+  const skin = 95 * ft;
+  const reach = (turn: number) => {
+    const along = Math.cos(turn) * 60.5 * ft;
+    return along + Math.sqrt(skin * skin - (60.5 * ft) ** 2 + along * along);
+  };
+  const clay: number[] = [hx, hy];
+  const corner = Math.atan2(
+    Math.sin(-Math.PI / 4) * reach(-Math.PI / 4),
+    Math.cos(-Math.PI / 4) * reach(-Math.PI / 4) - 60.5 * ft,
+  );
+  for (let k = 0; k <= 16; k++) {
+    const t = corner + (-2 * corner * k) / 16;
+    clay.push(mound.x + Math.cos(a + t) * skin, mound.y + Math.sin(a + t) * skin);
+  }
+  g.poly(clay).fill(CLAY);
+  // Infield grass, inside the base paths.
+  const inset = (p: { x: number; y: number }) => ({
+    x: hx + (p.x - hx) * 0.88 + Math.cos(a) * 6 * ft,
+    y: hy + (p.y - hy) * 0.88 + Math.sin(a) * 6 * ft,
+  });
+  const grass = [
+    at(0, 0),
+    at(90 * ft, -Math.PI / 4),
+    at(90 * Math.SQRT2 * ft, 0),
+    at(90 * ft, Math.PI / 4),
+  ].map(inset);
+  g.poly(flat(grass)).fill(pal.field);
+  // Cut-outs round the bases, home and the mound.
+  const bases = [at(90 * ft, -Math.PI / 4), at(90 * Math.SQRT2 * ft, 0), at(90 * ft, Math.PI / 4)];
+  for (const b of bases) g.circle(b.x, b.y, 13 * ft);
+  g.circle(hx, hy, 13 * ft)
+    .circle(mound.x, mound.y, 9 * ft)
+    .fill(CLAY);
+  // Foul lines out to the edge of the grass.
+  for (const turn of [-Math.PI / 4, Math.PI / 4]) {
+    const dx = Math.cos(a + turn);
+    const dy = Math.sin(a + turn);
+    // Where the line leaves the field's ellipse.
+    const px = (hx - f.x) / f.rx;
+    const py = (hy - f.y) / f.ry;
+    const qx = dx / f.rx;
+    const qy = dy / f.ry;
+    const qq = qx * qx + qy * qy;
+    const pq = px * qx + py * qy;
+    const out = (-pq + Math.sqrt(pq * pq - qq * (px * px + py * py - 1))) / qq;
+    g.moveTo(hx, hy).lineTo(hx + dx * (out - 3), hy + dy * (out - 3));
+  }
+  g.stroke({ width: 1.4, color: 0xffffff });
+  g.circle(mound.x, mound.y, 1.6).fill(0xffffff);
+  for (const p of [...bases, { x: hx, y: hy }])
+    g.rect(p.x - 1.8, p.y - 1.8, 3.6, 3.6).fill(0xffffff);
 };
 
 const drawWater = (g: Graphics, w: Water, pal: Palette, rng: () => number): void => {
