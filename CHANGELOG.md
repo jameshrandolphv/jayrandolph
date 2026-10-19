@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.8.2
+- Bat Out! is switched off for now: it is gone from the desktop and the dock, and `/bat-out` no longer opens it. Its code is kept so it can come back
+
 ## 1.8.1
 - Bat Out!: much easier to hit. A swipe now meets the ball where you see it; before, it was checked against where the pitch would end up, so swiping through the ball a moment early went over it. Your bat is also wider and more forgiving of timing than the computer's
 - Bat Out!: a gold ring on the plate shows roughly where each pitch is heading, and a soft band round your swipe shows how wide your bat is
