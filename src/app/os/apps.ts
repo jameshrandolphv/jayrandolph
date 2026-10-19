@@ -48,13 +48,14 @@ export const APPS: readonly AppDef[] = [
     icon: 'park',
     load: () => import('../apps/chaos-park/chaos-park').then((m) => m.ChaosPark),
   },
-  {
-    id: 'bat-out',
-    added: '2026-10-18',
-    name: 'Bat Out!',
-    icon: 'bat',
-    load: () => import('../apps/bat-out/bat-out').then((m) => m.BatOut),
-  },
+  // Bat Out! is switched off for now; its code stays in src/app/apps/bat-out/. Uncomment to bring it back.
+  // {
+  //   id: 'bat-out',
+  //   added: '2026-10-18',
+  //   name: 'Bat Out!',
+  //   icon: 'bat',
+  //   load: () => import('../apps/bat-out/bat-out').then((m) => m.BatOut),
+  // },
   {
     id: 'write-stuff',
     added: '2026-10-05',
