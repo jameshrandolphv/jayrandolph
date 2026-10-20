@@ -9,6 +9,7 @@ import {
   FIRST_SPAWN,
   IMPACT_TICKS,
   GHOST_TICKS,
+  STAR_TICKS,
   LIVES,
   MAX_LIVES,
   PATCH_SCORES,
@@ -89,7 +90,9 @@ export type SimEvent =
   | 'hit'
   | 'life'
   | 'double'
-  | 'ghost';
+  | 'ghost'
+  | 'star'
+  | 'knock';
 
 /**
  * Where a mover is: walking in from the street, on the loop, cutting across the park, or heading out. Only movers on
@@ -163,6 +166,8 @@ export interface Mover {
   shoutAt: number;
   /** Ticks left of passing through everyone, after taking an invisibility token. */
   ghost: number;
+  /** Ticks left of knocking everyone it touches off the loop, after taking a rainbow star. */
+  star: number;
 }
 
 /**
@@ -428,6 +433,7 @@ export class ChaosParkSim {
       if (m.slip > 0) m.slip--;
       if (m.shout > 0) m.shout--;
       if (m.ghost > 0) m.ghost--;
+      if (m.star > 0) m.star--;
       if (m.state === 'track') this.moveOnTrack(m);
       else if (this.moveOnRoute(m)) gone.add(m);
     }
@@ -683,6 +689,7 @@ export class ChaosParkSim {
     const length = this.park.track.length;
     for (const m of live) m.warning = false;
     const pairs = new Set<string>();
+    const knocked = new Set<Mover>();
     for (let i = 0; i < live.length; i++) {
       for (let j = i + 1; j < live.length; j++) {
         const a = live[i]!;
@@ -691,6 +698,7 @@ export class ChaosParkSim {
         const dist = Math.abs(delta);
         const half = (a.len + b.len) / 2;
         const pair = `${a.id}:${b.id}`;
+        if (knocked.has(a) || knocked.has(b)) continue;
         if (this.passing.has(pair)) {
           // One is passing through the other after a collision; done once they are clear.
           if (dist >= half || laneOverlap(a.p, a.width, b.p, b.width) <= 0)
@@ -700,6 +708,16 @@ export class ChaosParkSim {
         if (dist > half + WARN_MAX_GAP) continue;
         const touching =
           laneOverlap(a.p, a.width, b.p, b.width) > LATERAL_OVERLAP && dist < half * COLLIDE_FACTOR;
+        // A star knocks whoever it touches off the loop, for the laps they had left, except a carriage (too big to
+        // shift) or another star, which it passes through.
+        if (a.star > 0 || b.star > 0) {
+          const victim = a.star > 0 ? b : a;
+          if (touching) {
+            if (victim.star > 0 || victim.kind === 'carriage') this.passing.add(pair);
+            else knocked.add(victim);
+          }
+          continue;
+        }
         // An invisible one goes through anyone, and nobody warns about it. Still overlapping when it shows again,
         // it carries on through rather than colliding.
         if (a.ghost > 0 || b.ghost > 0) {
@@ -730,6 +748,17 @@ export class ChaosParkSim {
       }
     }
     this.warnedPairs = pairs;
+    for (const m of knocked) this.knockOff(m);
+  }
+
+  /** A star sends someone flying off the loop: they're gone, and their remaining laps score at once. */
+  private knockOff(m: Mover): void {
+    const value = Math.max(1, m.laps - m.lapsDone) * m.crowd;
+    this.score += value;
+    this.movers = this.movers.filter((o) => o !== m);
+    this.impacts.push({ id: this.nextId++, x: m.x, y: m.y, ticks: 0 });
+    this.pops.push({ id: this.nextId++, value, x: m.x, y: m.y, ticks: 0 });
+    this.events.push('knock');
   }
 
   // -------------------------------------------------------------------------------------------------------------
@@ -755,13 +784,13 @@ export class ChaosParkSim {
   private spawnSpecials(): void {
     const between = ([lo, hi]: readonly [number, number]) =>
       Math.round(lo + this.rng() * (hi - lo));
-    // The first group comes the moment the score reaches GROUP_FROM_SCORE (the timer starts at zero), then one
-    // every GROUP_INTERVAL from each arrival.
-    if (this.score >= GROUP_FROM_SCORE && --this.groupTimer <= 0) {
-      if (this.movers.some((m) => m.kind === 'group')) this.groupTimer = 120;
+    // A group comes GROUP_INTERVAL after the score reaches GROUP_FROM_SCORE, and again that long after each one
+    // has gone, so there is never more than one.
+    if (this.score >= GROUP_FROM_SCORE) {
+      if (this.movers.some((m) => m.kind === 'group')) this.groupTimer = 0;
+      else if (this.groupTimer <= 0) this.groupTimer = between(GROUP_INTERVAL);
       // Every gate busy: try again in a moment.
-      else if (!this.arrive('group')) this.groupTimer = 10;
-      else this.groupTimer = between(GROUP_INTERVAL);
+      else if (--this.groupTimer <= 0 && !this.arrive('group')) this.groupTimer = 10;
     }
     if (this.score >= RAT_FROM_SCORE) {
       if (this.ratTimer <= 0) this.ratTimer = between(RAT_INTERVAL) / 2;
@@ -781,7 +810,7 @@ export class ChaosParkSim {
   /** Puts a heart or token somewhere clear on the loop; returns false if the spot drawn was too close to someone. */
   private placePickup(): boolean {
     const { track } = this.park;
-    const kinds: PickupKind[] = ['heart', 'double', 'ghost'];
+    const kinds: PickupKind[] = ['heart', 'double', 'ghost', 'star'];
     const weight = (k: PickupKind): number =>
       k === 'heart' && this.lives >= MAX_LIVES ? 0 : PICKUP_WEIGHTS[k];
     let r = this.rng() * kinds.reduce((sum, k) => sum + weight(k), 0);
@@ -822,7 +851,8 @@ export class ChaosParkSim {
       p.ticks = PICKUP_TICKS;
       if (p.kind === 'heart') this.lives = Math.min(MAX_LIVES, this.lives + 1);
       else if (p.kind === 'double') this.duplicate(taker);
-      else taker.ghost = GHOST_TICKS;
+      else if (p.kind === 'ghost') taker.ghost = GHOST_TICKS;
+      else taker.star = STAR_TICKS;
       this.events.push(p.kind === 'heart' ? 'life' : p.kind);
       this.pops.push({ id: this.nextId++, value: 0, pickup: p.kind, x: taker.x, y: taker.y, ticks: 0 });
     }
@@ -987,6 +1017,7 @@ export class ChaosParkSim {
       shout: 0,
       shoutAt: -Infinity,
       ghost: 0,
+      star: 0,
     };
   }
 

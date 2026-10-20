@@ -369,10 +369,10 @@ const drawDiamond = (g: Graphics, f: Field, pal: Palette): void => {
     const out = (-pq + Math.sqrt(pq * pq - qq * (px * px + py * py - 1))) / qq;
     g.moveTo(hx, hy).lineTo(hx + dx * (out - 3), hy + dy * (out - 3));
   }
-  g.stroke({ width: 1.4, color: 0xffffff });
-  g.circle(mound.x, mound.y, 1.6).fill(0xffffff);
+  g.stroke({ width: 1.2, color: 0xffffff, alpha: 0.5 });
+  g.circle(mound.x, mound.y, 1.6).fill({ color: 0xffffff, alpha: 0.75 });
   for (const p of [...bases, { x: hx, y: hy }])
-    g.rect(p.x - 1.8, p.y - 1.8, 3.6, 3.6).fill(0xffffff);
+    g.rect(p.x - 1.8, p.y - 1.8, 3.6, 3.6).fill({ color: 0xffffff, alpha: 0.75 });
 };
 
 const drawWater = (g: Graphics, w: Water, pal: Palette, rng: () => number): void => {
@@ -1160,11 +1160,26 @@ export const PICKUP_COLORS: Readonly<Record<PickupKind, number>> = {
   heart: 0xd8433a,
   double: 0x8a55c4,
   ghost: 0x2f9c95,
+  star: 0xe89a1c,
+};
+
+/** The colours a rainbow star cycles through, on its token and on whoever has taken one. */
+export const RAINBOW: readonly number[] = [0xe8443a, 0xf29a2e, 0xf4d03f, 0x4cb050, 0x3b8fd9, 0x8a55c4];
+
+/**
+ * A glow under a mover that has taken a rainbow star, the shape of its footprint plus a margin, drawn white to be
+ * tinted (`RAINBOW`) as it flashes. At the design size, like the body.
+ */
+export const starGlow = (kind: Kind, width: number, len: number): Graphics => {
+  const w = (kind === 'walker' || kind === 'runner' ? 16 : kind === 'biker' ? 12 : width * DESIGN_LANE - 4) + 10;
+  const l = len + 10;
+  return new Graphics().roundRect(-l / 2, -w / 2, l, w, Math.min(w, l) / 2).fill(0xffffff);
 };
 
 /**
  * A pick-up lying on the road, at the design lane width: a heart like the ones in the HUD (a life), or a disc with a
- * white ring and on it two stacked cards (a duplicate) or a little ghost (invisibility).
+ * white ring and on it two stacked cards (a duplicate), a little ghost (invisibility) or, on rainbow stripes, a gold
+ * star.
  */
 export const pickupToken = (kind: PickupKind): Container => {
   const c = new Container();
@@ -1179,14 +1194,27 @@ export const pickupToken = (kind: PickupKind): Container => {
     c.addChild(shadow, h);
     return c;
   }
-  const disc = new Graphics()
-    .circle(1, 1.5, 10.5)
-    .fill({ color: 0x000000, alpha: 0.25 })
-    .circle(0, 0, 10.5)
-    .fill(PICKUP_COLORS[kind])
-    .stroke({ width: 2.2, color: 0xffffff });
+  const disc = new Graphics().circle(1, 1.5, 10.5).fill({ color: 0x000000, alpha: 0.25 });
+  if (kind === 'star') {
+    RAINBOW.forEach((color, i) => {
+      const a0 = -Math.PI / 2 + (i / RAINBOW.length) * Math.PI * 2;
+      const a1 = a0 + (Math.PI * 2) / RAINBOW.length;
+      disc.moveTo(0, 0).arc(0, 0, 10.5, a0, a1).closePath().fill(color);
+    });
+    disc.circle(0, 0, 10.5).stroke({ width: 2.2, color: 0xffffff });
+  } else {
+    disc.circle(0, 0, 10.5).fill(PICKUP_COLORS[kind]).stroke({ width: 2.2, color: 0xffffff });
+  }
   c.addChild(disc);
-  if (kind === 'double') {
+  if (kind === 'star') {
+    const pts: number[] = [];
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI / 2 + (i * Math.PI) / 5;
+      const r = i % 2 === 0 ? 7.5 : 3.4;
+      pts.push(Math.cos(a) * r, Math.sin(a) * r + 0.5);
+    }
+    c.addChild(new Graphics().poly(pts).fill(0xffd84a).stroke({ width: 1.3, color: INK, join: 'round' }));
+  } else if (kind === 'double') {
     c.addChild(
       new Graphics()
         .roundRect(-6, -6.5, 9, 10, 2)

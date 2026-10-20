@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.3
+- Chaos Park: a new, rare rainbow star token. Whoever takes it flashes through the rainbow for 8 seconds and knocks anyone it touches off the track, with no life lost, scoring the laps they had left (carriages are too big to knock, so it passes through them)
+- Chaos Park: run groups come 10 to 45 seconds after you reach 10 laps, and again 10 to 45 seconds after the last one has gone, instead of every 45 to 65 seconds
+- Chaos Park: the ball fields' lines are fainter
+- Chaos Park: a heart you gain grows in instead of popping big, so every heart by the lap counter is the same size
+
 ## 1.9.2
 - Chaos Park: the hearts by the lap counter show only the lives you have left; a lost one simply goes instead of turning into an empty outline
 - Chaos Park: the pause button sits a little further in from the corner, clear of the park's rounded edge

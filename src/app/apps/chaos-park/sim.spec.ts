@@ -4,6 +4,7 @@ import {
   BOOST,
   DOUBLE_GAP,
   GHOST_TICKS,
+  STAR_TICKS,
   LIVES,
   MAX_LIVES,
   PICKUP_FROM_SCORE,
@@ -101,6 +102,7 @@ const put = (
     shout: 0,
     shoutAt: -Infinity,
     ghost: 0,
+    star: 0,
     ...options,
   };
   m.baseSpeed = m.speed;
@@ -371,7 +373,7 @@ describe('run groups', () => {
     expect(g.state).toBe('leaving');
   });
 
-  it('come the moment the score reaches 10, then every 45 to 65 seconds, never two at once', () => {
+  it('come 10 to 45 seconds after the score reaches 10, and that long after the last one left, one at a time', () => {
     for (const seed of [6, 7, 8]) {
       const sim = new ChaosParkSim(seededRng(seed));
       sim.start();
@@ -383,29 +385,26 @@ describe('run groups', () => {
       }
       expect(sim.movers.some((m) => m.kind === 'group')).toBe(false);
       sim.score = GROUP_FROM_SCORE;
-      const arrivals: number[] = [];
-      const seen = new Set<number>();
+      // Each wait: from reaching the score, or from the last group leaving, to the next arriving.
+      const waits: number[] = [];
+      let since = 0;
+      let present = false;
       for (let t = 0; t < 8 * 3600; t++) {
         sim.step();
         sim.score = GROUP_FROM_SCORE;
         const now = sim.movers.filter((m) => m.kind === 'group');
         expect(now.length).toBeLessThanOrEqual(1);
-        for (const g of now) {
-          if (seen.has(g.id)) continue;
-          seen.add(g.id);
-          arrivals.push(t);
-        }
+        if (now.length && !present) waits.push(t - since);
+        if (!now.length && present) since = t;
+        present = now.length > 0;
       }
-      // Straight away (give or take a moment if every gate is busy)...
-      expect(arrivals[0]!).toBeLessThan(30);
-      // ...then 45 to 65 seconds apart.
-      for (let k = 1; k < arrivals.length; k++) {
-        const gap = arrivals[k]! - arrivals[k - 1]!;
-        expect(gap).toBeGreaterThanOrEqual(GROUP_INTERVAL[0]);
-        expect(gap).toBeLessThanOrEqual(GROUP_INTERVAL[1] + 30);
+      expect(GROUP_INTERVAL).toEqual([10 * 60, 45 * 60]);
+      // Give or take a moment if every gate is busy.
+      for (const w of waits) {
+        expect(w).toBeGreaterThanOrEqual(GROUP_INTERVAL[0]);
+        expect(w).toBeLessThanOrEqual(GROUP_INTERVAL[1] + 30);
       }
-      expect(GROUP_INTERVAL).toEqual([45 * 60, 65 * 60]);
-      expect(arrivals.length).toBeGreaterThanOrEqual(8);
+      expect(waits.length).toBeGreaterThanOrEqual(8);
     }
   });
 });
@@ -798,6 +797,35 @@ describe('pick-ups', () => {
     expect(walker.daze).toBe(0);
     ticks(sim, GHOST_TICKS);
     expect(bike.ghost).toBe(0);
+  });
+
+  it('a rainbow star knocks whoever its taker touches off the loop, for the laps they had left', () => {
+    const sim = playing();
+    const bike = put(sim, 'biker', 100, 1);
+    const walker = put(sim, 'walker', 220, 1, { laps: 3 });
+    walker.lapsDone = 1;
+    lay(sim, 'star', 112, 1);
+    sim.step();
+    expect(bike.star).toBe(STAR_TICKS);
+    expect(sim.drainEvents()).toContain('star');
+    while (sim.movers.includes(walker) && sim.playTicks < 300) sim.step();
+    expect(sim.movers).not.toContain(walker);
+    expect(sim.score).toBe(2);
+    expect(sim.lives).toBe(LIVES);
+    expect(sim.drainEvents()).toContain('knock');
+    ticks(sim, STAR_TICKS);
+    expect(bike.star).toBe(0);
+  });
+
+  it('a rainbow star goes through a carriage', () => {
+    const sim = playing();
+    const bike = put(sim, 'biker', 100, 2);
+    const carriage = put(sim, 'carriage', 220, 2, { speed: 0 });
+    bike.star = STAR_TICKS;
+    while (bike.s < carriage.s + 60 && sim.playTicks < 300) sim.step();
+    expect(sim.movers).toContain(carriage);
+    expect(sim.lives).toBe(LIVES);
+    expect(sim.score).toBe(0);
   });
 
   it('come from five laps, one at a time, and never a heart while lives are full', () => {

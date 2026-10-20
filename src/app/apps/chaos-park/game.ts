@@ -35,6 +35,8 @@ const SOUNDS: Readonly<Record<SimEvent, SfxName>> = {
   life: 'score',
   double: 'clear',
   ghost: 'swish',
+  star: 'clear',
+  knock: 'hit',
 };
 
 /**

@@ -15,6 +15,8 @@ import {
   patchSprites,
   pickupToken,
   PICKUP_COLORS,
+  RAINBOW,
+  starGlow,
   drawRat,
   ratAlert,
   badgeNumber,
@@ -67,6 +69,7 @@ const PICKUP_WORDS: Readonly<Record<PickupKind, string>> = {
   heart: '+1 LIFE',
   double: 'DUPLICATE!',
   ghost: 'INVISIBLE!',
+  star: 'STAR POWER!',
 };
 
 /** How see-through someone invisible is: faint while it lasts, flickering back in over its last second. */
@@ -89,6 +92,8 @@ interface RatView {
 
 interface MoverView {
   root: Container;
+  /** The flashing rainbow under someone who has taken a star. */
+  glow: Graphics;
   shadow: Graphics;
   limbs: Graphics;
   /** Speed lines behind it while boosted. */
@@ -351,6 +356,12 @@ export class ChaosParkView {
       v.root.rotation = v.angle + wobble;
       v.root.alpha = m.alpha * ghostAlpha(m.ghost, sim.clock);
       v.streaks.visible = m.boosted;
+      // A star flashes through the rainbow, and flickers over its last second.
+      v.glow.visible = m.star > 0 && (m.star > 60 || Math.floor(sim.clock / 5) % 2 === 0);
+      if (v.glow.visible) {
+        v.glow.tint = RAINBOW[Math.floor(sim.clock / 4) % RAINBOW.length]!;
+        v.glow.alpha = 0.85;
+      }
       // The lines flicker and trail a little further as it goes.
       if (m.boosted) v.streaks.x = -2 - ((sim.clock + alpha) % 6);
       v.shadow.position.set(x + SHADOW.x, y + SHADOW.y);
@@ -407,7 +418,9 @@ export class ChaosParkView {
     // Drawn at the design size and scaled up to the lane width.
     const streaks = speedStreaks(m.width, m.len / ART);
     streaks.visible = false;
-    root.addChild(streaks, limbs, moverBody(look));
+    const glow = starGlow(m.kind, m.width, m.len / ART);
+    glow.visible = false;
+    root.addChild(glow, streaks, limbs, moverBody(look));
     const shadow = moverShadow(m.kind, m.width, m.len);
     const warn = warnBubble();
     warn.visible = false;
@@ -421,6 +434,7 @@ export class ChaosParkView {
     drawLimbs(limbs, look, 0);
     return {
       root,
+      glow,
       shadow,
       limbs,
       streaks,
@@ -633,7 +647,7 @@ export class ChaosParkView {
     }
   }
 
-  /** A heart for each life left; a lost one simply goes, and one just gained pops in. */
+  /** A heart for each life left; a lost one simply goes, and one just gained grows in. */
   private syncHearts(): void {
     const { lives } = this.game.sim;
     if (lives !== this.shownLives) {
@@ -641,10 +655,10 @@ export class ChaosParkView {
       this.shownLives = lives;
       this.hearts.forEach((h, i) => {
         h.visible = i < lives;
-        h.scale.set(gained && i === lives - 1 ? 1.8 : 1);
+        h.scale.set(gained && i === lives - 1 ? 0.3 : 1);
       });
     }
-    for (const h of this.hearts) if (h.scale.x > 1) h.scale.set(Math.max(1, h.scale.x - 0.04));
+    for (const h of this.hearts) if (h.scale.x < 1) h.scale.set(Math.min(1, h.scale.x + 0.05));
   }
 
   private syncCrash(): void {
@@ -832,15 +846,15 @@ export class ChaosParkView {
         'THREE COLLISIONS END THE GAME! HEARTS\nON THE ROAD GIVE ONE BACK, UP TO FIVE',
       ],
       [
-        group([pickupToken('double'), -12, 0, 1.1], [pickupToken('ghost'), 14, 0, 1.1]),
-        'DUPLICATE ADDS A COPY RIGHT BEHIND;\nINVISIBLE LETS IT PASS THROUGH OTHERS',
+        group([pickupToken('double'), -24, 0], [pickupToken('ghost'), 0, 0], [pickupToken('star'), 24, 0]),
+        'DUPLICATE ADDS A COPY RIGHT BEHIND;\nINVISIBLE LETS IT PASS THROUGH OTHERS;\nRARE STARS KNOCK OTHERS OFF FOR POINTS',
       ],
     ];
 
-    let y = -188;
+    let y = -184;
     for (const [icon, text] of rows) {
       const lines = text.split('\n').length;
-      const h = lines > 1 ? 45 : 27;
+      const h = lines * 21 + 2;
       const mid = y + h / 2;
       icon.position.set(-178, mid);
       const caption = label(text, 18, COLORS.ink, {

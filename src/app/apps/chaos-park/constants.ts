@@ -95,12 +95,12 @@ export const SPEED_SPREAD = 0.08;
 
 /**
  * Run groups: 6 to 12 runners two abreast, doing one lap. The first comes as soon as the score reaches
- * `GROUP_FROM_SCORE`, then one every `GROUP_INTERVAL` ticks (45 to 65 seconds), never two at once. Each runner's
+ * `GROUP_FROM_SCORE`, one every `GROUP_INTERVAL` ticks (10 to 45 seconds) from then on, never two at once. Each runner's
  * lap scores.
  */
 export const GROUP_SIZE: readonly [number, number] = [6, 12];
 export const GROUP_FROM_SCORE = 10;
-export const GROUP_INTERVAL: readonly [number, number] = [45 * 60, 65 * 60];
+export const GROUP_INTERVAL: readonly [number, number] = [10 * 60, 45 * 60];
 /** Spacing between the rows of a run group, front to back, as drawn. */
 export const GROUP_ROW = 12;
 export const groupLength = (size: number): number => (Math.ceil(size / 2) * GROUP_ROW + 4) * ART;
@@ -156,15 +156,16 @@ export const IMPACT_TICKS = 40;
  * or drives over it, or `PICKUP_TICKS` pass. One at a time: the first comes `PICKUP_FIRST` ticks in, the next
  * `PICKUP_INTERVAL` after the last has gone. A heart gives a life back (never while lives are full); a duplicate
  * puts a copy of whoever takes it right behind them; an invisibility token lets them pass through everyone for
- * `GHOST_TICKS`. Carriages and run groups go over them without taking them.
+ * `GHOST_TICKS`; a rare rainbow star lets them knock everyone they touch off the loop for `STAR_TICKS`, scoring the
+ * laps those visitors still had to do. Carriages and run groups go over them without taking them.
  */
-export type PickupKind = 'heart' | 'double' | 'ghost';
+export type PickupKind = 'heart' | 'double' | 'ghost' | 'star';
 export const PICKUP_FROM_SCORE = 5;
 export const PICKUP_FIRST: readonly [number, number] = [6 * 60, 12 * 60];
 export const PICKUP_INTERVAL: readonly [number, number] = [15 * 60, 25 * 60];
 export const PICKUP_TICKS = 18 * 60;
 /** How likely each kind is, when it can come. */
-export const PICKUP_WEIGHTS: Readonly<Record<PickupKind, number>> = { heart: 2, double: 1, ghost: 1 };
+export const PICKUP_WEIGHTS: Readonly<Record<PickupKind, number>> = { heart: 2, double: 1, ghost: 1, star: 0.25 };
 /** A pick-up's length along the road, for taking it; it is drawn about this size. */
 export const PICKUP_LEN = 18 * ART;
 /** A pick-up only appears where nothing on the loop is within this distance of it in its lane. */
@@ -172,6 +173,7 @@ export const PICKUP_CLEAR = 60 * ART;
 /** The gap a duplicate is put behind the one it copies. */
 export const DOUBLE_GAP = 6 * ART;
 export const GHOST_TICKS = 6 * 60;
+export const STAR_TICKS = 8 * 60;
 
 /** Slippery patches appear on the road as the score reaches each of these, up to three. */
 export const PATCH_SCORES: readonly number[] = [25, 50, 100];
