@@ -230,8 +230,8 @@ export interface Bounds {
 }
 
 export const pauseButton = (b: Bounds): Rect => ({
-  x: b.right - 58,
-  y: b.bottom - 58,
+  x: b.right - 70,
+  y: b.bottom - 70,
   w: 48,
   h: 48,
 });

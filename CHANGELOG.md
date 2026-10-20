@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.9.2
+- Chaos Park: the hearts by the lap counter show only the lives you have left; a lost one simply goes instead of turning into an empty outline
+- Chaos Park: the pause button sits a little further in from the corner, clear of the park's rounded edge
+
 ## 1.9.1
 - Chaos Park: lap numbers sit in the middle of their circles (they were a little low and to the right)
 - Chaos Park: tokens stay on the road for 18 seconds instead of 12, and a heart on the road is drawn as a plain heart like the ones by the lap counter

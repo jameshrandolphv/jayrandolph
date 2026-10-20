@@ -192,6 +192,7 @@ export class ChaosParkView {
     this.hudLeft.addChild(laps, this.lapsText.box);
     for (let i = 0; i < MAX_LIVES; i++) {
       const h = new Container();
+      h.addChild(heart(true));
       h.position.set(this.lapsText.box.x + COUNTER.w / 2 + 26 + i * 30, 32);
       this.hearts.push(h);
       this.hudLeft.addChild(h);
@@ -632,21 +633,15 @@ export class ChaosParkView {
     }
   }
 
-  /**
-   * A full heart for each life left: three places, and one more for each life a heart has added. The one just lost
-   * pops as it empties, and one just gained pops as it fills.
-   */
+  /** A heart for each life left; a lost one simply goes, and one just gained pops in. */
   private syncHearts(): void {
     const { lives } = this.game.sim;
     if (lives !== this.shownLives) {
-      const changed = this.shownLives >= 0;
-      const popped = lives < this.shownLives ? lives : lives - 1;
+      const gained = this.shownLives >= 0 && lives > this.shownLives;
       this.shownLives = lives;
       this.hearts.forEach((h, i) => {
-        h.removeChildren().forEach((c) => c.destroy());
-        h.visible = i < Math.max(LIVES, lives);
-        h.addChild(heart(i < lives));
-        h.scale.set(changed && i === popped ? 1.8 : 1);
+        h.visible = i < lives;
+        h.scale.set(gained && i === lives - 1 ? 1.8 : 1);
       });
     }
     for (const h of this.hearts) if (h.scale.x > 1) h.scale.set(Math.max(1, h.scale.x - 0.04));
@@ -828,7 +823,7 @@ export class ChaosParkView {
       [
         group(
           ...Array.from({ length: LIVES }, (_, i): [Container, number, number, number] => [
-            heart(i < LIVES - 1),
+            heart(true),
             (i - (LIVES - 1) / 2) * 22,
             0,
             0.8,
