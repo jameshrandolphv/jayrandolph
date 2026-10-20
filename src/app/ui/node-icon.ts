@@ -178,27 +178,32 @@ export class IconDefs {}
           </g>
         }
         @case ('park') {
-          <!-- Chaos Park: the loop round a park from above, with a pond, trees and a taxi on the drive. -->
+          <!-- Chaos Park: the loop round a park from above, with a pond, trees and a taxi on the drive. The same drawing
+               as the iOS and Android app icons (64 units across, scaled onto the tile), with an even band of grass. -->
           <rect x="4" y="4" width="56" height="56" rx="13" fill="#4f9a34" stroke="#2f6a20" />
           <g clip-path="url(#ico-app-clip)">
-            <rect x="9" y="12" width="46" height="40" rx="17" fill="none" stroke="#c9c3b6" stroke-width="12" />
-            <rect x="9" y="12" width="46" height="40" rx="17" fill="none" stroke="#5d5b60" stroke-width="9" />
-            <rect x="9" y="12" width="46" height="40" rx="17" fill="none" stroke="#fff" stroke-width="0.9" stroke-dasharray="2.5 2.5" />
-            <rect x="15.5" y="18.5" width="33" height="27" rx="11" fill="#93d465" />
-            <ellipse cx="38" cy="29" rx="7.5" ry="5" fill="#5ab6e4" stroke="#8fb36a" stroke-width="1.2" />
-            <ellipse cx="36" cy="27.5" rx="4" ry="2" fill="#8fd0f0" />
-            <g stroke="#2e6a24" stroke-width="0.7">
-              <circle cx="22" cy="26" r="3.6" fill="#5fa83b" /><circle cx="25" cy="36" r="3.2" fill="#6cb544" />
-              <circle cx="20" cy="39" r="2.6" fill="#f3a0bf" /><circle cx="41" cy="39" r="3" fill="#5fa83b" />
+            <g transform="translate(4 4) scale(0.875)">
+              <rect x="10" y="10" width="44" height="44" rx="7" fill="none" stroke="#c9c3b6" stroke-width="12" />
+              <rect x="10" y="10" width="44" height="44" rx="7" fill="none" stroke="#5d5b60" stroke-width="9" />
+              <rect x="10" y="10" width="44" height="44" rx="7" fill="none" stroke="#fff" stroke-width="0.9" stroke-dasharray="2.5 2.5" />
+              <rect x="16" y="16" width="32" height="32" rx="2" fill="#93d465" />
+              <ellipse cx="37.5" cy="29" rx="7.5" ry="5.6" fill="#5ab6e4" stroke="#8fb36a" stroke-width="1.2" />
+              <ellipse cx="35.5" cy="27.2" rx="4" ry="2.1" fill="#8fd0f0" />
+              <g stroke="#2e6a24" stroke-width="0.7">
+                <circle cx="22.5" cy="24.5" r="3.6" fill="#5fa83b" /><circle cx="25.5" cy="36.5" r="3.2" fill="#6cb544" />
+                <circle cx="21" cy="42" r="2.6" fill="#f3a0bf" /><circle cx="41" cy="41" r="3.2" fill="#5fa83b" />
+              </g>
             </g>
             <ellipse cx="32" cy="32" rx="34" ry="22" fill="url(#ico-gloss)" opacity="0.25" transform="translate(0 -18)" />
           </g>
-          <g transform="translate(38 12)" stroke="#2e2a2c" stroke-width="0.9">
-            <rect x="-6" y="-3.6" width="12" height="7.2" rx="2.2" fill="#f7c531" />
-            <rect x="-2.5" y="-2.6" width="5" height="5.2" rx="1" fill="#37506b" stroke="none" />
+          <g transform="translate(4 4) scale(0.875)">
+            <g transform="translate(38 10)" stroke="#2e2a2c" stroke-width="0.9">
+              <rect x="-6" y="-3.6" width="12" height="7.2" rx="2.2" fill="#f7c531" />
+              <rect x="-2.5" y="-2.6" width="5" height="5.2" rx="1" fill="#37506b" stroke="none" />
+            </g>
+            <circle cx="12.5" cy="41" r="2.6" fill="#ff8a00" stroke="#2e2a2c" stroke-width="0.8" />
+            <circle cx="12.9" cy="37.4" r="1.7" fill="#3b2a20" stroke="#2e2a2c" stroke-width="0.6" />
           </g>
-          <circle cx="12" cy="40" r="2.6" fill="#ff8a00" stroke="#2e2a2c" stroke-width="0.8" />
-          <circle cx="12.4" cy="36.4" r="1.7" fill="#3b2a20" stroke="#2e2a2c" stroke-width="0.6" />
         }
         @case ('bat') {
           <!-- Bat Out!: a ball and bat over a sunny ballpark tile. -->
