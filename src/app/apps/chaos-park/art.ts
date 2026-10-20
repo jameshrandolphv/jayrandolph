@@ -1146,13 +1146,11 @@ export const heart = (full: boolean): Graphics => {
     g.stroke({ width: 1.6, color: INK, join: 'round' });
     g.ellipse(-4.5, -3.5, 2.6, 1.6).fill({ color: 0xffffff, alpha: 0.6 });
   } else {
+    // The same outline as a full heart, so one emptying keeps its size.
     shape();
-    g.fill({ color: 0x000000, alpha: 0.25 }).stroke({
-      width: 3.5,
-      color: 0xffffff,
-      alpha: 0.7,
-      join: 'round',
-    });
+    g.fill({ color: 0x000000, alpha: 0.25 }).stroke({ width: 3.5, color: 0xffffff, join: 'round' });
+    shape();
+    g.stroke({ width: 1.6, color: INK, join: 'round' });
   }
   return g;
 };
@@ -1165,24 +1163,30 @@ export const PICKUP_COLORS: Readonly<Record<PickupKind, number>> = {
 };
 
 /**
- * A pick-up lying on the road, at the design lane width: a disc with a white ring, and on it a heart (a life), two
- * stacked cards (a duplicate) or a little ghost (invisibility).
+ * A pick-up lying on the road, at the design lane width: a heart like the ones in the HUD (a life), or a disc with a
+ * white ring and on it two stacked cards (a duplicate) or a little ghost (invisibility).
  */
 export const pickupToken = (kind: PickupKind): Container => {
   const c = new Container();
+  if (kind === 'heart') {
+    const shadow = heart(true);
+    shadow.tint = 0x000000;
+    shadow.alpha = 0.25;
+    shadow.scale.set(0.95);
+    shadow.position.set(1, 2);
+    const h = heart(true);
+    h.scale.set(0.95);
+    c.addChild(shadow, h);
+    return c;
+  }
   const disc = new Graphics()
     .circle(1, 1.5, 10.5)
     .fill({ color: 0x000000, alpha: 0.25 })
     .circle(0, 0, 10.5)
-    .fill(kind === 'heart' ? 0xffffff : PICKUP_COLORS[kind])
-    .stroke({ width: 2.2, color: kind === 'heart' ? PICKUP_COLORS.heart : 0xffffff });
+    .fill(PICKUP_COLORS[kind])
+    .stroke({ width: 2.2, color: 0xffffff });
   c.addChild(disc);
-  if (kind === 'heart') {
-    const h = heart(true);
-    h.scale.set(0.62);
-    h.y = 0.6;
-    c.addChild(h);
-  } else if (kind === 'double') {
+  if (kind === 'double') {
     c.addChild(
       new Graphics()
         .roundRect(-6, -6.5, 9, 10, 2)
@@ -1344,7 +1348,8 @@ export const horseshoeIcon = (): Graphics =>
 
 export const badgeNumber = (n: number): ReturnType<typeof label> => {
   const t = label(String(n), 15, INK, {});
-  t.y = -0.5;
+  // Bangers' digits sit low and a little right of their box; this centres their ink on the disc.
+  t.position.set(-0.8, -2.5);
   return t;
 };
 

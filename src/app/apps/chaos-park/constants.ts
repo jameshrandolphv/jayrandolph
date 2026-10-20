@@ -162,7 +162,7 @@ export type PickupKind = 'heart' | 'double' | 'ghost';
 export const PICKUP_FROM_SCORE = 5;
 export const PICKUP_FIRST: readonly [number, number] = [6 * 60, 12 * 60];
 export const PICKUP_INTERVAL: readonly [number, number] = [15 * 60, 25 * 60];
-export const PICKUP_TICKS = 12 * 60;
+export const PICKUP_TICKS = 18 * 60;
 /** How likely each kind is, when it can come. */
 export const PICKUP_WEIGHTS: Readonly<Record<PickupKind, number>> = { heart: 2, double: 1, ghost: 1 };
 /** A pick-up's length along the road, for taking it; it is drawn about this size. */

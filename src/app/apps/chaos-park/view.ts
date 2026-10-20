@@ -729,7 +729,8 @@ export class ChaosParkView {
     const cup = trophy();
     const gap = 8;
     const left = -(cup.width + gap + heading.width) / 2;
-    cup.position.set(left + cup.width / 2, 62);
+    // Level with the middle of the capitals, which sit low in their box.
+    cup.position.set(left + cup.width / 2, 68.5);
     heading.position.set(left + cup.width + gap + heading.width / 2, 64);
     this.titleBest.position.set(0, 106);
     layer.addChild(season, strip, heading, cup, this.titleBest);

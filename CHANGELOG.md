@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.1
+- Chaos Park: lap numbers sit in the middle of their circles (they were a little low and to the right)
+- Chaos Park: tokens stay on the road for 18 seconds instead of 12, and a heart on the road is drawn as a plain heart like the ones by the lap counter
+- Chaos Park: empty hearts keep the same outline as full ones, so a heart no longer looks smaller once it is lost
+- Chaos Park: the pause button is gray, and the trophy on the title card is level with "Your best"
+
 ## 1.9.0
 - Chaos Park: a run now has lives instead of a collision count. You start with three, and hearts that turn up on the road now and then give one back when a visitor runs over them, up to five
 - Chaos Park: two more tokens on the road. A duplicate adds a copy of the visitor right behind it (it can't cause a collision as it appears), and invisibility makes the visitor see-through for a few seconds so it passes through everyone else
