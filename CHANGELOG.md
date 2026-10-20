@@ -1,8 +1,8 @@
 # Changelog
 
-
 ## 1.8.4
 - Chaos Park: the privacy policy and support page match the apps, which no longer show a banner, and say that the "Keep going" video is still offered after Remove Ads
+
 ## 1.8.3
 - Chaos Park: "Your best" and its trophy are centred together on the title card
 - Chaos Park: the how-to-play rules fit inside their notice board, with room under the last line for the button
