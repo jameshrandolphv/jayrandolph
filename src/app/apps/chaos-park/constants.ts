@@ -255,10 +255,12 @@ export const BUTTON_TEXT = 30;
 
 /** Cards are this size, centred on screen; small enough to fit either way round. */
 export const CARD = { w: 540, h: 520 };
+/** The how-to-play card is taller, for room round its rules. */
+export const HELP_CARD = { w: 540, h: 570 };
 
 export const PLAY_BUTTON: Plaque = { x: 116, y: 186, rx: 100, ry: 36, label: 'PLAY' };
 export const HELP_BUTTON: Plaque = { x: -116, y: 186, rx: 100, ry: 36, label: 'HOW TO PLAY' };
-export const BACK_BUTTON: Plaque = { x: 0, y: 196, rx: 100, ry: 36, label: 'GOT IT!' };
+export const BACK_BUTTON: Plaque = { x: 0, y: 216, rx: 100, ry: 36, label: 'GOT IT!' };
 export const RETRY_BUTTON: Plaque = { x: 116, y: 186, rx: 100, ry: 36, label: 'RETRY' };
 export const MENU_BUTTON: Plaque = { x: -116, y: 186, rx: 100, ry: 36, label: 'MENU' };
 export const RESUME_BUTTON: Plaque = { x: 116, y: 44, rx: 100, ry: 36, label: 'RESUME' };

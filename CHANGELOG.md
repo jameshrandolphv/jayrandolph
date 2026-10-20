@@ -5,6 +5,7 @@
 - Chaos Park: run groups come 10 to 45 seconds after you reach 10 laps, and again 10 to 45 seconds after the last one has gone, instead of every 45 to 65 seconds
 - Chaos Park: the ball fields' lines are fainter
 - Chaos Park: a heart you gain grows in instead of popping big, so every heart by the lap counter is the same size
+- Chaos Park: the how-to-play card is a little taller with more room round its rules, drops the tokens row, and sums up lives with one heart: "Too many collisions and the game is over!"
 
 ## 1.9.2
 - Chaos Park: the hearts by the lap counter show only the lives you have left; a lost one simply goes instead of turning into an empty outline

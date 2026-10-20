@@ -38,6 +38,7 @@ import {
   BACK_BUTTON,
   BUTTON_TEXT,
   CARD,
+  HELP_CARD,
   ART,
   HELP_BUTTON,
   LANE_W,
@@ -48,7 +49,6 @@ import {
   RESUME_BUTTON,
   RETRY_BUTTON,
   IMPACT_TICKS,
-  LIVES,
   MAX_LIVES,
   PICKUP_TICKS,
   SHOUT_TICKS,
@@ -752,12 +752,12 @@ export class ChaosParkView {
   private buildHelp(park: Park): void {
     const layer = this.help;
     this.clear(layer);
-    this.card(layer);
+    layer.addChild(noticeBoard(-HELP_CARD.w / 2, -HELP_CARD.h / 2, HELP_CARD.w, HELP_CARD.h));
     const heading = label('HOW TO PLAY', 46, COLORS.red, {
       stroke: { color: COLORS.ink, width: 6, join: 'round' },
       letterSpacing: 2,
     });
-    heading.position.set(0, -212);
+    heading.position.set(0, -234);
     layer.addChild(heading);
     const { season } = park;
     const group = (...parts: [Container, number, number, number?][]): Container => {
@@ -834,24 +834,10 @@ export class ChaosParkView {
         'SWIPE FORWARD TO SPEED UP AND BACK\nTO SLOW DOWN AGAIN',
       ],
       [group([plusOne, 0, 0]), 'EACH LAP IS A POINT'],
-      [
-        group(
-          ...Array.from({ length: LIVES }, (_, i): [Container, number, number, number] => [
-            heart(true),
-            (i - (LIVES - 1) / 2) * 22,
-            0,
-            0.8,
-          ]),
-        ),
-        'THREE COLLISIONS END THE GAME! HEARTS\nON THE ROAD GIVE ONE BACK, UP TO FIVE',
-      ],
-      [
-        group([pickupToken('double'), -24, 0], [pickupToken('ghost'), 0, 0], [pickupToken('star'), 24, 0]),
-        'DUPLICATE ADDS A COPY RIGHT BEHIND;\nINVISIBLE LETS IT PASS THROUGH OTHERS;\nRARE STARS KNOCK OTHERS OFF FOR POINTS',
-      ],
+      [group([heart(true), 0, 0, 0.8]), 'TOO MANY COLLISIONS AND THE GAME IS OVER!'],
     ];
 
-    let y = -184;
+    let y = -139;
     for (const [icon, text] of rows) {
       const lines = text.split('\n').length;
       const h = lines * 21 + 2;
