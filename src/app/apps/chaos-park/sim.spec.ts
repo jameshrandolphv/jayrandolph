@@ -827,6 +827,8 @@ describe('arrivals', () => {
       sim.start();
       // No collisions, and a score where cars are common.
       (sim as unknown as { checkTraffic: () => void }).checkTraffic = () => undefined;
+      // Nor pick-ups: a duplicate token can copy a car, which is not an arrival.
+      (sim as unknown as { placePickup: () => boolean }).placePickup = () => false;
       sim.score = 60;
       let cars = 0;
       for (let t = 0; t < 4 * 3600; t++) {

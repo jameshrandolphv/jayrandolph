@@ -10,6 +10,7 @@ export const PARK_UI = {
   brass: 0xd8b25a,
   green: 0x4a9a3c,
   greenDark: 0x2f6e2a,
+  gray: 0x6f757b,
   plank: 0xb57a40,
   plankDark: 0x7f5229,
 } as const;
@@ -78,7 +79,7 @@ export const plaqueButton = (p: Plaque, color: 'green' | 'wood', size: number): 
   return b;
 };
 
-/** The round green pause button, its top-left corner at the origin (48 by 48, as `pauseButton` lays out). */
+/** The round gray pause button, its top-left corner at the origin (48 by 48, as `pauseButton` lays out). */
 export const roundPauseButton = (): Container => {
   const b = new Container();
   b.addChild(
@@ -86,7 +87,7 @@ export const roundPauseButton = (): Container => {
       .circle(25, 26, 23)
       .fill({ color: 0x000000, alpha: 0.2 })
       .circle(24, 24, 23)
-      .fill({ color: PARK_UI.green, alpha: 0.92 })
+      .fill({ color: PARK_UI.gray, alpha: 0.92 })
       .stroke({ width: 2.5, color: 0xffffff, alpha: 0.9 })
       .roundRect(16, 14, 6, 20, 2)
       .roundRect(26, 14, 6, 20, 2)
