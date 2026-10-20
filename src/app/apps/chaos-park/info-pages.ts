@@ -57,8 +57,8 @@ const PAGE_STYLES = `
 
         <h3>Advertising (Google AdMob)</h3>
         <p>
-          The free version shows ads from Google AdMob: a banner under the park, an occasional full-screen ad between
-          games, and a video you can choose to watch for an extra life. To show and measure these ads and to prevent
+          The app shows ads from Google AdMob: an occasional full-screen ad between games, and a video you can choose
+          to watch for an extra life. To show and measure these ads and to prevent
           fraud, Google's software in the app may collect:
         </p>
         <ul>
@@ -84,13 +84,14 @@ const PAGE_STYLES = `
             &amp; Security &gt; Tracking. If you say no, you still see ads, just not personalised ones.</li>
           <li>On Android, you can reset or delete your advertising ID in your device's settings (Privacy &gt; Ads, or
             Google &gt; Ads, depending on the device).</li>
-          <li>Buying Remove Ads ($0.99) removes the banner and the full-screen ads.</li>
+          <li>Buying Remove Ads ($0.99) removes the ads between games. The extra-life video is still offered, and only
+            plays if you choose it.</li>
         </ul>
 
         <h3>Purchases</h3>
         <p>
           The Remove Ads purchase is handled entirely by the App Store or Google Play. We never see your payment details;
-          the app only learns whether Remove Ads has been bought, so it can switch the ads off.
+          the app only learns whether Remove Ads has been bought, so it can switch off the ads between games.
         </p>
 
         <h3>Leaderboards</h3>
@@ -150,8 +151,10 @@ export class ChaosParkPrivacy {
 
         <h3>I bought Remove Ads but still see ads</h3>
         <p>
-          Tap the button with the crossed-out "AD" on the title screen, then <em>Restore purchase</em>. Make sure you
-          are signed in with the same Apple ID or Google account you bought it with. Restoring is free.
+          Remove Ads stops the ads between games. The "Keep going" video is still offered after a crash, but only plays
+          if you tap it. If ads still appear between games, tap the button with the crossed-out "AD" on the title
+          screen, then <em>Restore purchase</em>. Make sure you are signed in with the same Apple ID or Google account
+          you bought it with. Restoring is free.
         </p>
 
         <h3>I got a new phone or reinstalled the game</h3>
