@@ -36,6 +36,12 @@ const SOUNDS: Readonly<Record<SimEvent, SfxName>> = {
   double: 'clear',
   ghost: 'swish',
   star: 'clear',
+  fire: 'boost',
+  turtle: 'brake',
+  strength: 'score',
+  coin: 'checkpoint',
+  skull: 'hit',
+  spiral: 'swish',
   knock: 'hit',
 };
 
@@ -132,7 +138,8 @@ export class ChaosParkGame {
   frame(deltaMs: number): number {
     // On the title and how-to-play cards, the park behind is remade to fill the screen if its shape changes.
     this.sim.fitFrame(frameFor(this.size, this.bounds));
-    this.step.advance(deltaMs, () => {
+    // A time warp slows everything: the game is fed ticks more slowly.
+    this.step.advance(deltaMs * this.sim.timeScale, () => {
       const before = this.sim.phase;
       this.sim.step();
       if (before !== 'gameOver' && this.sim.phase === 'gameOver') this.saveScore();

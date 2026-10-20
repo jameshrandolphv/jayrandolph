@@ -1,7 +1,7 @@
 # Changelog
 
 ## 1.9.3
-- Chaos Park: a new, rare rainbow star token. Whoever takes it flashes through the rainbow for 8 seconds and knocks anyone it touches off the track, with no life lost, scoring the laps they had left (carriages are too big to knock, so it passes through them)
+- Chaos Park: six new tokens, ten in all, and a token's effect now lasts for the rest of the visitor's laps instead of a few seconds. A rare rainbow star flashes its taker through the rainbow and knocks anyone it touches off the track with no life lost, scoring the laps they had left (a carriage scores nothing, and another comes along later). Fire gives super speed (1.5x) and a turtle halves it; strength adds two laps; a coin adds a point; a skull is a wreck that costs a life (unless they have a star); and a spiral slows the whole game to half speed for 10 seconds before easing back. Carriages and run groups still can't take tokens
 - Chaos Park: run groups come 10 to 45 seconds after you reach 10 laps, and again 10 to 45 seconds after the last one has gone, instead of every 45 to 65 seconds
 - Chaos Park: the ball fields' lines are fainter
 - Chaos Park: a heart you gain grows in instead of popping big, so every heart by the lap counter is the same size

@@ -129,6 +129,8 @@ export const SHOUT_COOLDOWN = 300;
 export const CARS_FROM_SCORE = 6;
 /** The second (and last) carriage arrives at this score. */
 export const SECOND_CARRIAGE_SCORE = 10;
+/** Ticks before another carriage comes to replace one a star has knocked off the loop. */
+export const CARRIAGE_RETURN: readonly [number, number] = [20 * 60, 40 * 60];
 /** Walkers and runners going the wrong way (clockwise) appear from this score, more often as it rises. */
 export const WRONG_WAY_FROM_SCORE = 3;
 export const WRONG_WAY_CHANCE = 0.1;
@@ -154,26 +156,75 @@ export const IMPACT_TICKS = 40;
 /**
  * Pick-ups: from `PICKUP_FROM_SCORE`, now and then one sits on the loop in one lane until a visitor walks, runs, rides
  * or drives over it, or `PICKUP_TICKS` pass. One at a time: the first comes `PICKUP_FIRST` ticks in, the next
- * `PICKUP_INTERVAL` after the last has gone. A heart gives a life back (never while lives are full); a duplicate
- * puts a copy of whoever takes it right behind them; an invisibility token lets them pass through everyone for
- * `GHOST_TICKS`; a rare rainbow star lets them knock everyone they touch off the loop for `STAR_TICKS`, scoring the
- * laps those visitors still had to do. Carriages and run groups go over them without taking them.
+ * `PICKUP_INTERVAL` after the last has gone. Carriages and run groups go over them without taking them. What each
+ * does to whoever takes it, for the rest of their laps:
+ * - heart: a life back (never comes while lives are full);
+ * - double: a copy of them right behind;
+ * - ghost: they pass through everyone;
+ * - star (rare): they knock everyone they touch off the loop, scoring the laps those visitors still had to do;
+ * - fire / turtle: `FIRE_SPEED` / `TURTLE_SPEED` times as fast;
+ * - strength: `EXTRA_LAPS` more laps to do;
+ * - coin: a point;
+ * - skull: a wreck, costing a life and stunning them, as if they had collided (not while they have a star);
+ * - spiral: a time warp, everything at half speed for `WARP_SLOW_TICKS` then back to normal over `WARP_EASE_TICKS`.
  */
-export type PickupKind = 'heart' | 'double' | 'ghost' | 'star';
+export type PickupKind =
+  | 'heart'
+  | 'double'
+  | 'ghost'
+  | 'star'
+  | 'fire'
+  | 'turtle'
+  | 'strength'
+  | 'coin'
+  | 'skull'
+  | 'spiral';
+/** Every kind, in the order a pick-up's kind is drawn. */
+export const PICKUP_KINDS: readonly PickupKind[] = [
+  'heart',
+  'double',
+  'ghost',
+  'star',
+  'fire',
+  'turtle',
+  'strength',
+  'coin',
+  'skull',
+  'spiral',
+];
 export const PICKUP_FROM_SCORE = 5;
 export const PICKUP_FIRST: readonly [number, number] = [6 * 60, 12 * 60];
 export const PICKUP_INTERVAL: readonly [number, number] = [15 * 60, 25 * 60];
 export const PICKUP_TICKS = 18 * 60;
 /** How likely each kind is, when it can come. */
-export const PICKUP_WEIGHTS: Readonly<Record<PickupKind, number>> = { heart: 2, double: 1, ghost: 1, star: 0.25 };
+export const PICKUP_WEIGHTS: Readonly<Record<PickupKind, number>> = {
+  heart: 2,
+  double: 1,
+  ghost: 1,
+  star: 0.25,
+  fire: 1,
+  turtle: 1,
+  strength: 1,
+  coin: 1.5,
+  skull: 0.75,
+  spiral: 0.5,
+};
 /** A pick-up's length along the road, for taking it; it is drawn about this size. */
 export const PICKUP_LEN = 18 * ART;
 /** A pick-up only appears where nothing on the loop is within this distance of it in its lane. */
 export const PICKUP_CLEAR = 60 * ART;
 /** The gap a duplicate is put behind the one it copies. */
 export const DOUBLE_GAP = 6 * ART;
-export const GHOST_TICKS = 6 * 60;
-export const STAR_TICKS = 8 * 60;
+export const FIRE_SPEED = 1.5;
+export const TURTLE_SPEED = 0.5;
+export const EXTRA_LAPS = 2;
+/**
+ * A time warp's ticks of the game at half speed (10 seconds), then of easing back to full speed (about 3 seconds).
+ * Counted in game ticks, which pass at the warped speed.
+ */
+export const WARP_SLOW_TICKS = 300;
+export const WARP_EASE_TICKS = 120;
+export const WARP_SPEED = 0.5;
 
 /** Slippery patches appear on the road as the score reaches each of these, up to three. */
 export const PATCH_SCORES: readonly number[] = [25, 50, 100];

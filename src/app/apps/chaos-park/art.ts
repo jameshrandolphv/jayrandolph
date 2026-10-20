@@ -1161,6 +1161,12 @@ export const PICKUP_COLORS: Readonly<Record<PickupKind, number>> = {
   double: 0x8a55c4,
   ghost: 0x2f9c95,
   star: 0xe89a1c,
+  fire: 0xe8541c,
+  turtle: 0x3f8f3a,
+  strength: 0x3b6fd9,
+  coin: 0xe0a91b,
+  skull: 0x3d3a40,
+  spiral: 0xc4479a,
 };
 
 /** The colours a rainbow star cycles through, on its token and on whoever has taken one. */
@@ -1178,8 +1184,9 @@ export const starGlow = (kind: Kind, width: number, len: number): Graphics => {
 
 /**
  * A pick-up lying on the road, at the design lane width: a heart like the ones in the HUD (a life), or a disc with a
- * white ring and on it two stacked cards (a duplicate), a little ghost (invisibility) or, on rainbow stripes, a gold
- * star.
+ * white ring and on it two stacked cards (a duplicate), a little ghost (invisibility), a flame (super speed), a
+ * turtle (turtle speed), a dumbbell (extra laps), a gold coin (a point), a skull (a wreck), a spiral (a time warp) or, on rainbow
+ * stripes, a gold star.
  */
 export const pickupToken = (kind: PickupKind): Container => {
   const c = new Container();
@@ -1222,6 +1229,83 @@ export const pickupToken = (kind: PickupKind): Container => {
         .roundRect(-3, -3.5, 9, 10, 2)
         .fill(0xffffff)
         .stroke({ width: 1.2, color: INK }),
+    );
+  } else if (kind === 'fire') {
+    c.addChild(
+      new Graphics()
+        .moveTo(0, -7.5)
+        .bezierCurveTo(4, -3, 6, 0, 5, 3)
+        .bezierCurveTo(4, 6.5, -4, 6.5, -5, 3)
+        .bezierCurveTo(-6, -0.5, -3, -1.5, -2, -4)
+        .bezierCurveTo(-1, -1.5, 0, -2, 0, -7.5)
+        .closePath()
+        .fill(0xffffff)
+        .moveTo(0, 0)
+        .bezierCurveTo(2.5, 2, 2.8, 5, 0, 5.5)
+        .bezierCurveTo(-2.8, 5, -2.5, 2, 0, 0)
+        .closePath()
+        .fill(0xffd84a),
+    );
+  } else if (kind === 'turtle') {
+    c.addChild(
+      new Graphics()
+        .circle(0, -6.2, 1.9)
+        .circle(-4.3, -3.2, 1.5)
+        .circle(4.3, -3.2, 1.5)
+        .circle(-4.3, 4.2, 1.5)
+        .circle(4.3, 4.2, 1.5)
+        .fill(0xffffff)
+        .ellipse(0, 0.5, 4.6, 5.4)
+        .fill(0x2a6326)
+        .stroke({ width: 1.4, color: 0xffffff }),
+    );
+  } else if (kind === 'strength') {
+    c.addChild(
+      new Graphics()
+        .roundRect(-5, -1, 10, 2, 1)
+        .roundRect(-7.5, -4.5, 3, 9, 1)
+        .roundRect(4.5, -4.5, 3, 9, 1)
+        .fill(0xffffff),
+    );
+  } else if (kind === 'skull') {
+    c.addChild(
+      new Graphics()
+        .circle(0, -1.5, 5.8)
+        .roundRect(-3.4, 1.5, 6.8, 5, 1.5)
+        .fill(0xffffff)
+        .circle(-2.2, -1.6, 1.6)
+        .circle(2.2, -1.6, 1.6)
+        .fill(INK)
+        .moveTo(0, 1)
+        .lineTo(-0.9, 2.6)
+        .lineTo(0.9, 2.6)
+        .closePath()
+        .fill(INK)
+        .moveTo(-1.2, 4.2)
+        .lineTo(-1.2, 6.5)
+        .moveTo(1.2, 4.2)
+        .lineTo(1.2, 6.5)
+        .stroke({ width: 0.9, color: INK }),
+    );
+  } else if (kind === 'spiral') {
+    const g = new Graphics().moveTo(0, 0);
+    // An Archimedean spiral, two and a bit turns out to the disc's edge.
+    for (let i = 1; i <= 50; i++) {
+      const a = i * 0.25;
+      g.lineTo(Math.cos(a) * a * 0.6, Math.sin(a) * a * 0.6);
+    }
+    c.addChild(g.stroke({ width: 1.8, color: 0xffffff, cap: 'round', join: 'round' }));
+  } else if (kind === 'coin') {
+    c.addChild(
+      new Graphics()
+        .circle(0, 0, 6.5)
+        .fill(0xffd84a)
+        .stroke({ width: 1.2, color: INK })
+        .roundRect(-1.2, -4, 2.4, 8, 1)
+        .fill(0xb07a10)
+        .moveTo(-1.2, -4)
+        .lineTo(-3.4, -2.2)
+        .stroke({ width: 1.6, color: 0xb07a10, cap: 'round' }),
     );
   } else {
     c.addChild(

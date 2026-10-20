@@ -70,11 +70,16 @@ const PICKUP_WORDS: Readonly<Record<PickupKind, string>> = {
   double: 'DUPLICATE!',
   ghost: 'INVISIBLE!',
   star: 'STAR POWER!',
+  fire: 'SUPER SPEED!',
+  turtle: 'TURTLE SPEED!',
+  strength: 'EXTRA LAPS!',
+  coin: '+1 POINT',
+  skull: 'WRECK!',
+  spiral: 'TIME WARP!',
 };
 
-/** How see-through someone invisible is: faint while it lasts, flickering back in over its last second. */
-export const ghostAlpha = (ghost: number, clock: number): number =>
-  ghost <= 0 ? 1 : ghost < 60 && Math.floor(clock / 5) % 2 === 0 ? 0.8 : 0.35;
+/** How see-through someone invisible is. */
+export const ghostAlpha = (ghost: number): number => (ghost > 0 ? 0.35 : 1);
 const easeOut = (t: number): number => 1 - (1 - Math.min(1, Math.max(0, t))) ** 3;
 
 /** How far below and right of a mover its shadow falls, as if lit from the top left. */
@@ -354,10 +359,10 @@ export class ChaosParkView {
       v.root.position.set(x, y);
       v.root.scale.set(ART);
       v.root.rotation = v.angle + wobble;
-      v.root.alpha = m.alpha * ghostAlpha(m.ghost, sim.clock);
+      v.root.alpha = m.alpha * ghostAlpha(m.ghost);
       v.streaks.visible = m.boosted;
-      // A star flashes through the rainbow, and flickers over its last second.
-      v.glow.visible = m.star > 0 && (m.star > 60 || Math.floor(sim.clock / 5) % 2 === 0);
+      // A star flashes through the rainbow.
+      v.glow.visible = m.star > 0;
       if (v.glow.visible) {
         v.glow.tint = RAINBOW[Math.floor(sim.clock / 4) % RAINBOW.length]!;
         v.glow.alpha = 0.85;

@@ -8,8 +8,13 @@ import {
   DOUBLE_GAP,
   FIRST_SPAWN,
   IMPACT_TICKS,
-  GHOST_TICKS,
-  STAR_TICKS,
+  EXTRA_LAPS,
+  FIRE_SPEED,
+  PICKUP_KINDS,
+  TURTLE_SPEED,
+  WARP_EASE_TICKS,
+  WARP_SLOW_TICKS,
+  WARP_SPEED,
   LIVES,
   MAX_LIVES,
   PATCH_SCORES,
@@ -46,6 +51,7 @@ import {
   SHOUT_COOLDOWN,
   SHOUT_TICKS,
   SECOND_CARRIAGE_SCORE,
+  CARRIAGE_RETURN,
   SHORTCUT_CHANCE,
   SLIP_TICKS,
   SPAWN_INTERVAL,
@@ -92,6 +98,12 @@ export type SimEvent =
   | 'double'
   | 'ghost'
   | 'star'
+  | 'fire'
+  | 'turtle'
+  | 'strength'
+  | 'coin'
+  | 'skull'
+  | 'spiral'
   | 'knock';
 
 /**
@@ -164,9 +176,9 @@ export interface Mover {
   /** Ticks left of a biker's "Out of my way!", and when it last shouted. */
   shout: number;
   shoutAt: number;
-  /** Ticks left of passing through everyone, after taking an invisibility token. */
+  /** 1 once it has taken an invisibility token: it passes through everyone for the rest of its laps. */
   ghost: number;
-  /** Ticks left of knocking everyone it touches off the loop, after taking a rainbow star. */
+  /** 1 once it has taken a rainbow star: it knocks everyone it touches off the loop for the rest of its laps. */
   star: number;
 }
 
@@ -257,10 +269,12 @@ export class ChaosParkSim {
   movers: Mover[] = [];
   rats: Rat[] = [];
   pops: Pop[] = [];
-  crash: { x: number; y: number; ids: [number, number] } | null = null;
+  crash: { x: number; y: number; ids: number[] } | null = null;
   /** Lives left this run: a collision takes one, and the run ends when none are left. Hearts add one, up to `MAX_LIVES`. */
   lives = LIVES;
   pickups: Pickup[] = [];
+  /** Ticks left of a time warp, from taking a spiral: see `timeScale`. */
+  warp = 0;
   impacts: Impact[] = [];
   phaseTicks = 0;
   /** Ticks since creation; drives idle animation. */
@@ -271,6 +285,8 @@ export class ChaosParkSim {
   private nextId = 1;
   private spawnTimer = FIRST_SPAWN;
   private carriagesSent = 0;
+  /** Ticks until a carriage knocked off the loop may be replaced. */
+  private carriageWait = 0;
   private groupTimer = 0;
   private ratTimer = 0;
   private pickupTimer = 0;
@@ -394,6 +410,16 @@ export class ChaosParkSim {
     return { x: t.x * m.dir, y: t.y * m.dir };
   }
 
+  /**
+   * How fast the game runs, as a share of real time: `WARP_SPEED` through a time warp, easing back to 1 at its end.
+   * The game feeds ticks to `step` at this rate, so everything on the loop slows together.
+   */
+  get timeScale(): number {
+    if (this.warp <= 0) return 1;
+    if (this.warp > WARP_EASE_TICKS) return WARP_SPEED;
+    return 1 - (1 - WARP_SPEED) * (this.warp / WARP_EASE_TICKS);
+  }
+
   /** Speeds a mover up (`true`) or returns it to its usual speed (`false`). */
   setBoost(id: number, on: boolean): boolean {
     if (this.phase !== 'playing' || this.paused) return false;
@@ -422,6 +448,7 @@ export class ChaosParkSim {
     }
     if (this.paused) return;
     this.clock++;
+    if (this.warp > 0) this.warp--;
     this.phaseTicks++;
     if (this.phase === 'crashed' && this.phaseTicks >= CRASH_TICKS) this.enter('gameOver');
     if (this.phase !== 'playing') return;
@@ -432,8 +459,6 @@ export class ChaosParkSim {
       m.age++;
       if (m.slip > 0) m.slip--;
       if (m.shout > 0) m.shout--;
-      if (m.ghost > 0) m.ghost--;
-      if (m.star > 0) m.star--;
       if (m.state === 'track') this.moveOnTrack(m);
       else if (this.moveOnRoute(m)) gone.add(m);
     }
@@ -657,14 +682,8 @@ export class ChaosParkSim {
    * stunned and the one that hit them carries on through. Returns true when the run is over.
    */
   private collide(a: Mover, b: Mover, delta: number): boolean {
-    this.lives--;
     const at = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-    if (this.lives <= 0) {
-      this.crash = { ...at, ids: [a.id, b.id] };
-      this.events.push('crash');
-      this.enter('crashed');
-      return true;
-    }
+    if (this.loseLife(at, [a.id, b.id])) return true;
     // The one moving into the other did the hitting: a lane change into someone alongside, otherwise whichever is
     // heading toward the other faster.
     const turning = (m: Mover) => Math.abs(m.p - m.target) > 1e-6;
@@ -673,14 +692,28 @@ export class ChaosParkSim {
       turning(a) !== turning(b)
         ? turning(a)
         : towards(a, Math.sign(delta)) >= towards(b, -Math.sign(delta));
-    const victim = aHits ? b : a;
+    this.stun(aHits ? b : a, at);
+    this.passing.add(`${a.id}:${b.id}`);
+    return false;
+  }
+
+  /** Takes a life for a collision or wreck at `at`; true if that was the last, ending the run. */
+  private loseLife(at: { x: number; y: number }, ids: number[]): boolean {
+    this.lives--;
+    if (this.lives > 0) return false;
+    this.crash = { ...at, ids };
+    this.events.push('crash');
+    this.enter('crashed');
+    return true;
+  }
+
+  /** Stuns whoever was hit, at `at`, losing any boost. */
+  private stun(victim: Mover, at: { x: number; y: number }): void {
     victim.daze = Math.max(victim.daze, STUN_TICKS);
     victim.boosted = false;
     victim.speed = victim.baseSpeed;
-    this.passing.add(`${a.id}:${b.id}`);
     this.impacts.push({ id: this.nextId++, ...at, ticks: 0 });
     this.events.push('hit');
-    return false;
   }
 
   /** Collide any two movers on the loop that touch; otherwise flag the ones about to. */
@@ -708,12 +741,12 @@ export class ChaosParkSim {
         if (dist > half + WARN_MAX_GAP) continue;
         const touching =
           laneOverlap(a.p, a.width, b.p, b.width) > LATERAL_OVERLAP && dist < half * COLLIDE_FACTOR;
-        // A star knocks whoever it touches off the loop, for the laps they had left, except a carriage (too big to
-        // shift) or another star, which it passes through.
+        // A star knocks whoever it touches off the loop, for the laps they had left (a carriage for nothing),
+        // except another star, which it passes through.
         if (a.star > 0 || b.star > 0) {
           const victim = a.star > 0 ? b : a;
           if (touching) {
-            if (victim.star > 0 || victim.kind === 'carriage') this.passing.add(pair);
+            if (victim.star > 0) this.passing.add(pair);
             else knocked.add(victim);
           }
           continue;
@@ -751,14 +784,23 @@ export class ChaosParkSim {
     for (const m of knocked) this.knockOff(m);
   }
 
-  /** A star sends someone flying off the loop: they're gone, and their remaining laps score at once. */
+  /**
+   * A star sends someone flying off the loop: they're gone, and their remaining laps score at once. A carriage scores
+   * nothing, and another comes in its place after `CARRIAGE_RETURN`.
+   */
   private knockOff(m: Mover): void {
-    const value = Math.max(1, m.laps - m.lapsDone) * m.crowd;
-    this.score += value;
     this.movers = this.movers.filter((o) => o !== m);
     this.impacts.push({ id: this.nextId++, x: m.x, y: m.y, ticks: 0 });
-    this.pops.push({ id: this.nextId++, value, x: m.x, y: m.y, ticks: 0 });
     this.events.push('knock');
+    if (m.kind === 'carriage') {
+      this.carriagesSent--;
+      const [lo, hi] = CARRIAGE_RETURN;
+      this.carriageWait = Math.round(lo + this.rng() * (hi - lo));
+      return;
+    }
+    const value = Math.max(1, m.laps - m.lapsDone) * m.crowd;
+    this.score += value;
+    this.pops.push({ id: this.nextId++, value, x: m.x, y: m.y, ticks: 0 });
   }
 
   // -------------------------------------------------------------------------------------------------------------
@@ -767,8 +809,10 @@ export class ChaosParkSim {
   private spawn(): void {
     this.spawnSpecials();
     const active = this.movers.filter((m) => m.kind !== 'carriage' && m.state !== 'leaving').length;
-    if (this.carriagesSent < 2 && this.score >= SECOND_CARRIAGE_SCORE && this.arrive('carriage'))
-      this.carriagesSent++;
+    // One carriage, and a second from SECOND_CARRIAGE_SCORE; one knocked off is replaced after a wait.
+    const carriages = this.score >= SECOND_CARRIAGE_SCORE ? 2 : 1;
+    if (this.carriageWait > 0) this.carriageWait--;
+    else if (this.carriagesSent < carriages && this.arrive('carriage')) this.carriagesSent++;
     if (active === 0) this.spawnTimer = Math.min(this.spawnTimer, 30);
     if (--this.spawnTimer > 0) return;
     if (active >= maxMovers(this.score)) {
@@ -810,7 +854,7 @@ export class ChaosParkSim {
   /** Puts a heart or token somewhere clear on the loop; returns false if the spot drawn was too close to someone. */
   private placePickup(): boolean {
     const { track } = this.park;
-    const kinds: PickupKind[] = ['heart', 'double', 'ghost', 'star'];
+    const kinds = PICKUP_KINDS;
     const weight = (k: PickupKind): number =>
       k === 'heart' && this.lives >= MAX_LIVES ? 0 : PICKUP_WEIGHTS[k];
     let r = this.rng() * kinds.reduce((sum, k) => sum + weight(k), 0);
@@ -849,10 +893,47 @@ export class ChaosParkSim {
       );
       if (!taker) continue;
       p.ticks = PICKUP_TICKS;
-      if (p.kind === 'heart') this.lives = Math.min(MAX_LIVES, this.lives + 1);
-      else if (p.kind === 'double') this.duplicate(taker);
-      else if (p.kind === 'ghost') taker.ghost = GHOST_TICKS;
-      else taker.star = STAR_TICKS;
+      switch (p.kind) {
+        case 'heart':
+          this.lives = Math.min(MAX_LIVES, this.lives + 1);
+          break;
+        case 'double':
+          this.duplicate(taker);
+          break;
+        case 'ghost':
+          taker.ghost = 1;
+          break;
+        case 'star':
+          taker.star = 1;
+          break;
+        case 'fire':
+        case 'turtle': {
+          const factor = p.kind === 'fire' ? FIRE_SPEED : TURTLE_SPEED;
+          taker.baseSpeed *= factor;
+          taker.speed *= factor;
+          break;
+        }
+        case 'strength':
+          taker.laps += EXTRA_LAPS;
+          break;
+        case 'coin':
+          this.score++;
+          break;
+        case 'skull':
+          // A star keeps its taker safe.
+          if (taker.star > 0) break;
+          if (this.loseLife({ x: taker.x, y: taker.y }, [taker.id])) {
+            this.events.push('skull');
+            this.pops.push({ id: this.nextId++, value: 0, pickup: p.kind, x: taker.x, y: taker.y, ticks: 0 });
+            this.pickups = this.pickups.filter((o) => o.ticks < PICKUP_TICKS);
+            return;
+          }
+          this.stun(taker, { x: taker.x, y: taker.y });
+          break;
+        case 'spiral':
+          this.warp = WARP_SLOW_TICKS + WARP_EASE_TICKS;
+          break;
+      }
       this.events.push(p.kind === 'heart' ? 'life' : p.kind);
       this.pops.push({ id: this.nextId++, value: 0, pickup: p.kind, x: taker.x, y: taker.y, ticks: 0 });
     }
@@ -1114,8 +1195,10 @@ export class ChaosParkSim {
     this.impacts = [];
     this.passing.clear();
     this.paused = false;
+    this.warp = 0;
     this.spawnTimer = FIRST_SPAWN;
     this.carriagesSent = 0;
+    this.carriageWait = 0;
     this.groupTimer = 0;
     this.ratTimer = 0;
     this.pickupTimer = 0;
