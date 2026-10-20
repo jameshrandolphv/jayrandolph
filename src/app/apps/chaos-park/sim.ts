@@ -5,10 +5,20 @@ import {
   COLLIDE_FACTOR,
   CRASH_TICKS,
   DAZE_TICKS,
+  DOUBLE_GAP,
   FIRST_SPAWN,
   IMPACT_TICKS,
-  MAX_HITS,
+  GHOST_TICKS,
+  LIVES,
+  MAX_LIVES,
   PATCH_SCORES,
+  PICKUP_CLEAR,
+  PICKUP_FIRST,
+  PICKUP_FROM_SCORE,
+  PICKUP_INTERVAL,
+  PICKUP_LEN,
+  PICKUP_TICKS,
+  PICKUP_WEIGHTS,
   STUN_TICKS,
   GAME_OVER_LOCKOUT,
   GRAB_RADIUS,
@@ -48,6 +58,7 @@ import {
   WRONG_WAY_MAX_CHANCE,
   groupLength,
   type Kind,
+  type PickupKind,
 } from './constants';
 import {
   DEFAULT_FRAME,
@@ -75,7 +86,10 @@ export type SimEvent =
   | 'brake'
   | 'squeak'
   | 'bite'
-  | 'hit';
+  | 'hit'
+  | 'life'
+  | 'double'
+  | 'ghost';
 
 /**
  * Where a mover is: walking in from the street, on the loop, cutting across the park, or heading out. Only movers on
@@ -147,6 +161,8 @@ export interface Mover {
   /** Ticks left of a biker's "Out of my way!", and when it last shouted. */
   shout: number;
   shoutAt: number;
+  /** Ticks left of passing through everyone, after taking an invisibility token. */
+  ghost: number;
 }
 
 /**
@@ -181,11 +197,25 @@ export interface Impact {
 export const patchesShown = (score: number): number =>
   PATCH_SCORES.filter((at) => score >= at).length;
 
-/** The "+1" that floats up where a lap is completed. */
+/** A heart or token lying on the loop, in one lane, until someone takes it or it runs out. */
+export interface Pickup {
+  id: number;
+  kind: PickupKind;
+  s: number;
+  lane: number;
+  x: number;
+  y: number;
+  /** Ticks since it appeared. */
+  ticks: number;
+}
+
+/** The "+1" that floats up where a lap is completed, or what a pick-up did where it was taken. */
 export interface Pop {
   id: number;
   /** Points scored: 1, or the size of a run group. */
   value: number;
+  /** Set for a pick-up instead of a lap. */
+  pickup?: PickupKind;
   x: number;
   y: number;
   ticks: number;
@@ -223,8 +253,9 @@ export class ChaosParkSim {
   rats: Rat[] = [];
   pops: Pop[] = [];
   crash: { x: number; y: number; ids: [number, number] } | null = null;
-  /** Collisions so far this run; the run ends at `MAX_HITS`. */
-  hits = 0;
+  /** Lives left this run: a collision takes one, and the run ends when none are left. Hearts add one, up to `MAX_LIVES`. */
+  lives = LIVES;
+  pickups: Pickup[] = [];
   impacts: Impact[] = [];
   phaseTicks = 0;
   /** Ticks since creation; drives idle animation. */
@@ -237,6 +268,7 @@ export class ChaosParkSim {
   private carriagesSent = 0;
   private groupTimer = 0;
   private ratTimer = 0;
+  private pickupTimer = 0;
   /** Pairs already warned about, so the alert sounds once per close call. */
   private warnedPairs = new Set<string>();
   /** Pairs that have collided and are still overlapping as one passes the other; they don't collide again. */
@@ -395,6 +427,7 @@ export class ChaosParkSim {
       m.age++;
       if (m.slip > 0) m.slip--;
       if (m.shout > 0) m.shout--;
+      if (m.ghost > 0) m.ghost--;
       if (m.state === 'track') this.moveOnTrack(m);
       else if (this.moveOnRoute(m)) gone.add(m);
     }
@@ -404,6 +437,7 @@ export class ChaosParkSim {
     this.impacts = this.impacts.filter((i) => i.ticks < IMPACT_TICKS);
     for (const p of this.pops) p.ticks++;
     this.pops = this.pops.filter((p) => p.ticks < POP_TICKS);
+    this.checkPickups();
     this.checkTraffic();
   }
 
@@ -617,9 +651,9 @@ export class ChaosParkSim {
    * stunned and the one that hit them carries on through. Returns true when the run is over.
    */
   private collide(a: Mover, b: Mover, delta: number): boolean {
-    this.hits++;
+    this.lives--;
     const at = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-    if (this.hits >= MAX_HITS) {
+    if (this.lives <= 0) {
       this.crash = { ...at, ids: [a.id, b.id] };
       this.events.push('crash');
       this.enter('crashed');
@@ -664,10 +698,15 @@ export class ChaosParkSim {
           continue;
         }
         if (dist > half + WARN_MAX_GAP) continue;
-        if (
-          laneOverlap(a.p, a.width, b.p, b.width) > LATERAL_OVERLAP &&
-          dist < half * COLLIDE_FACTOR
-        ) {
+        const touching =
+          laneOverlap(a.p, a.width, b.p, b.width) > LATERAL_OVERLAP && dist < half * COLLIDE_FACTOR;
+        // An invisible one goes through anyone, and nobody warns about it. Still overlapping when it shows again,
+        // it carries on through rather than colliding.
+        if (a.ghost > 0 || b.ghost > 0) {
+          if (touching) this.passing.add(pair);
+          continue;
+        }
+        if (touching) {
           if (this.collide(a, b, delta)) return;
           continue;
         }
@@ -728,6 +767,105 @@ export class ChaosParkSim {
       if (this.ratTimer <= 0) this.ratTimer = between(RAT_INTERVAL) / 2;
       else if (--this.ratTimer <= 0) this.ratTimer = this.sendRat() ? between(RAT_INTERVAL) : 120;
     }
+    // One pick-up at a time: the next is timed from when the last one went.
+    if (this.score >= PICKUP_FROM_SCORE && !this.pickups.length) {
+      if (this.pickupTimer <= 0) this.pickupTimer = between(PICKUP_FIRST);
+      else if (--this.pickupTimer <= 0)
+        this.pickupTimer = this.placePickup() ? between(PICKUP_INTERVAL) : 30;
+    }
+  }
+
+  // -------------------------------------------------------------------------------------------------------------
+  // Pick-ups.
+
+  /** Puts a heart or token somewhere clear on the loop; returns false if the spot drawn was too close to someone. */
+  private placePickup(): boolean {
+    const { track } = this.park;
+    const kinds: PickupKind[] = ['heart', 'double', 'ghost'];
+    const weight = (k: PickupKind): number =>
+      k === 'heart' && this.lives >= MAX_LIVES ? 0 : PICKUP_WEIGHTS[k];
+    let r = this.rng() * kinds.reduce((sum, k) => sum + weight(k), 0);
+    let kind: PickupKind = 'double';
+    for (const k of kinds) {
+      r -= weight(k);
+      if (r < 0) {
+        kind = k;
+        break;
+      }
+    }
+    const s = this.rng() * track.length;
+    const lane = Math.floor(this.rng() * LANES);
+    for (const m of this.movers) {
+      if (m.state !== 'track') continue;
+      if (Math.abs(loopDelta(s, m.s, track.length)) < PICKUP_CLEAR && laneOverlap(m.p, m.width, lane, 1) > 0)
+        return false;
+    }
+    const at = pose(track, s, laneOffset(lane, 1));
+    this.pickups.push({ id: this.nextId++, kind, s, lane, x: at.x, y: at.y, ticks: 0 });
+    return true;
+  }
+
+  /** Ages the pick-ups on the loop, and gives each to the first visitor over it. */
+  private checkPickups(): void {
+    const length = this.park.track.length;
+    for (const p of this.pickups) {
+      p.ticks++;
+      const taker = this.movers.find(
+        (m) =>
+          m.state === 'track' &&
+          m.kind !== 'carriage' &&
+          m.kind !== 'group' &&
+          Math.abs(loopDelta(p.s, m.s, length)) < (PICKUP_LEN + m.len) / 2 &&
+          laneOverlap(m.p, m.width, p.lane, 1) > LATERAL_OVERLAP,
+      );
+      if (!taker) continue;
+      p.ticks = PICKUP_TICKS;
+      if (p.kind === 'heart') this.lives = Math.min(MAX_LIVES, this.lives + 1);
+      else if (p.kind === 'double') this.duplicate(taker);
+      else taker.ghost = GHOST_TICKS;
+      this.events.push(p.kind === 'heart' ? 'life' : p.kind);
+      this.pops.push({ id: this.nextId++, value: 0, pickup: p.kind, x: taker.x, y: taker.y, ticks: 0 });
+    }
+    this.pickups = this.pickups.filter((p) => p.ticks < PICKUP_TICKS);
+  }
+
+  /**
+   * Puts an exact copy of a mover just behind it, with the laps it still had to do. If the copy lands on top of
+   * anyone, that doesn't count as a collision: they pass through each other.
+   */
+  private duplicate(m: Mover): void {
+    const { track } = this.park;
+    const copy: Mover = {
+      ...m,
+      id: this.nextId++,
+      s: wrap(m.s - m.dir * (m.len + DOUBLE_GAP), track.length),
+      progress: 0,
+      laps: Math.max(1, m.laps - m.lapsDone),
+      lapsDone: 0,
+      done: false,
+      route: [],
+      routeLens: [0],
+      join: null,
+      warning: false,
+      onPatch: new Set(),
+      shout: 0,
+      shoutAt: -Infinity,
+    };
+    this.place(copy);
+    copy.heading = copy.prevHeading = m.heading;
+    copy.prevX = copy.x;
+    copy.prevY = copy.y;
+    const length = track.length;
+    for (const o of this.movers) {
+      if (o.state !== 'track') continue;
+      const half = (o.len + copy.len) / 2;
+      if (
+        laneOverlap(o.p, o.width, copy.p, copy.width) > LATERAL_OVERLAP &&
+        Math.abs(loopDelta(o.s, copy.s, length)) < half * COLLIDE_FACTOR
+      )
+        this.passing.add(`${o.id}:${copy.id}`);
+    }
+    this.movers.push(copy);
   }
 
   private pickKind(): Kind {
@@ -848,6 +986,7 @@ export class ChaosParkSim {
       daze: 0,
       shout: 0,
       shoutAt: -Infinity,
+      ghost: 0,
     };
   }
 
@@ -939,7 +1078,8 @@ export class ChaosParkSim {
     this.rats = [];
     this.pops = [];
     this.crash = null;
-    this.hits = 0;
+    this.lives = LIVES;
+    this.pickups = [];
     this.impacts = [];
     this.passing.clear();
     this.paused = false;
@@ -947,6 +1087,7 @@ export class ChaosParkSim {
     this.carriagesSent = 0;
     this.groupTimer = 0;
     this.ratTimer = 0;
+    this.pickupTimer = 0;
     this.playTicks = 0;
     this.warnedPairs.clear();
   }

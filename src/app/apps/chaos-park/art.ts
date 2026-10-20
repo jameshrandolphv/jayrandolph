@@ -10,6 +10,7 @@ import {
   SCENERY_EXTENT,
   STREET_WIDTH,
   type Kind,
+  type PickupKind,
 } from './constants';
 import {
   edge,
@@ -1154,6 +1155,62 @@ export const heart = (full: boolean): Graphics => {
     });
   }
   return g;
+};
+
+/** The colour of each pick-up's disc, and of the words that float up when it is taken. */
+export const PICKUP_COLORS: Readonly<Record<PickupKind, number>> = {
+  heart: 0xd8433a,
+  double: 0x8a55c4,
+  ghost: 0x2f9c95,
+};
+
+/**
+ * A pick-up lying on the road, at the design lane width: a disc with a white ring, and on it a heart (a life), two
+ * stacked cards (a duplicate) or a little ghost (invisibility).
+ */
+export const pickupToken = (kind: PickupKind): Container => {
+  const c = new Container();
+  const disc = new Graphics()
+    .circle(1, 1.5, 10.5)
+    .fill({ color: 0x000000, alpha: 0.25 })
+    .circle(0, 0, 10.5)
+    .fill(kind === 'heart' ? 0xffffff : PICKUP_COLORS[kind])
+    .stroke({ width: 2.2, color: kind === 'heart' ? PICKUP_COLORS.heart : 0xffffff });
+  c.addChild(disc);
+  if (kind === 'heart') {
+    const h = heart(true);
+    h.scale.set(0.62);
+    h.y = 0.6;
+    c.addChild(h);
+  } else if (kind === 'double') {
+    c.addChild(
+      new Graphics()
+        .roundRect(-6, -6.5, 9, 10, 2)
+        .fill({ color: 0xffffff, alpha: 0.55 })
+        .roundRect(-3, -3.5, 9, 10, 2)
+        .fill(0xffffff)
+        .stroke({ width: 1.2, color: INK }),
+    );
+  } else {
+    c.addChild(
+      new Graphics()
+        .moveTo(-5.5, 6.5)
+        .lineTo(-5.5, -1)
+        .arc(0, -1, 5.5, Math.PI, 0)
+        .lineTo(5.5, 6.5)
+        .lineTo(3.7, 4.7)
+        .lineTo(1.8, 6.5)
+        .lineTo(0, 4.7)
+        .lineTo(-1.8, 6.5)
+        .lineTo(-3.7, 4.7)
+        .closePath()
+        .fill(0xffffff)
+        .circle(-2, -1.5, 1.1)
+        .circle(2, -1.5, 1.1)
+        .fill(INK),
+    );
+  }
+  return c;
 };
 
 /** A red "!" in a white disc, over a rat about to dart out. */
