@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.8.3
+- Chaos Park: "Your best" and its trophy are centred together on the title card
+- Chaos Park: the how-to-play rules fit inside their notice board, with room under the last line for the button
+- Chaos Park: the ball fields look like real ones, with a bigger clay infield arcing round the pitcher's mound, grass inside the base paths, clay round each base and home, and foul lines out to the edge of the grass
+- Chaos Park: privacy policy and support pages for the app stores, at `/chaos-park/privacy` and `/chaos-park/support`, and an `app-ads.txt` for AdMob
+
 ## 1.8.2
 - Bat Out! is switched off for now: it is gone from the desktop and the dock, and `/bat-out` no longer opens it. Its code is kept so it can come back
 
