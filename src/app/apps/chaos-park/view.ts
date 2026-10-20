@@ -837,10 +837,10 @@ export class ChaosParkView {
       [group([heart(true), 0, 0, 0.8]), 'TOO MANY COLLISIONS AND THE GAME IS OVER!'],
     ];
 
-    let y = -139;
+    let y = -175;
     for (const [icon, text] of rows) {
       const lines = text.split('\n').length;
-      const h = lines * 21 + 2;
+      const h = lines * 21 + 10;
       const mid = y + h / 2;
       icon.position.set(-178, mid);
       const caption = label(text, 18, COLORS.ink, {
