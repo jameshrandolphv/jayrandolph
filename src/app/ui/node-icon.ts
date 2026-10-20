@@ -66,6 +66,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
           <stop offset="1" stop-color="#e9cf55" />
         </linearGradient>
         <clipPath id="ico-app-clip"><rect x="4" y="4" width="56" height="56" rx="13" /></clipPath>
+        <clipPath id="ico-park-clip"><rect x="16" y="16" width="32" height="32" rx="2" /></clipPath>
         <clipPath id="ico-screen-clip"><rect x="10" y="12" width="44" height="30" rx="2" /></clipPath>
       </defs>
     </svg>
@@ -178,8 +179,8 @@ export class IconDefs {}
           </g>
         }
         @case ('park') {
-          <!-- Chaos Park: the loop round a park from above, with a pond, trees and a taxi on the drive. The same drawing
-               as the iOS and Android app icons (64 units across, scaled onto the tile), with an even band of grass. -->
+          <!-- Chaos Park: the loop round a park from above, with a pond, trees, paths and a taxi on the drive. The same
+               drawing as the iOS and Android app icons (64 units across, scaled onto the tile), with an even band of grass. -->
           <rect x="4" y="4" width="56" height="56" rx="13" fill="#4f9a34" stroke="#2f6a20" />
           <g clip-path="url(#ico-app-clip)">
             <g transform="translate(4 4) scale(0.875)">
@@ -187,21 +188,53 @@ export class IconDefs {}
               <rect x="10" y="10" width="44" height="44" rx="7" fill="none" stroke="#5d5b60" stroke-width="9" />
               <rect x="10" y="10" width="44" height="44" rx="7" fill="none" stroke="#fff" stroke-width="0.9" stroke-dasharray="2.5 2.5" />
               <rect x="16" y="16" width="32" height="32" rx="2" fill="#93d465" />
+              <g clip-path="url(#ico-park-clip)">
+                <path d="M8 40 L40 8 M8 48 L48 8 M8 56 L56 8 M16 56 L56 16 M24 56 L56 24 M32 56 L56 32 M40 56 L56 40" stroke="#9ddb70" stroke-width="2" />
+                <path d="M16 31.2 Q23.5 29.4 30.4 30.6 M33.2 34.5 Q31.6 41 32.6 48" fill="none" stroke="#e6d9ad" stroke-width="1.7" stroke-linecap="round" />
+                <g fill="#000" opacity="0.17">
+                  <ellipse cx="38.3" cy="29.9" rx="7.5" ry="5.6" />
+                  <circle cx="23.4" cy="25.5" r="3.6" /><circle cx="26.3" cy="37.4" r="3.2" />
+                  <circle cx="21.8" cy="42.9" r="2.6" /><circle cx="41.9" cy="41.9" r="3.2" />
+                </g>
+              </g>
               <ellipse cx="37.5" cy="29" rx="7.5" ry="5.6" fill="#5ab6e4" stroke="#8fb36a" stroke-width="1.2" />
               <ellipse cx="35.5" cy="27.2" rx="4" ry="2.1" fill="#8fd0f0" />
+              <path d="M41.9 31.6 a1.1 1.1 0 1 1 0.9 -0.9 l-0.9 0 z" fill="#5fae3e" />
+              <circle cx="40" cy="32.6" r="0.6" fill="#5fae3e" />
+              <path d="M33.2 30.8 q1.2 -0.7 2.4 0" fill="none" stroke="#bfe6f7" stroke-width="0.4" stroke-linecap="round" />
               <g stroke="#2e6a24" stroke-width="0.7">
                 <circle cx="22.5" cy="24.5" r="3.6" fill="#5fa83b" /><circle cx="25.5" cy="36.5" r="3.2" fill="#6cb544" />
-                <circle cx="21" cy="42" r="2.6" fill="#f3a0bf" /><circle cx="41" cy="41" r="3.2" fill="#5fa83b" />
+                <circle cx="21" cy="42" r="2.6" fill="#f3a0bf" stroke="#b9577c" /><circle cx="41" cy="41" r="3.2" fill="#5fa83b" />
               </g>
+              <g fill="#82c957">
+                <circle cx="21.3" cy="23.3" r="1.6" /><circle cx="24.4" cy="35.4" r="1.4" /><circle cx="39.9" cy="39.9" r="1.4" />
+              </g>
+              <circle cx="20.2" cy="41.2" r="1.1" fill="#fbcadb" />
+              <g fill="#fff"><circle cx="21.9" cy="41.4" r="0.45" /><circle cx="20.6" cy="43" r="0.45" /><circle cx="22" cy="43.1" r="0.4" /></g>
+              <g>
+                <circle cx="43.6" cy="19.4" r="0.7" fill="#ff6f7d" /><circle cx="45.4" cy="20.6" r="0.7" fill="#ffd23f" />
+                <circle cx="44.2" cy="21.6" r="0.7" fill="#fff" /><circle cx="18.8" cy="46" r="0.6" fill="#ffd23f" />
+                <circle cx="30" cy="45.6" r="0.6" fill="#ff6f7d" />
+              </g>
+              <rect x="26.6" y="27.3" width="2.8" height="1.1" rx="0.3" fill="#a06a3c" stroke="#5a3a22" stroke-width="0.35" />
             </g>
             <ellipse cx="32" cy="32" rx="34" ry="22" fill="url(#ico-gloss)" opacity="0.25" transform="translate(0 -18)" />
           </g>
           <g transform="translate(4 4) scale(0.875)">
-            <g transform="translate(38 10)" stroke="#2e2a2c" stroke-width="0.9">
-              <rect x="-6" y="-3.6" width="12" height="7.2" rx="2.2" fill="#f7c531" />
-              <rect x="-2.5" y="-2.6" width="5" height="5.2" rx="1" fill="#37506b" stroke="none" />
+            <g transform="translate(38 10)">
+              <rect x="-5.6" y="-3.1" width="12" height="7.2" rx="2.2" fill="#000" opacity="0.25" />
+              <g fill="#1e1b1d"><rect x="-4.6" y="-4.5" width="2.4" height="1.6" rx="0.5" /><rect x="2.2" y="-4.5" width="2.4" height="1.6" rx="0.5" />
+                <rect x="-4.6" y="2.9" width="2.4" height="1.6" rx="0.5" /><rect x="2.2" y="2.9" width="2.4" height="1.6" rx="0.5" /></g>
+              <rect x="-6" y="-3.6" width="12" height="7.2" rx="2.2" fill="#f7c531" stroke="#2e2a2c" stroke-width="0.9" />
+              <rect x="-2.5" y="-2.6" width="5" height="5.2" rx="1" fill="#37506b" />
+              <rect x="-1.5" y="-2.6" width="3" height="5.2" fill="#e9b422" />
+              <rect x="-0.6" y="-2" width="1.2" height="4" rx="0.3" fill="#fff6d0" stroke="#2e2a2c" stroke-width="0.25" />
+              <g fill="#fff7b0"><rect x="4.4" y="-2.7" width="1" height="1.3" rx="0.4" /><rect x="4.4" y="1.4" width="1" height="1.3" rx="0.4" /></g>
+              <g fill="#e2423a"><rect x="-5.4" y="-2.7" width="0.8" height="1.3" rx="0.3" /><rect x="-5.4" y="1.4" width="0.8" height="1.3" rx="0.3" /></g>
             </g>
+            <circle cx="13.1" cy="41.6" r="2.6" fill="#000" opacity="0.22" />
             <circle cx="12.5" cy="41" r="2.6" fill="#ff8a00" stroke="#2e2a2c" stroke-width="0.8" />
+            <circle cx="11.7" cy="41.6" r="0.9" fill="#ffb24a" />
             <circle cx="12.9" cy="37.4" r="1.7" fill="#3b2a20" stroke="#2e2a2c" stroke-width="0.6" />
           </g>
         }
