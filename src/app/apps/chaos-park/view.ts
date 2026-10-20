@@ -13,6 +13,8 @@ import {
   drawDaze,
   heart,
   patchSprites,
+  pickupToken,
+  PICKUP_COLORS,
   drawRat,
   ratAlert,
   badgeNumber,
@@ -44,11 +46,14 @@ import {
   RESUME_BUTTON,
   RETRY_BUTTON,
   IMPACT_TICKS,
-  MAX_HITS,
+  LIVES,
+  MAX_LIVES,
+  PICKUP_TICKS,
   SHOUT_TICKS,
   SLIP_TICKS,
   pauseButton,
   type Bounds,
+  type PickupKind,
 } from './constants';
 import { placePark, type ChaosParkGame } from './game';
 import { noticeBoard, plaqueButton, roundPauseButton, trophy } from './ui';
@@ -56,6 +61,17 @@ import type { Park } from './park';
 import { lapsLeft, patchesShown, type Mover } from './sim';
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
+
+/** What floats up where a pick-up is taken. */
+const PICKUP_WORDS: Readonly<Record<PickupKind, string>> = {
+  heart: '+1 LIFE',
+  double: 'DUPLICATE!',
+  ghost: 'INVISIBLE!',
+};
+
+/** How see-through someone invisible is: faint while it lasts, flickering back in over its last second. */
+export const ghostAlpha = (ghost: number, clock: number): number =>
+  ghost <= 0 ? 1 : ghost < 60 && Math.floor(clock / 5) % 2 === 0 ? 0.8 : 0.35;
 const easeOut = (t: number): number => 1 - (1 - Math.min(1, Math.max(0, t))) ** 3;
 
 /** How far below and right of a mover its shadow falls, as if lit from the top left. */
@@ -118,9 +134,12 @@ export class ChaosParkView {
   /** Frames since each patch appeared, for its pop-in. */
   private patchAge: number[] = [];
   private readonly impactLayer = new Graphics();
-  /** One per collision a run can take, after the lap counter. */
+  /** Hearts on the road, and tokens, waiting to be taken. */
+  private readonly pickupLayer = new Container();
+  private readonly pickupViews = new Map<number, Container>();
+  /** One per life, after the lap counter: three, or more while hearts have added lives. */
   private readonly hearts: Container[] = [];
-  private shownHits = -1;
+  private shownLives = -1;
   private readonly shadows = new Container();
   private readonly movers = new Container();
   private readonly crashRing = new Graphics();
@@ -171,7 +190,7 @@ export class ChaosParkView {
     laps.position.set(24, 32);
     this.lapsText.box.position.set(laps.x + laps.width + 64, 32);
     this.hudLeft.addChild(laps, this.lapsText.box);
-    for (let i = 0; i < MAX_HITS; i++) {
+    for (let i = 0; i < MAX_LIVES; i++) {
       const h = new Container();
       h.position.set(this.lapsText.box.x + COUNTER.w / 2 + 26 + i * 30, 32);
       this.hearts.push(h);
@@ -200,6 +219,7 @@ export class ChaosParkView {
     this.world.addChild(
       this.scenery,
       this.patchLayer,
+      this.pickupLayer,
       this.shadows,
       this.movers,
       this.ratLayer,
@@ -224,6 +244,7 @@ export class ChaosParkView {
     this.syncPops();
     this.syncCrash();
     this.syncPatches();
+    this.syncPickups();
     this.syncImpacts();
     this.syncHearts();
 
@@ -327,13 +348,13 @@ export class ChaosParkView {
       v.root.position.set(x, y);
       v.root.scale.set(ART);
       v.root.rotation = v.angle + wobble;
-      v.root.alpha = m.alpha;
+      v.root.alpha = m.alpha * ghostAlpha(m.ghost, sim.clock);
       v.streaks.visible = m.boosted;
       // The lines flicker and trail a little further as it goes.
       if (m.boosted) v.streaks.x = -2 - ((sim.clock + alpha) % 6);
       v.shadow.position.set(x + SHADOW.x, y + SHADOW.y);
       v.shadow.rotation = v.root.rotation;
-      v.shadow.alpha = 0.22 * m.alpha;
+      v.shadow.alpha = 0.22 * v.root.alpha;
 
       const crashed = sim.crash?.ids.includes(m.id) ?? false;
       const warned = m.warning || crashed;
@@ -521,10 +542,15 @@ export class ChaosParkView {
       live.add(p.id);
       let t = this.popViews.get(p.id);
       if (!t) {
-        t = label(`+${p.value}`, p.value > 1 ? 30 : 24, 0xffffff, {
-          stroke: { color: 0x3f6b28, width: 6, join: 'round' },
-          letterSpacing: 1,
-        });
+        t = p.pickup
+          ? label(PICKUP_WORDS[p.pickup], 22, 0xffffff, {
+              stroke: { color: PICKUP_COLORS[p.pickup], width: 6, join: 'round' },
+              letterSpacing: 1,
+            })
+          : label(`+${p.value}`, p.value > 1 ? 30 : 24, 0xffffff, {
+              stroke: { color: 0x3f6b28, width: 6, join: 'round' },
+              letterSpacing: 1,
+            });
         this.popViews.set(p.id, t);
         this.popLayer.addChild(t);
       }
@@ -558,6 +584,33 @@ export class ChaosParkView {
     });
   }
 
+  /** Pick-ups grow in where they appear, bob gently, and blink for their last two seconds. */
+  private syncPickups(): void {
+    const { pickups, clock } = this.game.sim;
+    const live = new Set<number>();
+    for (const p of pickups) {
+      live.add(p.id);
+      let v = this.pickupViews.get(p.id);
+      if (!v) {
+        v = pickupToken(p.kind);
+        v.position.set(p.x, p.y);
+        this.pickupViews.set(p.id, v);
+        this.pickupLayer.addChild(v);
+      }
+      const t = Math.min(1, p.ticks / 18);
+      const grow = t < 1 ? easeOut(t) * (1 + 0.3 * Math.sin(t * Math.PI)) : 1;
+      v.scale.set(ART * grow * (1 + 0.06 * Math.sin(clock * 0.12)));
+      v.rotation = -this.world.rotation;
+      const left = PICKUP_TICKS - p.ticks;
+      v.alpha = left < 120 && Math.floor(left / 8) % 2 === 0 ? 0.35 : 1;
+    }
+    for (const [id, v] of this.pickupViews) {
+      if (live.has(id)) continue;
+      v.destroy({ children: true });
+      this.pickupViews.delete(id);
+    }
+  }
+
   /** A quick ring of stars where two movers bumped without ending the run. */
   private syncImpacts(): void {
     const g = this.impactLayer.clear();
@@ -579,16 +632,21 @@ export class ChaosParkView {
     }
   }
 
-  /** Full hearts for the collisions still to come; the one just lost pops as it empties. */
+  /**
+   * A full heart for each life left: three places, and one more for each life a heart has added. The one just lost
+   * pops as it empties, and one just gained pops as it fills.
+   */
   private syncHearts(): void {
-    const { hits } = this.game.sim;
-    if (hits !== this.shownHits) {
-      const lost = hits > this.shownHits && this.shownHits >= 0;
-      this.shownHits = hits;
+    const { lives } = this.game.sim;
+    if (lives !== this.shownLives) {
+      const changed = this.shownLives >= 0;
+      const popped = lives < this.shownLives ? lives : lives - 1;
+      this.shownLives = lives;
       this.hearts.forEach((h, i) => {
         h.removeChildren().forEach((c) => c.destroy());
-        h.addChild(heart(i < MAX_HITS - hits));
-        h.scale.set(lost && i === MAX_HITS - hits ? 1.8 : 1);
+        h.visible = i < Math.max(LIVES, lives);
+        h.addChild(heart(i < lives));
+        h.scale.set(changed && i === popped ? 1.8 : 1);
       });
     }
     for (const h of this.hearts) if (h.scale.x > 1) h.scale.set(Math.max(1, h.scale.x - 0.04));
@@ -768,21 +826,25 @@ export class ChaosParkView {
       [group([plusOne, 0, 0]), 'EACH LAP IS A POINT'],
       [
         group(
-          ...Array.from({ length: MAX_HITS }, (_, i): [Container, number, number, number] => [
-            heart(i < MAX_HITS - 1),
-            (i - (MAX_HITS - 1) / 2) * 22,
+          ...Array.from({ length: LIVES }, (_, i): [Container, number, number, number] => [
+            heart(i < LIVES - 1),
+            (i - (LIVES - 1) / 2) * 22,
             0,
             0.8,
           ]),
         ),
-        'THREE COLLISIONS AND THE GAME IS OVER!',
+        'THREE COLLISIONS END THE GAME! HEARTS\nON THE ROAD GIVE ONE BACK, UP TO FIVE',
+      ],
+      [
+        group([pickupToken('double'), -12, 0, 1.1], [pickupToken('ghost'), 14, 0, 1.1]),
+        'DUPLICATE ADDS A COPY RIGHT BEHIND;\nINVISIBLE LETS IT PASS THROUGH OTHERS',
       ],
     ];
 
-    let y = -184;
+    let y = -188;
     for (const [icon, text] of rows) {
       const lines = text.split('\n').length;
-      const h = lines > 1 ? 48 : 31;
+      const h = lines > 1 ? 45 : 27;
       const mid = y + h / 2;
       icon.position.set(-178, mid);
       const caption = label(text, 18, COLORS.ink, {

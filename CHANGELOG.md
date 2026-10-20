@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.9.0
+- Chaos Park: a run now has lives instead of a collision count. You start with three, and hearts that turn up on the road now and then give one back when a visitor runs over them, up to five
+- Chaos Park: two more tokens on the road. A duplicate adds a copy of the visitor right behind it (it can't cause a collision as it appears), and invisibility makes the visitor see-through for a few seconds so it passes through everyone else
+- Chaos Park: tokens start appearing once you have 5 laps, one at a time, and fade away if nobody takes them. The how-to-play card explains them
+
+## 1.8.4
+- Chaos Park: the privacy policy and support page match the apps, which no longer show a banner, and say that the "Keep going" video is still offered after Remove Ads
+
 ## 1.8.3
 - Chaos Park: "Your best" and its trophy are centred together on the title card
 - Chaos Park: the how-to-play rules fit inside their notice board, with room under the last line for the button

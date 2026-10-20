@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   ART,
   BOOST,
-  MAX_HITS,
+  DOUBLE_GAP,
+  GHOST_TICKS,
+  LIVES,
+  MAX_LIVES,
+  PICKUP_FROM_SCORE,
+  PICKUP_TICKS,
   PATCH_SCORES,
   STUN_TICKS,
   CRASH_TICKS,
@@ -16,6 +21,7 @@ import {
   RAT_LURK,
   groupLength,
   type Kind,
+  type PickupKind,
 } from './constants';
 import { ChaosParkGame, frameFor, placePark, screenToPark } from './game';
 import { generatePark, laneOffset, pose, seededRng, wrap } from './park';
@@ -94,6 +100,7 @@ const put = (
     daze: 0,
     shout: 0,
     shoutAt: -Infinity,
+    ghost: 0,
     ...options,
   };
   m.baseSpeed = m.speed;
@@ -112,7 +119,7 @@ describe('ChaosParkSim', () => {
 
   it('crashes when a faster mover runs into a slower one in the same lane', () => {
     const sim = playing();
-    sim.hits = MAX_HITS - 1;
+    sim.lives = 1;
     const s = 100;
     put(sim, 'walker', s + 60, 1);
     put(sim, 'runner', s, 1);
@@ -157,7 +164,7 @@ describe('ChaosParkSim', () => {
 
   it('crashes head-on with something going the wrong way', () => {
     const sim = playing();
-    sim.hits = MAX_HITS - 1;
+    sim.lives = 1;
     const s = 100;
     put(sim, 'runner', s, 0);
     put(sim, 'walker', s + 150, 0, { dir: -1 });
@@ -167,7 +174,7 @@ describe('ChaosParkSim', () => {
 
   it('counts a two-lane mover as in both its lanes', () => {
     const sim = playing();
-    sim.hits = MAX_HITS - 1;
+    sim.lives = 1;
     const s = 100;
     put(sim, 'walker', s + 80, 2);
     put(sim, 'car', s, 1);
@@ -289,7 +296,7 @@ describe('ChaosParkSim', () => {
 
   it('moves to game over after the crash and locks out a hasty retry', () => {
     const sim = playing();
-    sim.hits = MAX_HITS - 1;
+    sim.lives = 1;
     const s = 100;
     put(sim, 'walker', s + 30, 1);
     put(sim, 'car', s, 0);
@@ -493,7 +500,7 @@ describe('rats', () => {
 
   it('leave a dazed person who cannot be swiped and can be run into', () => {
     const sim = playing();
-    sim.hits = MAX_HITS - 1;
+    sim.lives = 1;
     const walker = put(sim, 'walker', 160, 1);
     const runner = put(sim, 'runner', 60, 1);
     walker.daze = DAZE_TICKS;
@@ -596,7 +603,7 @@ describe('speed swipes', () => {
 
   it('can rear-end something when boosted into it', () => {
     const sim = playing();
-    sim.hits = MAX_HITS - 1;
+    sim.lives = 1;
     put(sim, 'runner', 160, 1);
     const behind = put(sim, 'runner', 100, 1);
     sim.setBoost(behind.id, true);
@@ -657,9 +664,9 @@ describe('collisions', () => {
     const sim = playing();
     const walker = put(sim, 'walker', 160, 1);
     const runner = put(sim, 'runner', 100, 1);
-    while (sim.hits === 0 && sim.playTicks < 300) sim.step();
+    while (sim.lives === LIVES && sim.playTicks < 300) sim.step();
     expect(sim.phase).toBe('playing');
-    expect(sim.hits).toBe(1);
+    expect(sim.lives).toBe(LIVES - 1);
     expect(sim.drainEvents()).toContain('hit');
     expect(sim.impacts).toHaveLength(1);
     expect(walker.daze).toBeGreaterThan(STUN_TICKS - 3);
@@ -667,7 +674,7 @@ describe('collisions', () => {
     // The runner goes on through and out the other side without a second collision.
     const at = walker.s;
     ticks(sim, 80);
-    expect(sim.hits).toBe(1);
+    expect(sim.lives).toBe(LIVES - 1);
     expect(walker.s).toBe(at);
     expect(runner.s).toBeGreaterThan(walker.s + (walker.len + runner.len) / 2);
     ticks(sim, STUN_TICKS);
@@ -676,13 +683,13 @@ describe('collisions', () => {
 
   it('end the run on the third', () => {
     const sim = playing();
-    for (let n = 1; n <= MAX_HITS; n++) {
+    for (let n = 1; n <= LIVES; n++) {
       sim.movers = [];
       put(sim, 'walker', 160, 1);
       put(sim, 'car', 60, 0);
-      while (sim.hits < n && sim.playTicks < 3000) sim.step();
-      expect(sim.hits).toBe(n);
-      expect(sim.phase).toBe(n < MAX_HITS ? 'playing' : 'crashed');
+      while (sim.lives > LIVES - n && sim.playTicks < 3000) sim.step();
+      expect(sim.lives).toBe(LIVES - n);
+      expect(sim.phase).toBe(n < LIVES ? 'playing' : 'crashed');
     }
   });
 
@@ -691,8 +698,8 @@ describe('collisions', () => {
     const steady = put(sim, 'runner', 100, 1);
     const turner = put(sim, 'runner', 100, 2);
     sim.shift(turner.id, -1);
-    while (sim.hits === 0 && sim.playTicks < 60) sim.step();
-    expect(sim.hits).toBe(1);
+    while (sim.lives === LIVES && sim.playTicks < 60) sim.step();
+    expect(sim.lives).toBe(LIVES - 1);
     expect(steady.daze).toBeGreaterThan(0);
     expect(turner.daze).toBe(0);
   });
@@ -701,19 +708,115 @@ describe('collisions', () => {
     const sim = playing();
     const bike = put(sim, 'biker', 100, 1);
     const walker = put(sim, 'walker', 200, 1, { dir: -1 });
-    while (sim.hits === 0 && sim.playTicks < 200) sim.step();
+    while (sim.lives === LIVES && sim.playTicks < 200) sim.step();
     expect(walker.daze).toBeGreaterThan(0);
     expect(bike.daze).toBe(0);
   });
 
   it('start afresh with every run', () => {
     const sim = playing();
-    sim.hits = 2;
+    sim.lives = 1;
     sim.impacts.push({ id: 1, x: 0, y: 0, ticks: 0 });
     sim.toTitle();
     sim.start();
-    expect(sim.hits).toBe(0);
+    expect(sim.lives).toBe(LIVES);
     expect(sim.impacts).toHaveLength(0);
+  });
+});
+
+const lay = (sim: ChaosParkSim, kind: PickupKind, s: number, lane: number) => {
+  const at = pose(sim.park.track, s, laneOffset(lane, 1));
+  sim.pickups.push({ id: nextId++, kind, s, lane, x: at.x, y: at.y, ticks: 0 });
+};
+
+describe('pick-ups', () => {
+  it('a heart gives a life back, up to five', () => {
+    const sim = playing();
+    sim.lives = 1;
+    put(sim, 'walker', 100, 1);
+    lay(sim, 'heart', 130, 1);
+    while (sim.pickups.length && sim.playTicks < 200) sim.step();
+    expect(sim.lives).toBe(2);
+    expect(sim.drainEvents()).toContain('life');
+    sim.lives = MAX_LIVES;
+    lay(sim, 'heart', 200, 1);
+    while (sim.pickups.length && sim.playTicks < 400) sim.step();
+    expect(sim.lives).toBe(MAX_LIVES);
+  });
+
+  it('only visitors in its lane take one, and carriages and run groups go over it', () => {
+    const sim = playing();
+    put(sim, 'walker', 100, 0);
+    put(sim, 'carriage', 300, 2);
+    lay(sim, 'heart', 130, 2);
+    lay(sim, 'ghost', 330, 3);
+    sim.lives = 1;
+    ticks(sim, 120);
+    expect(sim.lives).toBe(1);
+    expect(sim.pickups).toHaveLength(2);
+  });
+
+  it('go when nobody takes them in time', () => {
+    const sim = playing();
+    lay(sim, 'double', 100, 0);
+    ticks(sim, PICKUP_TICKS - 1);
+    expect(sim.pickups).toHaveLength(1);
+    sim.step();
+    expect(sim.pickups).toHaveLength(0);
+  });
+
+  it('a duplicate puts a copy right behind, with the laps still to do, that can land on someone harmlessly', () => {
+    const sim = playing();
+    const runner = put(sim, 'runner', 100, 1, { laps: 3 });
+    runner.lapsDone = 1;
+    // Someone walking in the same lane just behind, where the copy will land.
+    const walker = put(sim, 'walker', 100 - runner.len - 10 * ART, 1, { speed: 0 });
+    lay(sim, 'double', 112, 1);
+    sim.step();
+    expect(sim.pickups).toHaveLength(0);
+    const copy = sim.movers[sim.movers.length - 1]!;
+    expect(copy.id).not.toBe(runner.id);
+    expect(copy.kind).toBe('runner');
+    expect(copy.p).toBe(runner.p);
+    expect(copy.laps).toBe(2);
+    expect(copy.lapsDone).toBe(0);
+    expect(runner.s - copy.s).toBeCloseTo(runner.len + DOUBLE_GAP, 5);
+    ticks(sim, 30);
+    expect(sim.lives).toBe(LIVES);
+    expect(walker.daze).toBe(0);
+  });
+
+  it('an invisibility token lets its taker pass through others for a while', () => {
+    const sim = playing();
+    const bike = put(sim, 'biker', 100, 1);
+    const walker = put(sim, 'walker', 220, 1);
+    lay(sim, 'ghost', 112, 1);
+    sim.step();
+    expect(bike.ghost).toBe(GHOST_TICKS);
+    while (bike.s < walker.s + 40 && sim.playTicks < 300) sim.step();
+    expect(sim.lives).toBe(LIVES);
+    expect(walker.daze).toBe(0);
+    ticks(sim, GHOST_TICKS);
+    expect(bike.ghost).toBe(0);
+  });
+
+  it('come from five laps, one at a time, and never a heart while lives are full', () => {
+    const sim = new ChaosParkSim(seededRng(8));
+    sim.start();
+    sim.score = PICKUP_FROM_SCORE - 1;
+    ticks(sim, 600);
+    expect(sim.pickups).toHaveLength(0);
+    const kinds = new Set<string>();
+    for (let i = 0; i < 4000; i++) {
+      sim.score = Math.max(sim.score, PICKUP_FROM_SCORE);
+      sim.lives = MAX_LIVES;
+      sim.step();
+      expect(sim.pickups.length).toBeLessThanOrEqual(1);
+      for (const p of sim.pickups) kinds.add(p.kind);
+      if (sim.phase !== 'playing') break;
+    }
+    expect(kinds.size).toBeGreaterThan(0);
+    expect(kinds.has('heart')).toBe(false);
   });
 });
 

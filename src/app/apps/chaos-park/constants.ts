@@ -141,13 +141,37 @@ export const BOOST = 1.6;
 export const LANE_RATE = 0.09;
 
 /**
- * Collisions a run can take: the last one ends it. Before that, whoever was run into is stunned for `STUN_TICKS`
- * and whoever hit them carries on through.
+ * Lives a run starts with: each collision takes one, and the last one ends it. Before that, whoever was run into is
+ * stunned for `STUN_TICKS` and whoever hit them carries on through. Hearts on the road give lives back, up to
+ * `MAX_LIVES`.
  */
-export const MAX_HITS = 3;
+export const LIVES = 3;
+export const MAX_LIVES = 5;
 export const STUN_TICKS = 90;
 /** Ticks the burst shows where a collision happened. */
 export const IMPACT_TICKS = 40;
+
+/**
+ * Pick-ups: from `PICKUP_FROM_SCORE`, now and then one sits on the loop in one lane until a visitor walks, runs, rides
+ * or drives over it, or `PICKUP_TICKS` pass. One at a time: the first comes `PICKUP_FIRST` ticks in, the next
+ * `PICKUP_INTERVAL` after the last has gone. A heart gives a life back (never while lives are full); a duplicate
+ * puts a copy of whoever takes it right behind them; an invisibility token lets them pass through everyone for
+ * `GHOST_TICKS`. Carriages and run groups go over them without taking them.
+ */
+export type PickupKind = 'heart' | 'double' | 'ghost';
+export const PICKUP_FROM_SCORE = 5;
+export const PICKUP_FIRST: readonly [number, number] = [6 * 60, 12 * 60];
+export const PICKUP_INTERVAL: readonly [number, number] = [15 * 60, 25 * 60];
+export const PICKUP_TICKS = 12 * 60;
+/** How likely each kind is, when it can come. */
+export const PICKUP_WEIGHTS: Readonly<Record<PickupKind, number>> = { heart: 2, double: 1, ghost: 1 };
+/** A pick-up's length along the road, for taking it; it is drawn about this size. */
+export const PICKUP_LEN = 18 * ART;
+/** A pick-up only appears where nothing on the loop is within this distance of it in its lane. */
+export const PICKUP_CLEAR = 60 * ART;
+/** The gap a duplicate is put behind the one it copies. */
+export const DOUBLE_GAP = 6 * ART;
+export const GHOST_TICKS = 6 * 60;
 
 /** Slippery patches appear on the road as the score reaches each of these, up to three. */
 export const PATCH_SCORES: readonly number[] = [25, 50, 100];
@@ -232,7 +256,7 @@ export const CARD = { w: 540, h: 520 };
 
 export const PLAY_BUTTON: Plaque = { x: 116, y: 186, rx: 100, ry: 36, label: 'PLAY' };
 export const HELP_BUTTON: Plaque = { x: -116, y: 186, rx: 100, ry: 36, label: 'HOW TO PLAY' };
-export const BACK_BUTTON: Plaque = { x: 0, y: 190, rx: 100, ry: 36, label: 'GOT IT!' };
+export const BACK_BUTTON: Plaque = { x: 0, y: 196, rx: 100, ry: 36, label: 'GOT IT!' };
 export const RETRY_BUTTON: Plaque = { x: 116, y: 186, rx: 100, ry: 36, label: 'RETRY' };
 export const MENU_BUTTON: Plaque = { x: -116, y: 186, rx: 100, ry: 36, label: 'MENU' };
 export const RESUME_BUTTON: Plaque = { x: 116, y: 44, rx: 100, ry: 36, label: 'RESUME' };
