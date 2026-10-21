@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.9.3
+- Chaos Park: six new tokens, ten in all, and a token's effect now lasts for the rest of the visitor's laps instead of a few seconds. A rare rainbow star flashes its taker through the rainbow and knocks anyone it touches off the track with no life lost, scoring the laps they had left (a carriage scores nothing, and another comes along later). Fire gives super speed (1.5x) and a turtle halves it; strength adds two laps; a coin adds a point; a skull is a wreck that costs a life (unless they have a star); and a spiral slows the whole game to half speed for 10 seconds before easing back. Carriages and run groups still can't take tokens
+- Chaos Park: run groups come 10 to 45 seconds after you reach 10 laps, and again 10 to 45 seconds after the last one has gone, instead of every 45 to 65 seconds
+- Chaos Park: the ball fields' lines are fainter
+- Chaos Park: a heart you gain grows in instead of popping big, so every heart by the lap counter is the same size
+- Chaos Park: the how-to-play card is a little taller with more room round and between its rules, drops the tokens row, and sums up lives with one heart: "Too many collisions and the game is over!"
+
+## 1.9.2
+- Chaos Park: the hearts by the lap counter show only the lives you have left; a lost one simply goes instead of turning into an empty outline
+- Chaos Park: the pause button sits a little further in from the corner, clear of the park's rounded edge
+
 ## 1.9.1
 - Chaos Park: lap numbers sit in the middle of their circles (they were a little low and to the right)
 - Chaos Park: tokens stay on the road for 18 seconds instead of 12, and a heart on the road is drawn as a plain heart like the ones by the lap counter

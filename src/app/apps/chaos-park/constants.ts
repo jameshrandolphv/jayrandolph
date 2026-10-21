@@ -95,12 +95,12 @@ export const SPEED_SPREAD = 0.08;
 
 /**
  * Run groups: 6 to 12 runners two abreast, doing one lap. The first comes as soon as the score reaches
- * `GROUP_FROM_SCORE`, then one every `GROUP_INTERVAL` ticks (45 to 65 seconds), never two at once. Each runner's
+ * `GROUP_FROM_SCORE`, one every `GROUP_INTERVAL` ticks (10 to 45 seconds) from then on, never two at once. Each runner's
  * lap scores.
  */
 export const GROUP_SIZE: readonly [number, number] = [6, 12];
 export const GROUP_FROM_SCORE = 10;
-export const GROUP_INTERVAL: readonly [number, number] = [45 * 60, 65 * 60];
+export const GROUP_INTERVAL: readonly [number, number] = [10 * 60, 45 * 60];
 /** Spacing between the rows of a run group, front to back, as drawn. */
 export const GROUP_ROW = 12;
 export const groupLength = (size: number): number => (Math.ceil(size / 2) * GROUP_ROW + 4) * ART;
@@ -129,6 +129,8 @@ export const SHOUT_COOLDOWN = 300;
 export const CARS_FROM_SCORE = 6;
 /** The second (and last) carriage arrives at this score. */
 export const SECOND_CARRIAGE_SCORE = 10;
+/** Ticks before another carriage comes to replace one a star has knocked off the loop. */
+export const CARRIAGE_RETURN: readonly [number, number] = [20 * 60, 40 * 60];
 /** Walkers and runners going the wrong way (clockwise) appear from this score, more often as it rises. */
 export const WRONG_WAY_FROM_SCORE = 3;
 export const WRONG_WAY_CHANCE = 0.1;
@@ -154,24 +156,75 @@ export const IMPACT_TICKS = 40;
 /**
  * Pick-ups: from `PICKUP_FROM_SCORE`, now and then one sits on the loop in one lane until a visitor walks, runs, rides
  * or drives over it, or `PICKUP_TICKS` pass. One at a time: the first comes `PICKUP_FIRST` ticks in, the next
- * `PICKUP_INTERVAL` after the last has gone. A heart gives a life back (never while lives are full); a duplicate
- * puts a copy of whoever takes it right behind them; an invisibility token lets them pass through everyone for
- * `GHOST_TICKS`. Carriages and run groups go over them without taking them.
+ * `PICKUP_INTERVAL` after the last has gone. Carriages and run groups go over them without taking them. What each
+ * does to whoever takes it, for the rest of their laps:
+ * - heart: a life back (never comes while lives are full);
+ * - double: a copy of them right behind;
+ * - ghost: they pass through everyone;
+ * - star (rare): they knock everyone they touch off the loop, scoring the laps those visitors still had to do;
+ * - fire / turtle: `FIRE_SPEED` / `TURTLE_SPEED` times as fast;
+ * - strength: `EXTRA_LAPS` more laps to do;
+ * - coin: a point;
+ * - skull: a wreck, costing a life and stunning them, as if they had collided (not while they have a star);
+ * - spiral: a time warp, everything at half speed for `WARP_SLOW_TICKS` then back to normal over `WARP_EASE_TICKS`.
  */
-export type PickupKind = 'heart' | 'double' | 'ghost';
+export type PickupKind =
+  | 'heart'
+  | 'double'
+  | 'ghost'
+  | 'star'
+  | 'fire'
+  | 'turtle'
+  | 'strength'
+  | 'coin'
+  | 'skull'
+  | 'spiral';
+/** Every kind, in the order a pick-up's kind is drawn. */
+export const PICKUP_KINDS: readonly PickupKind[] = [
+  'heart',
+  'double',
+  'ghost',
+  'star',
+  'fire',
+  'turtle',
+  'strength',
+  'coin',
+  'skull',
+  'spiral',
+];
 export const PICKUP_FROM_SCORE = 5;
 export const PICKUP_FIRST: readonly [number, number] = [6 * 60, 12 * 60];
 export const PICKUP_INTERVAL: readonly [number, number] = [15 * 60, 25 * 60];
 export const PICKUP_TICKS = 18 * 60;
 /** How likely each kind is, when it can come. */
-export const PICKUP_WEIGHTS: Readonly<Record<PickupKind, number>> = { heart: 2, double: 1, ghost: 1 };
+export const PICKUP_WEIGHTS: Readonly<Record<PickupKind, number>> = {
+  heart: 2,
+  double: 1,
+  ghost: 1,
+  star: 0.25,
+  fire: 1,
+  turtle: 1,
+  strength: 1,
+  coin: 1.5,
+  skull: 0.75,
+  spiral: 0.5,
+};
 /** A pick-up's length along the road, for taking it; it is drawn about this size. */
 export const PICKUP_LEN = 18 * ART;
 /** A pick-up only appears where nothing on the loop is within this distance of it in its lane. */
 export const PICKUP_CLEAR = 60 * ART;
 /** The gap a duplicate is put behind the one it copies. */
 export const DOUBLE_GAP = 6 * ART;
-export const GHOST_TICKS = 6 * 60;
+export const FIRE_SPEED = 1.5;
+export const TURTLE_SPEED = 0.5;
+export const EXTRA_LAPS = 2;
+/**
+ * A time warp's ticks of the game at half speed (10 seconds), then of easing back to full speed (about 3 seconds).
+ * Counted in game ticks, which pass at the warped speed.
+ */
+export const WARP_SLOW_TICKS = 300;
+export const WARP_EASE_TICKS = 120;
+export const WARP_SPEED = 0.5;
 
 /** Slippery patches appear on the road as the score reaches each of these, up to three. */
 export const PATCH_SCORES: readonly number[] = [25, 50, 100];
@@ -230,8 +283,8 @@ export interface Bounds {
 }
 
 export const pauseButton = (b: Bounds): Rect => ({
-  x: b.right - 58,
-  y: b.bottom - 58,
+  x: b.right - 70,
+  y: b.bottom - 70,
   w: 48,
   h: 48,
 });
@@ -253,10 +306,12 @@ export const BUTTON_TEXT = 30;
 
 /** Cards are this size, centred on screen; small enough to fit either way round. */
 export const CARD = { w: 540, h: 520 };
+/** The how-to-play card is taller, for room round its rules. */
+export const HELP_CARD = { w: 540, h: 570 };
 
 export const PLAY_BUTTON: Plaque = { x: 116, y: 186, rx: 100, ry: 36, label: 'PLAY' };
 export const HELP_BUTTON: Plaque = { x: -116, y: 186, rx: 100, ry: 36, label: 'HOW TO PLAY' };
-export const BACK_BUTTON: Plaque = { x: 0, y: 196, rx: 100, ry: 36, label: 'GOT IT!' };
+export const BACK_BUTTON: Plaque = { x: 0, y: 216, rx: 100, ry: 36, label: 'GOT IT!' };
 export const RETRY_BUTTON: Plaque = { x: 116, y: 186, rx: 100, ry: 36, label: 'RETRY' };
 export const MENU_BUTTON: Plaque = { x: -116, y: 186, rx: 100, ry: 36, label: 'MENU' };
 export const RESUME_BUTTON: Plaque = { x: 116, y: 44, rx: 100, ry: 36, label: 'RESUME' };

@@ -3,7 +3,13 @@ import {
   ART,
   BOOST,
   DOUBLE_GAP,
-  GHOST_TICKS,
+  CARRIAGE_RETURN,
+  EXTRA_LAPS,
+  FIRE_SPEED,
+  TURTLE_SPEED,
+  WARP_EASE_TICKS,
+  WARP_SLOW_TICKS,
+  WARP_SPEED,
   LIVES,
   MAX_LIVES,
   PICKUP_FROM_SCORE,
@@ -101,6 +107,7 @@ const put = (
     shout: 0,
     shoutAt: -Infinity,
     ghost: 0,
+    star: 0,
     ...options,
   };
   m.baseSpeed = m.speed;
@@ -371,41 +378,39 @@ describe('run groups', () => {
     expect(g.state).toBe('leaving');
   });
 
-  it('come the moment the score reaches 10, then every 45 to 65 seconds, never two at once', () => {
+  it('come 10 to 45 seconds after the score reaches 10, and that long after the last one left, one at a time', () => {
     for (const seed of [6, 7, 8]) {
       const sim = new ChaosParkSim(seededRng(seed));
       sim.start();
-      // No crashes; the score is put back where it was set after every tick.
+      // No crashes or pick-ups; the score is put back where it was set after every tick.
       internals(sim).checkTraffic = () => undefined;
+      (sim as unknown as { placePickup: () => boolean }).placePickup = () => false;
       for (let t = 0; t < 600; t++) {
         sim.score = GROUP_FROM_SCORE - 1;
         sim.step();
       }
       expect(sim.movers.some((m) => m.kind === 'group')).toBe(false);
       sim.score = GROUP_FROM_SCORE;
-      const arrivals: number[] = [];
-      const seen = new Set<number>();
+      // Each wait: from reaching the score, or from the last group leaving, to the next arriving.
+      const waits: number[] = [];
+      let since = 0;
+      let present = false;
       for (let t = 0; t < 8 * 3600; t++) {
         sim.step();
         sim.score = GROUP_FROM_SCORE;
         const now = sim.movers.filter((m) => m.kind === 'group');
         expect(now.length).toBeLessThanOrEqual(1);
-        for (const g of now) {
-          if (seen.has(g.id)) continue;
-          seen.add(g.id);
-          arrivals.push(t);
-        }
+        if (now.length && !present) waits.push(t - since);
+        if (!now.length && present) since = t;
+        present = now.length > 0;
       }
-      // Straight away (give or take a moment if every gate is busy)...
-      expect(arrivals[0]!).toBeLessThan(30);
-      // ...then 45 to 65 seconds apart.
-      for (let k = 1; k < arrivals.length; k++) {
-        const gap = arrivals[k]! - arrivals[k - 1]!;
-        expect(gap).toBeGreaterThanOrEqual(GROUP_INTERVAL[0]);
-        expect(gap).toBeLessThanOrEqual(GROUP_INTERVAL[1] + 30);
+      expect(GROUP_INTERVAL).toEqual([10 * 60, 45 * 60]);
+      // Give or take a moment if every gate is busy.
+      for (const w of waits) {
+        expect(w).toBeGreaterThanOrEqual(GROUP_INTERVAL[0]);
+        expect(w).toBeLessThanOrEqual(GROUP_INTERVAL[1] + 30);
       }
-      expect(GROUP_INTERVAL).toEqual([45 * 60, 65 * 60]);
-      expect(arrivals.length).toBeGreaterThanOrEqual(8);
+      expect(waits.length).toBeGreaterThanOrEqual(8);
     }
   });
 });
@@ -786,18 +791,126 @@ describe('pick-ups', () => {
     expect(walker.daze).toBe(0);
   });
 
-  it('an invisibility token lets its taker pass through others for a while', () => {
+  it('an invisibility token lets its taker pass through others for the rest of its laps', () => {
     const sim = playing();
     const bike = put(sim, 'biker', 100, 1);
     const walker = put(sim, 'walker', 220, 1);
     lay(sim, 'ghost', 112, 1);
     sim.step();
-    expect(bike.ghost).toBe(GHOST_TICKS);
+    expect(bike.ghost).toBe(1);
     while (bike.s < walker.s + 40 && sim.playTicks < 300) sim.step();
     expect(sim.lives).toBe(LIVES);
     expect(walker.daze).toBe(0);
-    ticks(sim, GHOST_TICKS);
-    expect(bike.ghost).toBe(0);
+    ticks(sim, 600);
+    expect(bike.ghost).toBe(1);
+  });
+
+  it('a rainbow star knocks whoever its taker touches off the loop, for the laps they had left', () => {
+    const sim = playing();
+    const bike = put(sim, 'biker', 100, 1);
+    const walker = put(sim, 'walker', 220, 1, { laps: 3 });
+    walker.lapsDone = 1;
+    lay(sim, 'star', 112, 1);
+    sim.step();
+    expect(bike.star).toBe(1);
+    expect(sim.drainEvents()).toContain('star');
+    while (sim.movers.includes(walker) && sim.playTicks < 300) sim.step();
+    expect(sim.movers).not.toContain(walker);
+    expect(sim.score).toBe(2);
+    expect(sim.lives).toBe(LIVES);
+    expect(sim.drainEvents()).toContain('knock');
+    ticks(sim, 600);
+    expect(bike.star).toBe(1);
+  });
+
+  it('a rainbow star knocks a carriage off for nothing, and another comes later', () => {
+    const sim = playing();
+    const bike = put(sim, 'biker', 100, 2);
+    const carriage = put(sim, 'carriage', 220, 2, { speed: 0 });
+    bike.star = 1;
+    while (sim.movers.includes(carriage) && sim.playTicks < 300) sim.step();
+    expect(sim.movers).not.toContain(carriage);
+    expect(sim.lives).toBe(LIVES);
+    expect(sim.score).toBe(0);
+    const wait = (sim as unknown as { carriageWait: number }).carriageWait;
+    expect(wait).toBeGreaterThanOrEqual(CARRIAGE_RETURN[0] - 1);
+    expect(wait).toBeLessThanOrEqual(CARRIAGE_RETURN[1]);
+    // Arrivals back on: no carriage until the wait is over, then one.
+    delete (sim as unknown as { spawn?: unknown }).spawn;
+    sim.movers = sim.movers.filter((m) => m !== bike);
+    (sim as unknown as { checkTraffic: () => void }).checkTraffic = () => undefined;
+    ticks(sim, wait - 1);
+    expect(sim.movers.some((m) => m.kind === 'carriage')).toBe(false);
+    ticks(sim, 30);
+    expect(sim.movers.some((m) => m.kind === 'carriage')).toBe(true);
+  });
+
+  it('fire and turtle tokens change the taker\'s speed, boosted or not', () => {
+    const sim = playing();
+    const bike = put(sim, 'biker', 100, 1);
+    const base = bike.baseSpeed;
+    lay(sim, 'fire', 112, 1);
+    sim.step();
+    expect(bike.baseSpeed).toBeCloseTo(base * FIRE_SPEED, 9);
+    expect(bike.speed).toBeCloseTo(base * FIRE_SPEED, 9);
+    expect(sim.drainEvents()).toContain('fire');
+    sim.setBoost(bike.id, true);
+    lay(sim, 'turtle', bike.s + 14, 1);
+    sim.step();
+    expect(bike.baseSpeed).toBeCloseTo(base * FIRE_SPEED * TURTLE_SPEED, 9);
+    expect(bike.speed).toBeCloseTo(base * FIRE_SPEED * TURTLE_SPEED * BOOST, 9);
+    sim.setBoost(bike.id, false);
+    expect(bike.speed).toBeCloseTo(bike.baseSpeed, 9);
+  });
+
+  it('a strength token adds laps, and a coin adds a point', () => {
+    const sim = playing();
+    const walker = put(sim, 'walker', 100, 1, { laps: 2 });
+    lay(sim, 'strength', 106, 1);
+    sim.step();
+    expect(walker.laps).toBe(2 + EXTRA_LAPS);
+    expect(sim.drainEvents()).toContain('strength');
+    lay(sim, 'coin', walker.s + 6, 1);
+    sim.step();
+    expect(sim.score).toBe(1);
+    expect(sim.drainEvents()).toContain('coin');
+  });
+
+  it('a skull wrecks its taker as if it had collided, unless it has a star', () => {
+    const sim = playing();
+    const walker = put(sim, 'walker', 100, 1);
+    lay(sim, 'skull', 106, 1);
+    sim.step();
+    expect(sim.lives).toBe(LIVES - 1);
+    expect(walker.daze).toBeGreaterThan(0);
+    expect(sim.drainEvents()).toEqual(expect.arrayContaining(['hit', 'skull']));
+    const bike = put(sim, 'biker', 300, 2);
+    bike.star = 1;
+    lay(sim, 'skull', 312, 2);
+    sim.step();
+    expect(sim.lives).toBe(LIVES - 1);
+    expect(bike.daze).toBe(0);
+    sim.lives = 1;
+    const runner = put(sim, 'runner', 500, 3);
+    lay(sim, 'skull', 510, 3);
+    sim.step();
+    expect(sim.phase).toBe('crashed');
+    expect(sim.crash?.ids).toEqual([runner.id]);
+    expect(sim.pickups).toHaveLength(0);
+  });
+
+  it('a spiral slows the whole game to half speed, then eases it back', () => {
+    const sim = playing();
+    put(sim, 'walker', 100, 1);
+    expect(sim.timeScale).toBe(1);
+    lay(sim, 'spiral', 106, 1);
+    sim.step();
+    expect(sim.timeScale).toBe(WARP_SPEED);
+    ticks(sim, WARP_SLOW_TICKS + 1);
+    expect(sim.timeScale).toBeGreaterThan(WARP_SPEED);
+    expect(sim.timeScale).toBeLessThan(1);
+    ticks(sim, WARP_EASE_TICKS - 1);
+    expect(sim.timeScale).toBe(1);
   });
 
   it('come from five laps, one at a time, and never a heart while lives are full', () => {

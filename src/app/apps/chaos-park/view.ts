@@ -15,6 +15,8 @@ import {
   patchSprites,
   pickupToken,
   PICKUP_COLORS,
+  RAINBOW,
+  starGlow,
   drawRat,
   ratAlert,
   badgeNumber,
@@ -36,6 +38,7 @@ import {
   BACK_BUTTON,
   BUTTON_TEXT,
   CARD,
+  HELP_CARD,
   ART,
   HELP_BUTTON,
   LANE_W,
@@ -46,7 +49,6 @@ import {
   RESUME_BUTTON,
   RETRY_BUTTON,
   IMPACT_TICKS,
-  LIVES,
   MAX_LIVES,
   PICKUP_TICKS,
   SHOUT_TICKS,
@@ -67,11 +69,17 @@ const PICKUP_WORDS: Readonly<Record<PickupKind, string>> = {
   heart: '+1 LIFE',
   double: 'DUPLICATE!',
   ghost: 'INVISIBLE!',
+  star: 'STAR POWER!',
+  fire: 'SUPER SPEED!',
+  turtle: 'TURTLE SPEED!',
+  strength: 'EXTRA LAPS!',
+  coin: '+1 POINT',
+  skull: 'WRECK!',
+  spiral: 'TIME WARP!',
 };
 
-/** How see-through someone invisible is: faint while it lasts, flickering back in over its last second. */
-export const ghostAlpha = (ghost: number, clock: number): number =>
-  ghost <= 0 ? 1 : ghost < 60 && Math.floor(clock / 5) % 2 === 0 ? 0.8 : 0.35;
+/** How see-through someone invisible is. */
+export const ghostAlpha = (ghost: number): number => (ghost > 0 ? 0.35 : 1);
 const easeOut = (t: number): number => 1 - (1 - Math.min(1, Math.max(0, t))) ** 3;
 
 /** How far below and right of a mover its shadow falls, as if lit from the top left. */
@@ -89,6 +97,8 @@ interface RatView {
 
 interface MoverView {
   root: Container;
+  /** The flashing rainbow under someone who has taken a star. */
+  glow: Graphics;
   shadow: Graphics;
   limbs: Graphics;
   /** Speed lines behind it while boosted. */
@@ -192,6 +202,7 @@ export class ChaosParkView {
     this.hudLeft.addChild(laps, this.lapsText.box);
     for (let i = 0; i < MAX_LIVES; i++) {
       const h = new Container();
+      h.addChild(heart(true));
       h.position.set(this.lapsText.box.x + COUNTER.w / 2 + 26 + i * 30, 32);
       this.hearts.push(h);
       this.hudLeft.addChild(h);
@@ -348,8 +359,14 @@ export class ChaosParkView {
       v.root.position.set(x, y);
       v.root.scale.set(ART);
       v.root.rotation = v.angle + wobble;
-      v.root.alpha = m.alpha * ghostAlpha(m.ghost, sim.clock);
+      v.root.alpha = m.alpha * ghostAlpha(m.ghost);
       v.streaks.visible = m.boosted;
+      // A star flashes through the rainbow.
+      v.glow.visible = m.star > 0;
+      if (v.glow.visible) {
+        v.glow.tint = RAINBOW[Math.floor(sim.clock / 4) % RAINBOW.length]!;
+        v.glow.alpha = 0.85;
+      }
       // The lines flicker and trail a little further as it goes.
       if (m.boosted) v.streaks.x = -2 - ((sim.clock + alpha) % 6);
       v.shadow.position.set(x + SHADOW.x, y + SHADOW.y);
@@ -406,7 +423,9 @@ export class ChaosParkView {
     // Drawn at the design size and scaled up to the lane width.
     const streaks = speedStreaks(m.width, m.len / ART);
     streaks.visible = false;
-    root.addChild(streaks, limbs, moverBody(look));
+    const glow = starGlow(m.kind, m.width, m.len / ART);
+    glow.visible = false;
+    root.addChild(glow, streaks, limbs, moverBody(look));
     const shadow = moverShadow(m.kind, m.width, m.len);
     const warn = warnBubble();
     warn.visible = false;
@@ -420,6 +439,7 @@ export class ChaosParkView {
     drawLimbs(limbs, look, 0);
     return {
       root,
+      glow,
       shadow,
       limbs,
       streaks,
@@ -632,24 +652,18 @@ export class ChaosParkView {
     }
   }
 
-  /**
-   * A full heart for each life left: three places, and one more for each life a heart has added. The one just lost
-   * pops as it empties, and one just gained pops as it fills.
-   */
+  /** A heart for each life left; a lost one simply goes, and one just gained grows in. */
   private syncHearts(): void {
     const { lives } = this.game.sim;
     if (lives !== this.shownLives) {
-      const changed = this.shownLives >= 0;
-      const popped = lives < this.shownLives ? lives : lives - 1;
+      const gained = this.shownLives >= 0 && lives > this.shownLives;
       this.shownLives = lives;
       this.hearts.forEach((h, i) => {
-        h.removeChildren().forEach((c) => c.destroy());
-        h.visible = i < Math.max(LIVES, lives);
-        h.addChild(heart(i < lives));
-        h.scale.set(changed && i === popped ? 1.8 : 1);
+        h.visible = i < lives;
+        h.scale.set(gained && i === lives - 1 ? 0.3 : 1);
       });
     }
-    for (const h of this.hearts) if (h.scale.x > 1) h.scale.set(Math.max(1, h.scale.x - 0.04));
+    for (const h of this.hearts) if (h.scale.x < 1) h.scale.set(Math.min(1, h.scale.x + 0.05));
   }
 
   private syncCrash(): void {
@@ -743,12 +757,12 @@ export class ChaosParkView {
   private buildHelp(park: Park): void {
     const layer = this.help;
     this.clear(layer);
-    this.card(layer);
+    layer.addChild(noticeBoard(-HELP_CARD.w / 2, -HELP_CARD.h / 2, HELP_CARD.w, HELP_CARD.h));
     const heading = label('HOW TO PLAY', 46, COLORS.red, {
       stroke: { color: COLORS.ink, width: 6, join: 'round' },
       letterSpacing: 2,
     });
-    heading.position.set(0, -212);
+    heading.position.set(0, -234);
     layer.addChild(heading);
     const { season } = park;
     const group = (...parts: [Container, number, number, number?][]): Container => {
@@ -825,27 +839,13 @@ export class ChaosParkView {
         'SWIPE FORWARD TO SPEED UP AND BACK\nTO SLOW DOWN AGAIN',
       ],
       [group([plusOne, 0, 0]), 'EACH LAP IS A POINT'],
-      [
-        group(
-          ...Array.from({ length: LIVES }, (_, i): [Container, number, number, number] => [
-            heart(i < LIVES - 1),
-            (i - (LIVES - 1) / 2) * 22,
-            0,
-            0.8,
-          ]),
-        ),
-        'THREE COLLISIONS END THE GAME! HEARTS\nON THE ROAD GIVE ONE BACK, UP TO FIVE',
-      ],
-      [
-        group([pickupToken('double'), -12, 0, 1.1], [pickupToken('ghost'), 14, 0, 1.1]),
-        'DUPLICATE ADDS A COPY RIGHT BEHIND;\nINVISIBLE LETS IT PASS THROUGH OTHERS',
-      ],
+      [group([heart(true), 0, 0, 0.8]), 'TOO MANY COLLISIONS AND THE GAME IS OVER!'],
     ];
 
-    let y = -188;
+    let y = -175;
     for (const [icon, text] of rows) {
       const lines = text.split('\n').length;
-      const h = lines > 1 ? 45 : 27;
+      const h = lines * 21 + 10;
       const mid = y + h / 2;
       icon.position.set(-178, mid);
       const caption = label(text, 18, COLORS.ink, {
