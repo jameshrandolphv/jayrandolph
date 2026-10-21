@@ -6,7 +6,7 @@
 - Chaos Park: the ball fields' lines are fainter
 - Chaos Park: a heart you gain grows in instead of popping big, so every heart by the lap counter is the same size
 - Chaos Park: the how-to-play card is a little taller with more room round and between its rules, drops the tokens row, and sums up lives with one heart: "Too many collisions and the game is over!"
-- Chaos Park: its desktop icon has a little more detail, matching the new app icon: mown stripes, footpaths, a bench, flower beds, soft shadows, lily pads, and a taxi with wheels, lights and a roof sign
+- Chaos Park: a new desktop icon matching the app icon: a round park with the road filling the tile round it and one dashed lane, and a little more detail (mown stripes, footpaths, a bench, flower beds, soft shadows, lily pads, and a taxi with wheels, lights and a roof sign)
 
 ## 1.9.2
 - Chaos Park: the hearts by the lap counter show only the lives you have left; a lost one simply goes instead of turning into an empty outline
