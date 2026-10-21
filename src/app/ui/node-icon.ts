@@ -180,12 +180,14 @@ export class IconDefs {}
         }
         @case ('park') {
           <!-- Chaos Park: a round park from above, with a pond, trees and paths, and the road filling the tile round it
-               with a taxi on the lane. The same drawing as the iOS and Android app icons (64 units across, scaled onto
+               with dashed lanes and a taxi. The same drawing as the iOS and Android app icons (64 units across, scaled onto
                the tile). -->
           <rect x="4" y="4" width="56" height="56" rx="13" fill="#5d5b60" stroke="#3a383c" />
           <g clip-path="url(#ico-app-clip)">
             <g transform="translate(4 4) scale(0.875)">
-              <circle cx="32" cy="32" r="25.5" fill="none" stroke="#fff" stroke-width="0.9" stroke-dasharray="2.5 2.5" pathLength="160" />
+              <circle cx="32" cy="32" r="26.9" fill="none" stroke="#fff" stroke-width="0.9" stroke-dasharray="2.5 2.5" pathLength="170" />
+              <circle cx="32" cy="32" r="34.4" fill="none" stroke="#fff" stroke-width="0.9" stroke-dasharray="2.5 2.5" pathLength="215" />
+              <circle cx="32" cy="32" r="41.9" fill="none" stroke="#fff" stroke-width="0.9" stroke-dasharray="2.5 2.5" pathLength="265" />
               <circle cx="32" cy="32" r="19.4" fill="#c9c3b6" />
               <circle cx="32" cy="32" r="18" fill="#93d465" />
               <g clip-path="url(#ico-park-clip)">
@@ -221,7 +223,7 @@ export class IconDefs {}
             <ellipse cx="32" cy="32" rx="34" ry="22" fill="url(#ico-gloss)" opacity="0.25" transform="translate(0 -18)" />
           </g>
           <g transform="translate(4 4) scale(0.875)">
-            <g transform="translate(38.17 7.26) rotate(14)">
+            <g transform="translate(37.60 9.54) rotate(14) scale(0.9)">
               <rect x="-5.6" y="-3.1" width="12" height="7.2" rx="2.2" fill="#000" opacity="0.25" />
               <g fill="#1e1b1d"><rect x="-4.6" y="-4.5" width="2.4" height="1.6" rx="0.5" /><rect x="2.2" y="-4.5" width="2.4" height="1.6" rx="0.5" />
                 <rect x="-4.6" y="2.9" width="2.4" height="1.6" rx="0.5" /><rect x="2.2" y="2.9" width="2.4" height="1.6" rx="0.5" /></g>
@@ -232,7 +234,7 @@ export class IconDefs {}
               <g fill="#fff7b0"><rect x="4.4" y="-2.7" width="1" height="1.3" rx="0.4" /><rect x="4.4" y="1.4" width="1" height="1.3" rx="0.4" /></g>
               <g fill="#e2423a"><rect x="-5.4" y="-2.7" width="0.8" height="1.3" rx="0.3" /><rect x="-5.4" y="1.4" width="0.8" height="1.3" rx="0.3" /></g>
             </g>
-            <g transform="translate(6.81 37.79)">
+            <g transform="translate(9.14 37.42)">
               <circle cx="0.6" cy="0.6" r="2.6" fill="#000" opacity="0.22" />
               <circle r="2.6" fill="#ff8a00" stroke="#2e2a2c" stroke-width="0.8" />
               <circle cx="-0.8" cy="0.6" r="0.9" fill="#ffb24a" />
