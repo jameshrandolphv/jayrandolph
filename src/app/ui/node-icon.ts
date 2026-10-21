@@ -66,6 +66,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
           <stop offset="1" stop-color="#e9cf55" />
         </linearGradient>
         <clipPath id="ico-app-clip"><rect x="4" y="4" width="56" height="56" rx="13" /></clipPath>
+        <clipPath id="ico-park-clip"><circle cx="32" cy="32" r="18" /></clipPath>
         <clipPath id="ico-screen-clip"><rect x="10" y="12" width="44" height="30" rx="2" /></clipPath>
       </defs>
     </svg>
@@ -178,31 +179,68 @@ export class IconDefs {}
           </g>
         }
         @case ('park') {
-          <!-- Chaos Park: the loop round a park from above, with a pond, trees and a taxi on the drive. The same drawing
-               as the iOS and Android app icons (64 units across, scaled onto the tile), with an even band of grass. -->
-          <rect x="4" y="4" width="56" height="56" rx="13" fill="#4f9a34" stroke="#2f6a20" />
+          <!-- Chaos Park: a round park from above with a pond, trees and paths, ringed by a road with one dashed line and
+               striped grass out to the tile's edge, with a taxi and a visitor in the inner lane. The same drawing as
+               the iOS and Android app icons (64 units across, scaled onto the tile). -->
+          <rect x="4" y="4" width="56" height="56" rx="13" fill="#93d465" stroke="#5e9a3c" />
           <g clip-path="url(#ico-app-clip)">
             <g transform="translate(4 4) scale(0.875)">
-              <rect x="10" y="10" width="44" height="44" rx="7" fill="none" stroke="#c9c3b6" stroke-width="12" />
-              <rect x="10" y="10" width="44" height="44" rx="7" fill="none" stroke="#5d5b60" stroke-width="9" />
-              <rect x="10" y="10" width="44" height="44" rx="7" fill="none" stroke="#fff" stroke-width="0.9" stroke-dasharray="2.5 2.5" />
-              <rect x="16" y="16" width="32" height="32" rx="2" fill="#93d465" />
-              <ellipse cx="37.5" cy="29" rx="7.5" ry="5.6" fill="#5ab6e4" stroke="#8fb36a" stroke-width="1.2" />
-              <ellipse cx="35.5" cy="27.2" rx="4" ry="2.1" fill="#8fd0f0" />
-              <g stroke="#2e6a24" stroke-width="0.7">
-                <circle cx="22.5" cy="24.5" r="3.6" fill="#5fa83b" /><circle cx="25.5" cy="36.5" r="3.2" fill="#6cb544" />
-                <circle cx="21" cy="42" r="2.6" fill="#f3a0bf" /><circle cx="41" cy="41" r="3.2" fill="#5fa83b" />
+              <rect x="-30" y="-30" width="124" height="124" fill="#93d465" />
+              <path d="M-30 -26 L-26 -30 M-30 -18 L-18 -30 M-30 -10 L-10 -30 M-30 -2 L-2 -30 M-30 6 L6 -30 M-30 14 L14 -30 M-30 22 L22 -30 M-30 30 L30 -30 M-30 38 L38 -30 M-30 46 L46 -30 M-30 54 L54 -30 M-30 62 L62 -30 M-30 70 L70 -30 M-30 78 L78 -30 M-30 86 L86 -30 M-30 94 L94 -30 M-30 102 L102 -30 M-30 110 L110 -30 M-30 118 L118 -30 M-30 126 L126 -30 M-30 134 L134 -30 M-30 142 L142 -30 M-30 150 L150 -30 M-30 158 L158 -30 M-30 166 L166 -30 M-30 174 L174 -30 M-30 182 L182 -30 M-30 190 L190 -30 M-30 198 L198 -30 M-30 206 L206 -30" stroke="#9ddb70" stroke-width="2" />
+              <circle cx="32" cy="32" r="23.00" fill="none" stroke="#c9c3b6" stroke-width="14.00" />
+              <circle cx="32" cy="32" r="23.00" fill="none" stroke="#5d5b60" stroke-width="11.60" />
+              <circle cx="32" cy="32" r="23.00" fill="none" stroke="#fff" stroke-width="0.9" stroke-dasharray="2.5 2.5" pathLength="145" />
+              <g transform="translate(32 32) scale(0.8889) translate(-32 -32)">
+                <g clip-path="url(#ico-park-clip)">
+                  <path d="M12 31.4 Q23.5 29.4 30.4 30.6 M33.2 34.5 Q31.6 41 32.8 52" fill="none" stroke="#e6d9ad" stroke-width="1.7" stroke-linecap="round" />
+                  <g fill="#000" opacity="0.17">
+                    <ellipse cx="38.3" cy="29.9" rx="7.5" ry="5.6" />
+                    <circle cx="23.4" cy="25.5" r="3.6" /><circle cx="26.3" cy="37.4" r="3.2" />
+                    <circle cx="22.3" cy="42.4" r="2.6" /><circle cx="41.9" cy="41.9" r="3.2" />
+                  </g>
+                </g>
+                <ellipse cx="37.5" cy="29" rx="7.5" ry="5.6" fill="#5ab6e4" stroke="#8fb36a" stroke-width="1.2" />
+                <ellipse cx="35.5" cy="27.2" rx="4" ry="2.1" fill="#8fd0f0" />
+                <path d="M41.9 31.6 a1.1 1.1 0 1 1 0.9 -0.9 l-0.9 0 z" fill="#5fae3e" />
+                <circle cx="40" cy="32.6" r="0.6" fill="#5fae3e" />
+                <path d="M33.2 30.8 q1.2 -0.7 2.4 0" fill="none" stroke="#bfe6f7" stroke-width="0.4" stroke-linecap="round" />
+                <g stroke="#2e6a24" stroke-width="0.7">
+                  <circle cx="22.5" cy="24.5" r="3.6" fill="#5fa83b" /><circle cx="25.5" cy="36.5" r="3.2" fill="#6cb544" />
+                  <circle cx="21.5" cy="41.5" r="2.6" fill="#f3a0bf" stroke="#b9577c" /><circle cx="41" cy="41" r="3.2" fill="#5fa83b" />
+                </g>
+                <g fill="#82c957">
+                  <circle cx="21.3" cy="23.3" r="1.6" /><circle cx="24.4" cy="35.4" r="1.4" /><circle cx="39.9" cy="39.9" r="1.4" />
+                </g>
+                <circle cx="20.7" cy="40.7" r="1.1" fill="#fbcadb" />
+                <g fill="#fff"><circle cx="22.4" cy="40.9" r="0.45" /><circle cx="21.1" cy="42.5" r="0.45" /><circle cx="22.5" cy="42.6" r="0.4" /></g>
+                <g>
+                  <circle cx="40.6" cy="19.6" r="0.7" fill="#ff6f7d" /><circle cx="42.4" cy="20.8" r="0.7" fill="#ffd23f" />
+                  <circle cx="41.2" cy="21.8" r="0.7" fill="#fff" /><circle cx="23.6" cy="45.4" r="0.6" fill="#ffd23f" />
+                  <circle cx="29.6" cy="46.2" r="0.6" fill="#ff6f7d" />
+                </g>
+                <rect x="26.6" y="27.3" width="2.8" height="1.1" rx="0.3" fill="#a06a3c" stroke="#5a3a22" stroke-width="0.35" />
               </g>
             </g>
             <ellipse cx="32" cy="32" rx="34" ry="22" fill="url(#ico-gloss)" opacity="0.25" transform="translate(0 -18)" />
           </g>
           <g transform="translate(4 4) scale(0.875)">
-            <g transform="translate(38 10)" stroke="#2e2a2c" stroke-width="0.9">
-              <rect x="-6" y="-3.6" width="12" height="7.2" rx="2.2" fill="#f7c531" />
-              <rect x="-2.5" y="-2.6" width="5" height="5.2" rx="1" fill="#37506b" stroke="none" />
+            <g transform="translate(36.86 12.50) rotate(14) scale(0.75)">
+              <rect x="-5.6" y="-3.1" width="12" height="7.2" rx="2.2" fill="#000" opacity="0.25" />
+              <g fill="#1e1b1d"><rect x="-4.6" y="-4.5" width="2.4" height="1.6" rx="0.5" /><rect x="2.2" y="-4.5" width="2.4" height="1.6" rx="0.5" />
+                <rect x="-4.6" y="2.9" width="2.4" height="1.6" rx="0.5" /><rect x="2.2" y="2.9" width="2.4" height="1.6" rx="0.5" /></g>
+              <rect x="-6" y="-3.6" width="12" height="7.2" rx="2.2" fill="#f7c531" stroke="#2e2a2c" stroke-width="0.9" />
+              <rect x="-2.5" y="-2.6" width="5" height="5.2" rx="1" fill="#37506b" />
+              <rect x="-1.5" y="-2.6" width="3" height="5.2" fill="#e9b422" />
+              <rect x="-0.6" y="-2" width="1.2" height="4" rx="0.3" fill="#fff6d0" stroke="#2e2a2c" stroke-width="0.25" />
+              <g fill="#fff7b0"><rect x="4.4" y="-2.7" width="1" height="1.3" rx="0.4" /><rect x="4.4" y="1.4" width="1" height="1.3" rx="0.4" /></g>
+              <g fill="#e2423a"><rect x="-5.4" y="-2.7" width="0.8" height="1.3" rx="0.3" /><rect x="-5.4" y="1.4" width="0.8" height="1.3" rx="0.3" /></g>
             </g>
-            <circle cx="12.5" cy="41" r="2.6" fill="#ff8a00" stroke="#2e2a2c" stroke-width="0.8" />
-            <circle cx="12.9" cy="37.4" r="1.7" fill="#3b2a20" stroke="#2e2a2c" stroke-width="0.6" />
+            <g transform="translate(12.10 36.00) scale(0.8)">
+              <circle cx="0.6" cy="0.6" r="2.6" fill="#000" opacity="0.22" />
+              <circle r="2.6" fill="#ff8a00" stroke="#2e2a2c" stroke-width="0.8" />
+              <circle cx="-0.8" cy="0.6" r="0.9" fill="#ffb24a" />
+              <circle cx="0.4" cy="-3.6" r="1.7" fill="#3b2a20" stroke="#2e2a2c" stroke-width="0.6" />
+            </g>
           </g>
         }
         @case ('bat') {
