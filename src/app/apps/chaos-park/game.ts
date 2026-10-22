@@ -15,10 +15,15 @@ import {
   pauseButton,
   type Bounds,
 } from './constants';
+import type { CourseId } from './courses';
 import type { ParkFrame, Point } from './park';
 import { ChaosParkSim, type SimEvent } from './sim';
 
 export const GAME_ID = 'chaos-park';
+
+/** Where a course's best is kept: Chaos Park's under the game's own key, as before courses. */
+export const scoreKey = (course: CourseId): string =>
+  course === 'park' ? GAME_ID : `${GAME_ID}-${course}`;
 
 const SOUNDS: Readonly<Record<SimEvent, SfxName>> = {
   lap: 'checkpoint',
@@ -45,6 +50,14 @@ const SOUNDS: Readonly<Record<SimEvent, SfxName>> = {
   autopilot: 'lock',
   streak: 'clear',
   knock: 'hit',
+  eat: 'bite',
+  cast: 'swish',
+  reel: 'fall',
+  snap: 'crack',
+  roll: 'swish',
+  sting: 'alert',
+  haunt: 'alert',
+  slime: 'slip',
 };
 
 /**
@@ -130,6 +143,16 @@ export class ChaosParkGame {
   ) {
     this.sim = new ChaosParkSim(rng);
     void scores.getBest(GAME_ID).then((best) => (this.best = Math.max(this.best, best)));
+  }
+
+  /** Plays another course from the next run (the website only shows Chaos Park; `?course=` tries the others). */
+  setCourse(id: CourseId): void {
+    this.sim.setCourse(id);
+    if (this.sim.course.id !== id) return;
+    this.best = 0;
+    void this.scores.getBest(scoreKey(id)).then((best) => {
+      if (this.sim.course.id === id) this.best = Math.max(this.best, best);
+    });
   }
 
   /** Where the current park sits on screen. */
@@ -284,7 +307,7 @@ export class ChaosParkGame {
   }
 
   private async submit(score: number): Promise<ScoreResult> {
-    const result = await this.scores.submit(GAME_ID, score);
+    const result = await this.scores.submit(scoreKey(this.sim.course.id), score);
     this.best = Math.max(this.best, result.best);
     return result;
   }

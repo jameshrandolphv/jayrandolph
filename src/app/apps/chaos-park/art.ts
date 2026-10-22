@@ -6,12 +6,13 @@ import {
   GROUP_ROW,
   LANES,
   LANE_W,
-  ROAD_HALF,
   SCENERY_EXTENT,
   STREET_WIDTH,
+  TUMBLE_LEN,
   type Kind,
   type PickupKind,
 } from './constants';
+import { COURSES } from './courses';
 import {
   edge,
   laneOffset,
@@ -445,11 +446,11 @@ const dashes = (g: Graphics, track: Track, d: number, on: number, off: number): 
 };
 
 const drawRoad = (g: Graphics, park: Park, pal: Palette): void => {
-  const { track, entrances } = park;
-  const outer = edge(track, ROAD_HALF);
-  const inner = edge(track, -ROAD_HALF);
+  const { track, entrances, lanes, half } = park;
+  const outer = edge(track, half);
+  const inner = edge(track, -half);
   const mouth = (e: Entrance) => {
-    const into = pose(track, e.s, ROAD_HALF - 6);
+    const into = pose(track, e.s, half - 6);
     return [e.street, e.gate, e.throat, { x: into.x, y: into.y }];
   };
   // Entrance roads: kerb, then tarmac, joined to the loop's tarmac below.
@@ -460,23 +461,24 @@ const drawRoad = (g: Graphics, park: Park, pal: Palette): void => {
       join: 'round',
     });
   }
-  g.poly(flat(edge(track, ROAD_HALF + 4)))
+  g.poly(flat(edge(track, half + 4)))
     .fill(pal.curb)
-    .poly(flat(edge(track, -ROAD_HALF - 4)))
+    .poly(flat(edge(track, -half - 4)))
     .cut();
   g.poly(flat(outer)).fill(pal.road).poly(flat(inner)).cut();
   for (const e of entrances) {
     polyline(g, mouth(e)).stroke({ width: LANE_W * 2 + 4, color: pal.road, join: 'round' });
   }
   // Lane lines between the lanes, solid lines along the edges.
-  for (let lane = 1; lane < LANES; lane++) dashes(g, track, (lane - LANES / 2) * LANE_W, 12, 12);
+  for (let lane = 1; lane < lanes; lane++)
+    dashes(g, track, (lane - lanes / 2) * park.laneW, 12, 12);
   g.stroke({ width: 1.6, color: 0xffffff, alpha: 0.75 });
-  polyline(g, edge(track, ROAD_HALF - 3), true).stroke({
+  polyline(g, edge(track, half - 3), true).stroke({
     width: 1.4,
     color: 0xffffff,
     alpha: 0.55,
   });
-  polyline(g, edge(track, -ROAD_HALF + 3), true).stroke({
+  polyline(g, edge(track, -half + 3), true).stroke({
     width: 1.4,
     color: 0xffffff,
     alpha: 0.55,
@@ -485,7 +487,7 @@ const drawRoad = (g: Graphics, park: Park, pal: Palette): void => {
   for (let i = 0; i < 6; i++) {
     const s = ((i + 0.5) * track.length) / 6;
     for (const lane of [1, 2]) {
-      const c = pose(track, s, laneOffset(lane, 1));
+      const c = pose(track, s, laneOffset(lane, 1, park));
       const ux = Math.cos(c.angle);
       const uy = Math.sin(c.angle);
       g.moveTo(c.x - ux * 5 - uy * 5, c.y - uy * 5 + ux * 5)
@@ -496,7 +498,7 @@ const drawRoad = (g: Graphics, park: Park, pal: Palette): void => {
   g.stroke({ width: 2.2, color: 0xffffff, alpha: 0.4, cap: 'round', join: 'round' });
   if (pal.snow) {
     // Ploughed snow heaped along the kerbs.
-    for (const d of [ROAD_HALF + 5, -ROAD_HALF - 5]) {
+    for (const d of [half + 5, -half - 5]) {
       polyline(g, edge(track, d), true).stroke({ width: 7, color: 0xffffff, join: 'round' });
       for (let s = 0; s < track.length; s += 7) {
         const p = pose(track, s, d + Math.sign(d) * 1.5);
@@ -599,7 +601,7 @@ export const patchGraphic = (season: Season, len: number, seed = 0.37): Graphics
 export const patchSprites = (park: Park): Graphics[] =>
   park.patches.map((p) => {
     const g = patchGraphic(park.season, p.len / ART, p.id + p.s * 0.01);
-    const at = pose(park.track, p.s, laneOffset(p.lane, p.width));
+    const at = pose(park.track, p.s, laneOffset(p.lane, p.width, park));
     g.position.set(at.x, at.y);
     g.rotation = at.angle;
     return g;
@@ -739,6 +741,9 @@ export const KIND_COLORS: Readonly<Record<Kind, number>> = {
   car: 0xc98a12,
   carriage: 0x8a5cc2,
   group: 0xd6336c,
+  slow: 0x7a8a3a,
+  pair: 0x5b6fa0,
+  predator: 0xb02a2a,
 };
 export const WRONG_WAY_COLOR = COLORS.red;
 
@@ -797,6 +802,37 @@ export const moverBody = ({ kind, look, season, crowd = 1 }: Look): Graphics => 
     case 'runner':
       person(g, 0, 0, pick(SPORT, a), pick(HAIR, b), false, c, true);
       break;
+    case 'slow':
+      person(g, 0, 0, pick(COATS, a), 0xd8d4cc, winter, c);
+      break;
+    case 'pair':
+      for (const side of [-1, 1])
+        person(
+          g,
+          0,
+          (side * DESIGN_LANE) / 2,
+          pick(COATS, side < 0 ? a : b),
+          pick(HAIR, (c * 5 + side) % 1),
+          winter,
+          c,
+        );
+      break;
+    case 'predator': {
+      const fur = 0x5d5a58;
+      g.moveTo(-9, 0)
+        .lineTo(-16, -4)
+        .lineTo(-15, 0)
+        .lineTo(-16, 4)
+        .closePath()
+        .fill(fur)
+        .stroke(OUTLINE);
+      g.ellipse(-1, 0, 10, 5).fill(fur).stroke(OUTLINE);
+      g.ellipse(-2, -1.5, 6, 1.6).fill({ color: 0xffffff, alpha: 0.2 });
+      g.ellipse(10, 0, 4.6, 3.8).fill(fur).stroke(OUTLINE);
+      g.circle(11.5, -1.8, 0.9).fill(COLORS.red);
+      g.circle(11.5, 1.8, 0.9).fill(COLORS.red);
+      break;
+    }
     case 'dog': {
       const side = c < 0.5 ? -1 : 1;
       const py = (side * DESIGN_LANE) / 2;
@@ -999,6 +1035,24 @@ export const drawLimbs = (
     case 'runner':
       stride(0, 0, 5, 3);
       break;
+    case 'slow':
+      stride(0, 0, 2, 1.2);
+      break;
+    case 'pair':
+      stride(0, -DESIGN_LANE / 2, 2, 1.2);
+      stride(0, DESIGN_LANE / 2, 2, 1.2, 1.3);
+      break;
+    case 'predator': {
+      const s = Math.sin(phase);
+      for (const [x, y] of [
+        [6, -4.5],
+        [6, 4.5],
+        [-6, -4.5],
+        [-6, 4.5],
+      ] as const)
+        g.ellipse(x + (x > 0 === y > 0 ? s : -s) * 2, y, 2, 1.3).fill(0x3a3836);
+      break;
+    }
     case 'dog': {
       const side = look[2] < 0.5 ? -1 : 1;
       const py = (side * DESIGN_LANE) / 2;
@@ -1054,6 +1108,9 @@ export const STRIDE: Readonly<Record<Kind, number>> = {
   car: 0,
   carriage: 0.2,
   group: 0.24,
+  slow: 0.4,
+  pair: 0.4,
+  predator: 0.3,
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1099,6 +1156,145 @@ export const drawRat = (g: Graphics, phase: number, running: boolean): void => {
     .moveTo(10, 1)
     .lineTo(13.5, 3)
     .stroke({ width: 0.6, color: INK, alpha: 0.6 });
+};
+
+/** A bee, buzzing: a striped body and two blurred wings. At the design size, facing +x. */
+export const drawBee = (g: Graphics, phase: number): void => {
+  g.clear();
+  const flap = 0.6 + 0.4 * Math.abs(Math.sin(phase * 3));
+  for (const side of [-1, 1])
+    g.ellipse(-1, side * 4.2 * flap, 3.6, 2.6 * flap).fill({ color: 0xffffff, alpha: 0.7 });
+  g.ellipse(0, 0, 5.4, 3.4).fill(0xf4c430).stroke({ width: 1.2, color: INK });
+  for (const x of [-2.2, 0.6]) g.rect(x, -3.2, 1.4, 6.4).fill(INK);
+  g.circle(5.4, 0, 2.2).fill(INK);
+  g.moveTo(-5.4, 0).lineTo(-7.6, 0).stroke({ width: 1, color: INK });
+};
+
+/** A little ghost, wobbling: a sheet with two eyes, its hem rippling behind it. At the design size, facing +x. */
+export const drawSpook = (g: Graphics, phase: number): void => {
+  g.clear();
+  const w = Math.sin(phase * 1.5) * 1.2;
+  g.moveTo(6, 0)
+    .bezierCurveTo(6, -7, -3, -7.5, -5, -5)
+    .lineTo(-9, -4 + w)
+    .lineTo(-7, -1.5)
+    .lineTo(-9.5, 1 - w)
+    .lineTo(-7, 3)
+    .lineTo(-9, 5.5 + w)
+    .lineTo(-5, 5)
+    .bezierCurveTo(-3, 7.5, 6, 7, 6, 0)
+    .closePath()
+    .fill({ color: 0xf6f4ff, alpha: 0.9 })
+    .stroke({ width: 1.2, color: 0x6a6480 });
+  for (const y of [-2.2, 2.2]) g.ellipse(3, y, 1.1, 1.5).fill(INK);
+};
+
+/** The fisherman on the bank, his line out to the hook, and the bobber where it sits (or flies, while cast). */
+export const drawHook = (
+  g: Graphics,
+  from: Point,
+  x: number,
+  y: number,
+  flight: number,
+  clock: number,
+): void => {
+  const bx = from.x + (x - from.x) * flight;
+  const by = from.y + (y - from.y) * flight - Math.sin(flight * Math.PI) * 30;
+  g.moveTo(from.x, from.y)
+    .quadraticCurveTo((from.x + bx) / 2, (from.y + by) / 2 - 18, bx, by)
+    .stroke({ width: 1, color: 0x2a2a2a, alpha: 0.8 });
+  // The fisherman: hat and shoulders, seen from above.
+  g.ellipse(from.x, from.y, 7 * ART, 5 * ART)
+    .fill(0x4f6b3a)
+    .stroke(OUTLINE);
+  g.circle(from.x, from.y, 4.6 * ART)
+    .fill(0xc9a24a)
+    .stroke(OUTLINE);
+  if (flight < 1) {
+    g.circle(bx, by, 2.4 * ART)
+      .fill(COLORS.red)
+      .stroke({ width: 1, color: INK });
+    return;
+  }
+  const bob = Math.sin(clock * 0.15) * 0.6;
+  g.circle(bx, by, (5 + bob) * ART).stroke({ width: 1, color: 0xffffff, alpha: 0.45 });
+  g.circle(bx, by, 2.6 * ART)
+    .fill(0xffffff)
+    .stroke({ width: 1, color: INK });
+  g.moveTo(bx, by)
+    .arc(bx, by, 2.6 * ART, 0, Math.PI)
+    .closePath()
+    .fill(COLORS.red);
+};
+
+/** A tumbleweed: a tangle of dry twigs, turned as it rolls. */
+export const drawTumbleweed = (g: Graphics, x: number, y: number, turn: number): void => {
+  const r = (TUMBLE_LEN / 2) * 1.1;
+  g.circle(x + 2, y + 3, r).fill({ color: 0x000000, alpha: 0.18 });
+  g.circle(x, y, r).fill({ color: 0xc8a46a, alpha: 0.55 });
+  for (let i = 0; i < 7; i++) {
+    const a = turn + (i / 7) * Math.PI * 2;
+    g.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r).quadraticCurveTo(
+      x + Math.cos(a + 1.9) * r * 0.2,
+      y + Math.sin(a + 1.9) * r * 0.2,
+      x + Math.cos(a + 2.6) * r,
+      y + Math.sin(a + 2.6) * r,
+    );
+  }
+  g.stroke({ width: 1.4, color: 0x8a6a3a, cap: 'round' });
+  g.circle(x, y, r).stroke({ width: 1.2, color: 0x7a5a2e, alpha: 0.8 });
+};
+
+/**
+ * A course's covered stretch, drawn over whoever is under it: a rock arch, a big vine across the road, or the
+ * mansion over the inner two lanes, with its wall between them and the rest.
+ */
+export const drawCover = (park: Park): Graphics => {
+  const g = new Graphics();
+  const { cover, track, half, lanes } = park;
+  const course = COURSES[park.course];
+  if (!cover) return g;
+  const strip = (from: number, to: number, d0: number, d1: number): number[] => {
+    const pts: Point[] = [];
+    for (let s = from; s <= to; s += 4) pts.push(pose(track, s, d0));
+    for (let s = to; s >= from; s -= 4) pts.push(pose(track, s, d1));
+    return flat(pts);
+  };
+  const a = cover.s;
+  const b = cover.s + cover.len;
+  if (course.cover === 'mansion') {
+    const wall = laneOffset(2, 0, park);
+    g.poly(strip(a, b, -half - 10, wall))
+      .fill(0x3b3346)
+      .stroke({ width: 2, color: INK });
+    // Roof ridges and a few lit windows.
+    for (let s = a + 12; s < b - 6; s += 18) {
+      const p = pose(track, s, (wall - half - 10) / 2);
+      g.rect(p.x - 3, p.y - 3, 6, 6).fill(0xf2d16b);
+    }
+    polyline(
+      g,
+      Array.from({ length: Math.ceil(cover.len / 4) + 1 }, (_, i) => pose(track, a + i * 4, wall)),
+    ).stroke({
+      width: 3,
+      color: 0x241f2b,
+    });
+    return g;
+  }
+  const rock = course.cover === 'arch';
+  const len = rock ? cover.len : 34;
+  const mid = (a + b) / 2;
+  g.poly(strip(mid - len / 2, mid + len / 2, -half - 12, half + 12))
+    .fill({ color: rock ? 0xb5683a : 0x3f7a2e, alpha: 0.96 })
+    .stroke({ width: 2, color: INK });
+  // Banding on the rock, leaves on the vine.
+  for (let s = mid - len / 2 + 6; s < mid + len / 2 - 4; s += rock ? 10 : 8)
+    for (let d = -half; d <= half; d += rock ? 30 : 16) {
+      const p = pose(track, s, d);
+      if (rock) g.ellipse(p.x, p.y, 6, 2.4).fill({ color: 0x8e4a26, alpha: 0.5 });
+      else g.circle(p.x, p.y, 4).fill(0x5aa03a);
+    }
+  return g;
 };
 
 /**
@@ -1171,14 +1367,21 @@ export const PICKUP_COLORS: Readonly<Record<PickupKind, number>> = {
 };
 
 /** The colours a rainbow star cycles through, on its token and on whoever has taken one. */
-export const RAINBOW: readonly number[] = [0xe8443a, 0xf29a2e, 0xf4d03f, 0x4cb050, 0x3b8fd9, 0x8a55c4];
+export const RAINBOW: readonly number[] = [
+  0xe8443a, 0xf29a2e, 0xf4d03f, 0x4cb050, 0x3b8fd9, 0x8a55c4,
+];
 
 /**
  * A glow under a mover that has taken a rainbow star, the shape of its footprint plus a margin, drawn white to be
  * tinted (`RAINBOW`) as it flashes. At the design size, like the body.
  */
 export const starGlow = (kind: Kind, width: number, len: number): Graphics => {
-  const w = (kind === 'walker' || kind === 'runner' ? 16 : kind === 'biker' ? 12 : width * DESIGN_LANE - 4) + 10;
+  const w =
+    (kind === 'walker' || kind === 'runner'
+      ? 16
+      : kind === 'biker'
+        ? 12
+        : width * DESIGN_LANE - 4) + 10;
   const l = len + 10;
   return new Graphics().roundRect(-l / 2, -w / 2, l, w, Math.min(w, l) / 2).fill(0xffffff);
 };
@@ -1221,7 +1424,9 @@ export const pickupToken = (kind: PickupKind): Container => {
       const r = i % 2 === 0 ? 7.5 : 3.4;
       pts.push(Math.cos(a) * r, Math.sin(a) * r + 0.5);
     }
-    c.addChild(new Graphics().poly(pts).fill(0xffd84a).stroke({ width: 1.3, color: INK, join: 'round' }));
+    c.addChild(
+      new Graphics().poly(pts).fill(0xffd84a).stroke({ width: 1.3, color: INK, join: 'round' }),
+    );
   } else if (kind === 'double') {
     c.addChild(
       new Graphics()
@@ -1299,7 +1504,12 @@ export const pickupToken = (kind: PickupKind): Container => {
   } else if (kind === 'autopilot') {
     const g = new Graphics().circle(0, 0, 6).stroke({ width: 1.8, color: 0xffffff });
     // Spokes left, right and down from the hub, the way a steering wheel is seen from the driver's seat.
-    for (const [x, y] of [[-6, 0], [6, 0], [0, 6]] as const) g.moveTo(0, 0).lineTo(x, y);
+    for (const [x, y] of [
+      [-6, 0],
+      [6, 0],
+      [0, 6],
+    ] as const)
+      g.moveTo(0, 0).lineTo(x, y);
     g.stroke({ width: 1.6, color: 0xffffff, cap: 'round' });
     c.addChild(g.circle(0, 0, 1.9).fill(0xffffff));
   } else if (kind === 'coin') {

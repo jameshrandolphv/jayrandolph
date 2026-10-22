@@ -36,7 +36,21 @@ export const STREET_WIDTH = 34;
 /** Points the loop's centre line is resampled to, evenly spaced. */
 export const TRACK_SAMPLES = 640;
 
-export type Kind = 'walker' | 'dog' | 'runner' | 'biker' | 'car' | 'carriage' | 'group';
+/**
+ * What a visitor is, by how it moves. The courses after Chaos Park dress them differently (a walker is a swimmer on
+ * Wild Waters, a cowboy's horse is a biker...) and add three: slow walkers, slow pairs two lanes wide, and predators.
+ */
+export type Kind =
+  | 'walker'
+  | 'dog'
+  | 'runner'
+  | 'biker'
+  | 'car'
+  | 'carriage'
+  | 'group'
+  | 'slow'
+  | 'pair'
+  | 'predator';
 export const KINDS: readonly Kind[] = [
   'walker',
   'dog',
@@ -45,6 +59,9 @@ export const KINDS: readonly Kind[] = [
   'car',
   'carriage',
   'group',
+  'slow',
+  'pair',
+  'predator',
 ];
 
 export interface KindSpec {
@@ -88,6 +105,11 @@ export const KIND_SPECS: Readonly<Record<Kind, KindSpec>> = {
   carriage: spec(0.72, 62, 2, [Infinity, Infinity], 0),
   /** A run group; its length depends on how many are in it (see `groupLength`). */
   group: spec(1.15, 40, 2, [1, 1], 0),
+  /** A slow walker and a slow pair; how often they come is up to the course (`CourseSpec.slow`, `slowPair`). */
+  slow: spec(0.5, 14, 1, [1, 2], 0),
+  pair: spec(0.4, 28, 2, [1, 1], 0),
+  /** A predator does one lap, a little faster than a runner, and scores nothing. */
+  predator: spec(1.3, 20, 1, [1, 1], 0),
 };
 
 /** Each mover's speed is its kind's times a factor in this range, so even two of a kind close in on each other. */
@@ -129,6 +151,39 @@ export const RAT_SPEED = 2.4 * ART * PACE;
 /** It gives up and runs off if it hasn't reached its target in this many ticks. */
 export const RAT_GIVE_UP = 150;
 export const DAZE_TICKS = 180;
+
+/**
+ * Predators, on the courses that have them: one comes every `PREDATOR_INTERVAL` ticks from `PREDATOR_FROM_SCORE` laps,
+ * never two at once. Every `PREDATOR_TURN` ticks it moves a lane toward the nearest person ahead of it within
+ * `PREDATOR_SIGHT`; whoever on foot it catches is eaten, their laps lost, and it costs a life.
+ */
+export const PREDATOR_FROM_SCORE = 8;
+export const PREDATOR_INTERVAL: readonly [number, number] = [40 * 60, 70 * 60];
+export const PREDATOR_TURN = 50;
+export const PREDATOR_SIGHT = 160 * ART;
+
+/** A course's own event (see `CourseEvent`) comes every `EVENT_INTERVAL` ticks from `EVENT_FROM_SCORE` laps. */
+export const EVENT_FROM_SCORE = 6;
+export const EVENT_INTERVAL: readonly [number, number] = [25 * 60, 45 * 60];
+/**
+ * The fisherman's hook flies for `HOOK_CAST` ticks, then sits in its lane for `HOOK_TICKS`; whoever one lane wide runs
+ * into it is reeled out. Anything wider breaks the line.
+ */
+export const HOOK_CAST = 50;
+export const HOOK_TICKS = 300;
+export const HOOK_LEN = 10 * ART;
+/** A tumbleweed waits at the roadside for `RAT_LURK` ticks, then rolls across at `TUMBLE_RATE` lanes a tick. */
+export const TUMBLE_RATE = 0.03;
+export const TUMBLE_LEN = 16 * ART;
+/** A bee sting or a haunting has its victim swerve a lane every `SWERVE_EVERY` ticks for `SWERVE_TICKS`. */
+export const SWERVE_TICKS = 300;
+export const SWERVE_EVERY = 45;
+/** A haunted visitor's speed swings between these, times its usual speed. */
+export const HAUNT_SPEEDS: readonly [number, number] = [1.5, 0.6];
+/** Slime holds whoever steps in it for this long. */
+export const SLIME_TICKS = 300;
+/** People start steering round an obstacle this far before they would reach it. */
+export const STEER_AHEAD = 36 * ART;
 
 /**
  * A biker closing in on someone on foot shouts "Out of my way!" in a speech bubble for `SHOUT_TICKS`, at most once

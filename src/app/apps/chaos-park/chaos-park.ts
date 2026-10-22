@@ -5,6 +5,7 @@ import { ScoreService } from '../../games/score.service';
 import { Sfx } from '../../games/sfx';
 import { WindowFrame } from '../../ui/window-frame';
 import { FRAME_H, FRAME_W } from './constants';
+import { COURSE_IDS, type CourseId } from './courses';
 import { ChaosParkGame } from './game';
 import { ChaosParkView } from './view';
 
@@ -83,6 +84,9 @@ export class ChaosPark {
     if (this.destroyed) return;
     const { app, root } = surface;
     const game = new ChaosParkGame(this.scores, new Sfx(this.sound));
+    // A hidden switch for trying the app-only courses in a browser.
+    const course = new URLSearchParams(location.search).get('course');
+    if (COURSE_IDS.includes(course as CourseId)) game.setCourse(course as CourseId);
     const view = new ChaosParkView(root, game);
     this.game = game;
     // The canvas updates both in place on resize, so the game and view always see the current screen.
