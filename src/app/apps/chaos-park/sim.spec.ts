@@ -20,7 +20,8 @@ import {
   DAZE_TICKS,
   GAME_OVER_LOCKOUT,
   GROUP_FROM_SCORE,
-  GROUP_INTERVAL,
+  GROUP_INTERVAL_EARLY,
+  level,
   GROUP_SIZE,
   KIND_SPECS,
   LANES,
@@ -31,7 +32,16 @@ import {
 } from './constants';
 import { ChaosParkGame, frameFor, placePark, screenToPark } from './game';
 import { generatePark, laneOffset, pose, seededRng, wrap } from './park';
-import { ChaosParkSim, laneOverlap, lapsLeft, maxMovers, patchesShown, type Mover } from './sim';
+import {
+  ChaosParkSim,
+  duskAt,
+  laneOverlap,
+  lapsLeft,
+  maxMovers,
+  patchesShown,
+  streakValue,
+  type Mover,
+} from './sim';
 
 const ticks = (sim: ChaosParkSim, n: number): void => {
   for (let i = 0; i < n; i++) sim.step();
@@ -108,6 +118,10 @@ const put = (
     shoutAt: -Infinity,
     ghost: 0,
     star: 0,
+    autopilot: 0,
+    autoSlow: false,
+    wearOff: Infinity,
+    plainSpeed: spec.speed,
     ...options,
   };
   m.baseSpeed = m.speed;
@@ -258,7 +272,7 @@ describe('ChaosParkSim', () => {
     sim.start();
     sim.movers = [];
     noArrivals(sim);
-    sim.score = PATCH_SCORES[0]!;
+    sim.laps = PATCH_SCORES[0]!;
     const patch = sim.park.patches[0]!;
     const m = put(sim, 'runner', wrap(patch.s - 40, sim.park.track.length), patch.lane);
     ticks(sim, 60);
@@ -293,12 +307,19 @@ describe('ChaosParkSim', () => {
       peak = Math.max(peak, sim.movers.filter((m) => m.state === 'track').length);
     }
     expect(peak).toBeGreaterThanOrEqual(3);
-    expect(sim.movers.length).toBeLessThanOrEqual(maxMovers(sim.score) + 3);
+    expect(sim.movers.length).toBeLessThanOrEqual(maxMovers(sim.laps) + 3);
   });
 
   it('allows more movers as the score rises', () => {
     expect(maxMovers(0)).toBeLessThan(maxMovers(40));
-    expect(maxMovers(10_000)).toBe(22);
+    expect(maxMovers(10_000)).toBe(26);
+  });
+
+  it('let a fourth and fifth in sooner, then ramp up half as fast after ten laps', () => {
+    expect([0, 3, 6, 10, 20, 30, 50, 100, 150, 190].map(maxMovers)).toEqual([
+      3, 4, 5, 5, 6, 8, 10, 16, 22, 26,
+    ]);
+    expect([0, 10, 30, 50].map(level)).toEqual([0, 10, 20, 30]);
   });
 
   it('moves to game over after the crash and locks out a hasty retry', () => {
@@ -378,7 +399,7 @@ describe('run groups', () => {
     expect(g.state).toBe('leaving');
   });
 
-  it('come 10 to 45 seconds after the score reaches 10, and that long after the last one left, one at a time', () => {
+  it('come 20 to 50 seconds after the laps reach 12, and that long after the last one left, one at a time', () => {
     for (const seed of [6, 7, 8]) {
       const sim = new ChaosParkSim(seededRng(seed));
       sim.start();
@@ -386,31 +407,31 @@ describe('run groups', () => {
       internals(sim).checkTraffic = () => undefined;
       (sim as unknown as { placePickup: () => boolean }).placePickup = () => false;
       for (let t = 0; t < 600; t++) {
-        sim.score = GROUP_FROM_SCORE - 1;
+        sim.laps = GROUP_FROM_SCORE - 1;
         sim.step();
       }
       expect(sim.movers.some((m) => m.kind === 'group')).toBe(false);
-      sim.score = GROUP_FROM_SCORE;
+      sim.laps = GROUP_FROM_SCORE;
       // Each wait: from reaching the score, or from the last group leaving, to the next arriving.
       const waits: number[] = [];
       let since = 0;
       let present = false;
       for (let t = 0; t < 8 * 3600; t++) {
         sim.step();
-        sim.score = GROUP_FROM_SCORE;
+        sim.laps = GROUP_FROM_SCORE;
         const now = sim.movers.filter((m) => m.kind === 'group');
         expect(now.length).toBeLessThanOrEqual(1);
         if (now.length && !present) waits.push(t - since);
         if (!now.length && present) since = t;
         present = now.length > 0;
       }
-      expect(GROUP_INTERVAL).toEqual([10 * 60, 45 * 60]);
+      expect(GROUP_INTERVAL_EARLY).toEqual([20 * 60, 50 * 60]);
       // Give or take a moment if every gate is busy.
       for (const w of waits) {
-        expect(w).toBeGreaterThanOrEqual(GROUP_INTERVAL[0]);
-        expect(w).toBeLessThanOrEqual(GROUP_INTERVAL[1] + 30);
+        expect(w).toBeGreaterThanOrEqual(GROUP_INTERVAL_EARLY[0]);
+        expect(w).toBeLessThanOrEqual(GROUP_INTERVAL_EARLY[1] + 30);
       }
-      expect(waits.length).toBeGreaterThanOrEqual(8);
+      expect(waits.length).toBeGreaterThanOrEqual(6);
     }
   });
 });
@@ -420,7 +441,7 @@ describe('rare visitors', () => {
     const sim = new ChaosParkSim(seededRng(6));
     sim.start();
     (sim as unknown as { checkTraffic: () => void }).checkTraffic = () => undefined;
-    sim.score = 20;
+    sim.laps = 20;
     let rats = 0;
     let lastRat = -1;
     const minutes = 10;
@@ -749,12 +770,12 @@ describe('pick-ups', () => {
     expect(sim.lives).toBe(MAX_LIVES);
   });
 
-  it('only visitors in its lane take one, and carriages and run groups go over it', () => {
+  it('only visitors in its lane take one, and carriages go over duplicates and extra laps', () => {
     const sim = playing();
     put(sim, 'walker', 100, 0);
     put(sim, 'carriage', 300, 2);
     lay(sim, 'heart', 130, 2);
-    lay(sim, 'ghost', 330, 3);
+    lay(sim, 'double', 330, 3);
     sim.lives = 1;
     ticks(sim, 120);
     expect(sim.lives).toBe(1);
@@ -916,12 +937,12 @@ describe('pick-ups', () => {
   it('come from five laps, one at a time, and never a heart while lives are full', () => {
     const sim = new ChaosParkSim(seededRng(8));
     sim.start();
-    sim.score = PICKUP_FROM_SCORE - 1;
+    sim.laps = PICKUP_FROM_SCORE - 1;
     ticks(sim, 600);
     expect(sim.pickups).toHaveLength(0);
     const kinds = new Set<string>();
     for (let i = 0; i < 4000; i++) {
-      sim.score = Math.max(sim.score, PICKUP_FROM_SCORE);
+      sim.laps = Math.max(sim.laps, PICKUP_FROM_SCORE);
       sim.lives = MAX_LIVES;
       sim.step();
       expect(sim.pickups.length).toBeLessThanOrEqual(1);
@@ -930,6 +951,103 @@ describe('pick-ups', () => {
     }
     expect(kinds.size).toBeGreaterThan(0);
     expect(kinds.has('heart')).toBe(false);
+  });
+});
+
+describe('carriage pick-ups', () => {
+  it('a carriage takes a token, and it wears off after two of its laps', () => {
+    const sim = playing();
+    const carriage = put(sim, 'carriage', 300, 2, { laps: Infinity });
+    lay(sim, 'ghost', 330, 2);
+    lay(sim, 'strength', 330, 3);
+    while (carriage.ghost === 0 && sim.playTicks < 200) sim.step();
+    expect(carriage.ghost).toBe(1);
+    expect(carriage.wearOff).toBe(carriage.lapsDone + 2);
+    // Extra laps mean nothing to a carriage, so it leaves that one.
+    expect(sim.pickups.map((p) => p.kind)).toEqual(['strength']);
+    const done = carriage.lapsDone;
+    while (carriage.lapsDone < done + 2 && sim.playTicks < 20_000) sim.step();
+    expect(carriage.ghost).toBe(0);
+    expect(carriage.wearOff).toBe(Infinity);
+  });
+
+  it('a carriage that took super speed goes back to its own speed', () => {
+    const sim = playing();
+    const carriage = put(sim, 'carriage', 300, 2, { laps: Infinity });
+    const speed = carriage.baseSpeed;
+    lay(sim, 'fire', 330, 2);
+    while (sim.pickups.length && sim.playTicks < 200) sim.step();
+    expect(carriage.baseSpeed).toBeCloseTo(speed * FIRE_SPEED);
+    const done = carriage.lapsDone;
+    while (carriage.lapsDone < done + 2 && sim.playTicks < 20_000) sim.step();
+    expect(carriage.baseSpeed).toBeCloseTo(speed);
+    expect(carriage.speed).toBeCloseTo(speed);
+  });
+});
+
+describe('autopilot', () => {
+  it('steers out of the way of someone coming the wrong way', () => {
+    const sim = playing();
+    const runner = put(sim, 'runner', 100, 1, { laps: 5 });
+    runner.autopilot = 1;
+    put(sim, 'walker', 260, 1, { dir: -1, laps: 5 });
+    sim.lives = 1;
+    ticks(sim, 200);
+    expect(sim.phase).toBe('playing');
+    expect(runner.target).not.toBe(1);
+  });
+
+  it('slows behind someone slower when both lanes beside it are taken', () => {
+    const sim = playing();
+    const biker = put(sim, 'biker', 100, 1, { laps: 5 });
+    biker.autopilot = 1;
+    const walker = put(sim, 'walker', 170, 1, { laps: 5 });
+    put(sim, 'dog', 120, 2, { laps: 5 });
+    put(sim, 'walker', 110, 0, { laps: 5 });
+    sim.lives = 1;
+    ticks(sim, 120);
+    expect(sim.phase).toBe('playing');
+    expect(biker.autoSlow).toBe(true);
+    expect(biker.speed).toBeLessThanOrEqual(walker.speed);
+  });
+
+  it('is taken from the road like any token', () => {
+    const sim = playing();
+    const walker = put(sim, 'walker', 100, 0);
+    lay(sim, 'autopilot', 130, 0);
+    ticks(sim, 60);
+    expect(walker.autopilot).toBe(1);
+    expect(sim.drainEvents()).toContain('autopilot');
+  });
+});
+
+describe('streaks', () => {
+  it('make every lap worth one more after each ten in a row without losing a life', () => {
+    expect([0, 9, 10, 19, 20, 35].map(streakValue)).toEqual([1, 1, 2, 2, 3, 4]);
+    const sim = playing();
+    sim.cleanLaps = 9;
+    const m = put(sim, 'runner', 0, 0, { laps: 3 });
+    while (m.lapsDone < 2 && sim.playTicks < 5000) sim.step();
+    // The 10th clean lap is still worth 1; the 11th is worth 2.
+    expect(sim.laps).toBe(2);
+    expect(sim.score).toBe(3);
+    expect(sim.drainEvents()).toContain('streak');
+  });
+
+  it('start again when a life is lost', () => {
+    const sim = playing();
+    sim.cleanLaps = 25;
+    put(sim, 'walker', 100, 1, { speed: 0 });
+    put(sim, 'runner', 60, 1);
+    while (sim.lives === LIVES && sim.playTicks < 300) sim.step();
+    expect(sim.lives).toBe(LIVES - 1);
+    expect(sim.cleanLaps).toBe(0);
+  });
+});
+
+describe('dusk', () => {
+  it('falls from lap 120 over thirty laps', () => {
+    expect([0, 120, 135, 150, 500].map(duskAt)).toEqual([0, 0, 0.5, 1, 1]);
   });
 });
 
@@ -942,7 +1060,7 @@ describe('arrivals', () => {
       (sim as unknown as { checkTraffic: () => void }).checkTraffic = () => undefined;
       // Nor pick-ups: a duplicate token can copy a car, which is not an arrival.
       (sim as unknown as { placePickup: () => boolean }).placePickup = () => false;
-      sim.score = 60;
+      sim.laps = 60;
       let cars = 0;
       for (let t = 0; t < 4 * 3600; t++) {
         sim.step();
@@ -961,9 +1079,9 @@ describe('arrivals', () => {
 });
 
 describe('patches', () => {
-  it('appear at 25, 50 and 100 points', () => {
-    expect([0, 24, 25, 49, 50, 99, 100, 500].map(patchesShown)).toEqual([0, 0, 1, 1, 2, 2, 3, 3]);
-    expect(PATCH_SCORES).toEqual([25, 50, 100]);
+  it('appear at 50 and 100 laps', () => {
+    expect([0, 49, 50, 99, 100, 500].map(patchesShown)).toEqual([0, 0, 1, 1, 2, 2]);
+    expect(PATCH_SCORES).toEqual([50, 100]);
   });
 
   it('do nothing until they appear', () => {

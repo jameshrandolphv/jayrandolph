@@ -51,6 +51,7 @@ import {
   IMPACT_TICKS,
   MAX_LIVES,
   PICKUP_TICKS,
+  SCENERY_EXTENT,
   SHOUT_TICKS,
   SLIP_TICKS,
   pauseButton,
@@ -60,7 +61,7 @@ import {
 import { placePark, type ChaosParkGame } from './game';
 import { noticeBoard, plaqueButton, roundPauseButton, trophy } from './ui';
 import type { Park } from './park';
-import { lapsLeft, patchesShown, type Mover } from './sim';
+import { duskAt, lapsLeft, patchesShown, streakValue, type Mover } from './sim';
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
@@ -76,7 +77,14 @@ const PICKUP_WORDS: Readonly<Record<PickupKind, string>> = {
   coin: '+1 POINT',
   skull: 'WRECK!',
   spiral: 'TIME WARP!',
+  autopilot: 'AUTOPILOT!',
 };
+
+/** The night sky's colour, laid over the park as dusk falls, and how much of it shows at the darkest. */
+const DUSK_COLOR = 0x0b1638;
+const DUSK_ALPHA = 0.5;
+/** The glow round someone on autopilot. */
+const AUTOPILOT_GLOW = 0x7fd3ff;
 
 /** How see-through someone invisible is. */
 export const ghostAlpha = (ghost: number): number => (ghost > 0 ? 0.35 : 1);
@@ -99,6 +107,8 @@ interface MoverView {
   root: Container;
   /** The flashing rainbow under someone who has taken a star. */
   glow: Graphics;
+  /** The pulsing blue under someone on autopilot. */
+  auto: Graphics;
   shadow: Graphics;
   limbs: Graphics;
   /** Speed lines behind it while boosted. */
@@ -156,6 +166,12 @@ export class ChaosParkView {
   private readonly badges = new Container();
   private readonly popLayer = new Container();
   private readonly ratLayer = new Container();
+  /** Dusk, over the park, and the headlights that shine through it. */
+  private readonly duskShade = new Graphics();
+  private readonly lights = new Graphics();
+  /** "STREAK x2" after the hearts, while laps are worth more than one. */
+  private readonly streakText: Text;
+  private shownStreak = -1;
   private readonly hud = new Container();
   private readonly hudLeft = new Container();
   private readonly hudRight = new Container();
@@ -207,6 +223,13 @@ export class ChaosParkView {
       this.hearts.push(h);
       this.hudLeft.addChild(h);
     }
+    this.streakText = label('', 24, 0xffffff, {
+      stroke: { color: COLORS.red, width: 6, join: 'round' },
+      letterSpacing: 1,
+    });
+    this.streakText.anchor.set(0, 0.5);
+    this.streakText.position.set(this.lapsText.box.x + COUNTER.w / 2 + 14 + MAX_LIVES * 30, 32);
+    this.hudLeft.addChild(this.streakText);
     const best = label('BEST:', 28, COLORS.ink, {
       stroke: { color: 0xffffff, width: 5, join: 'round' },
       letterSpacing: 1,
@@ -234,6 +257,8 @@ export class ChaosParkView {
       this.shadows,
       this.movers,
       this.ratLayer,
+      this.duskShade,
+      this.lights,
       this.crashRing,
       this.impactLayer,
       this.badges,
@@ -258,6 +283,8 @@ export class ChaosParkView {
     this.syncPickups();
     this.syncImpacts();
     this.syncHearts();
+    this.syncStreak();
+    this.syncDusk(alpha);
 
     this.hud.visible = inPlay || phase === 'gameOver';
     this.pauseButton.visible = phase === 'playing';
@@ -314,6 +341,11 @@ export class ChaosParkView {
     this.park = park;
     this.scenery.removeChildren().forEach((c) => c.destroy({ children: true }));
     this.scenery.addChild(drawPark(park));
+    const out = SCENERY_EXTENT;
+    this.duskShade
+      .clear()
+      .rect(-out, -out, park.frame.w + out * 2, park.frame.h + out * 2)
+      .fill(DUSK_COLOR);
     this.patchLayer.removeChildren().forEach((c) => c.destroy());
     this.patchSprites = patchSprites(park);
     this.patchAge = this.patchSprites.map(() => -1);
@@ -362,6 +394,8 @@ export class ChaosParkView {
       v.root.alpha = m.alpha * ghostAlpha(m.ghost);
       v.streaks.visible = m.boosted;
       // A star flashes through the rainbow.
+      v.auto.visible = m.autopilot > 0 && m.star === 0;
+      if (v.auto.visible) v.auto.alpha = 0.45 + 0.2 * Math.sin((sim.clock + alpha) * 0.15);
       v.glow.visible = m.star > 0;
       if (v.glow.visible) {
         v.glow.tint = RAINBOW[Math.floor(sim.clock / 4) % RAINBOW.length]!;
@@ -425,7 +459,10 @@ export class ChaosParkView {
     streaks.visible = false;
     const glow = starGlow(m.kind, m.width, m.len / ART);
     glow.visible = false;
-    root.addChild(glow, streaks, limbs, moverBody(look));
+    const auto = starGlow(m.kind, m.width, m.len / ART);
+    auto.tint = AUTOPILOT_GLOW;
+    auto.visible = false;
+    root.addChild(auto, glow, streaks, limbs, moverBody(look));
     const shadow = moverShadow(m.kind, m.width, m.len);
     const warn = warnBubble();
     warn.visible = false;
@@ -440,6 +477,7 @@ export class ChaosParkView {
     return {
       root,
       glow,
+      auto,
       shadow,
       limbs,
       streaks,
@@ -589,7 +627,7 @@ export class ChaosParkView {
 
   /** Patches pop onto the road as the score unlocks them. */
   private syncPatches(): void {
-    const shown = patchesShown(this.game.sim.score);
+    const shown = patchesShown(this.game.sim.laps);
     this.patchSprites.forEach((g, i) => {
       if (i >= shown) {
         g.visible = false;
@@ -653,6 +691,50 @@ export class ChaosParkView {
   }
 
   /** A heart for each life left; a lost one simply goes, and one just gained grows in. */
+  private syncStreak(): void {
+    const value = streakValue(this.game.sim.cleanLaps);
+    if (value === this.shownStreak) return;
+    this.shownStreak = value;
+    this.streakText.visible = value > 1;
+    this.streakText.text = `STREAK x${value}`;
+  }
+
+  /** Darkens the park as dusk falls late in a run, with cars' headlights shining ahead of them. */
+  private syncDusk(alpha: number): void {
+    const { sim } = this.game;
+    const dusk = sim.phase === 'title' || sim.phase === 'help' ? 0 : duskAt(sim.laps);
+    this.duskShade.visible = dusk > 0;
+    this.duskShade.alpha = dusk * DUSK_ALPHA;
+    const g = this.lights.clear();
+    if (dusk <= 0) return;
+    for (const m of sim.movers) {
+      if (m.kind !== 'car' && m.kind !== 'carriage') continue;
+      const x = lerp(m.prevX, m.x, alpha);
+      const y = lerp(m.prevY, m.y, alpha);
+      const a = lerpAngle(m.prevHeading, m.heading, alpha);
+      const ux = Math.cos(a);
+      const uy = Math.sin(a);
+      const fx = x + (ux * m.len) / 2;
+      const fy = y + (uy * m.len) / 2;
+      if (m.kind === 'carriage') {
+        // A lantern on the coach.
+        g.circle(x, y, 9 * ART).fill({ color: 0xffd36b, alpha: 0.35 * dusk * m.alpha });
+        continue;
+      }
+      // Two beams fanning out ahead.
+      const reach = 70 * ART;
+      const spread = 22 * ART;
+      for (const side of [-1, 1]) {
+        const sx = fx - uy * side * 7 * ART;
+        const sy = fy + ux * side * 7 * ART;
+        const ex = sx + ux * reach;
+        const ey = sy + uy * reach;
+        g.poly([sx, sy, ex - uy * spread * 0.5, ey + ux * spread * 0.5, ex + uy * spread * 0.5, ey - ux * spread * 0.5]);
+        g.fill({ color: 0xfff1b8, alpha: 0.28 * dusk * m.alpha });
+      }
+    }
+  }
+
   private syncHearts(): void {
     const { lives } = this.game.sim;
     if (lives !== this.shownLives) {
@@ -838,7 +920,7 @@ export class ChaosParkView {
         group([boosted(), -12, 0, 0.85], [arrows(false), 18, 0]),
         'SWIPE FORWARD TO SPEED UP AND BACK\nTO SLOW DOWN AGAIN',
       ],
-      [group([plusOne, 0, 0]), 'EACH LAP IS A POINT'],
+      [group([plusOne, 0, 0]), 'EACH LAP IS A POINT; 10 LAPS IN A ROW WITHOUT\nA COLLISION MAKE EVERY LAP WORTH ONE MORE'],
       [group([heart(true), 0, 0, 0.8]), 'TOO MANY COLLISIONS AND THE GAME IS OVER!'],
     ];
 

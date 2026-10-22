@@ -42,6 +42,8 @@ const SOUNDS: Readonly<Record<SimEvent, SfxName>> = {
   coin: 'checkpoint',
   skull: 'hit',
   spiral: 'swish',
+  autopilot: 'lock',
+  streak: 'clear',
   knock: 'hit',
 };
 

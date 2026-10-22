@@ -1,8 +1,20 @@
 import {
   ART,
   BOOST,
+  CARRIAGE_EFFECT_LAPS,
   CARS_FROM_SCORE,
   COLLIDE_FACTOR,
+  DUSK_FROM,
+  DUSK_LAPS,
+  EARLY_LAPS_PER_EXTRA,
+  EARLY_MAX_MOVERS,
+  GROUP_EARLY_UNTIL,
+  GROUP_INTERVAL_EARLY,
+  LATE_FROM,
+  LATE_LAPS_PER_EXTRA,
+  MAX_MOVERS_LATE,
+  STREAK_LAPS,
+  level,
   CRASH_TICKS,
   DAZE_TICKS,
   DOUBLE_GAP,
@@ -104,6 +116,8 @@ export type SimEvent =
   | 'coin'
   | 'skull'
   | 'spiral'
+  | 'autopilot'
+  | 'streak'
   | 'knock';
 
 /**
@@ -180,6 +194,16 @@ export interface Mover {
   ghost: number;
   /** 1 once it has taken a rainbow star: it knocks everyone it touches off the loop for the rest of its laps. */
   star: number;
+  /** 1 once it has taken an autopilot token: it steers itself out of the way of collisions. */
+  autopilot: number;
+  /** Slowed by its autopilot to keep behind someone; back to its usual speed once clear. */
+  autoSlow: boolean;
+  /**
+   * A carriage's pick-up wears off once it has done this many laps (`Infinity` while it has none), going back to
+   * `plainSpeed`.
+   */
+  wearOff: number;
+  plainSpeed: number;
 }
 
 /**
@@ -210,9 +234,9 @@ export interface Impact {
   ticks: number;
 }
 
-/** How many of the park's patches are on the road at a given score. */
-export const patchesShown = (score: number): number =>
-  PATCH_SCORES.filter((at) => score >= at).length;
+/** How many of the park's patches are on the road after a given number of laps. */
+export const patchesShown = (laps: number): number =>
+  PATCH_SCORES.filter((at) => laps >= at).length;
 
 /** A heart or token lying on the loop, in one lane, until someone takes it or it runs out. */
 export interface Pickup {
@@ -229,7 +253,7 @@ export interface Pickup {
 /** The "+1" that floats up where a lap is completed, or what a pick-up did where it was taken. */
 export interface Pop {
   id: number;
-  /** Points scored: 1, or the size of a run group. */
+  /** Points scored: 1, or the size of a run group, times the streak. */
   value: number;
   /** Set for a pick-up instead of a lap. */
   pickup?: PickupKind;
@@ -238,9 +262,23 @@ export interface Pop {
   ticks: number;
 }
 
-/** Movers allowed in the park at once (not counting carriages) at a given score. */
-export const maxMovers = (score: number): number =>
-  Math.min(MAX_MOVERS, MAX_MOVERS_START + Math.floor(score / LAPS_PER_EXTRA));
+/** Movers allowed in the park at once (not counting carriages) after a given number of laps. */
+export const maxMovers = (laps: number): number => {
+  const early = Math.min(EARLY_MAX_MOVERS, MAX_MOVERS_START + Math.floor(laps / EARLY_LAPS_PER_EXTRA));
+  const ramp = Math.min(MAX_MOVERS, MAX_MOVERS_START + Math.floor(level(laps) / LAPS_PER_EXTRA));
+  const late =
+    laps > LATE_FROM
+      ? Math.min(MAX_MOVERS_LATE - MAX_MOVERS, Math.floor((laps - LATE_FROM) / LATE_LAPS_PER_EXTRA))
+      : 0;
+  return Math.max(early, ramp) + late;
+};
+
+/** How far dusk has fallen after a given number of laps, 0 (day) to 1 (as dark as it gets). */
+export const duskAt = (laps: number): number =>
+  Math.max(0, Math.min(1, (laps - DUSK_FROM) / DUSK_LAPS));
+
+/** What each lap is worth after this many laps in a row without losing a life. */
+export const streakValue = (clean: number): number => 1 + Math.floor(clean / STREAK_LAPS);
 
 /** Ticks a new screen shape has to hold before the park on the title card is remade for it. */
 const FRAME_SETTLE = 20;
@@ -255,6 +293,15 @@ export const pace = (m: Pick<Mover, 'speed' | 'daze'>): number => (m.daze > 0 ? 
 const BITEABLE: ReadonlySet<Kind> = new Set(['walker', 'runner', 'dog']);
 const ON_FOOT = BITEABLE;
 
+/** Pick-ups whose effect lasts the taker's laps, and so only a couple of laps on a carriage. */
+const LASTING: ReadonlySet<PickupKind> = new Set(['ghost', 'star', 'fire', 'turtle', 'autopilot']);
+const speedFactor = (kind: PickupKind): number =>
+  kind === 'fire' ? FIRE_SPEED : kind === 'turtle' ? TURTLE_SPEED : 1;
+
+/** An autopilot only changes lane into one clear for at least this long, and slows to this share of who's ahead. */
+const AUTO_SAFE_TICKS = 30;
+const AUTO_SLOW = 0.95;
+
 /** How much of each lane span [p, p + w) overlaps, in lanes. */
 export const laneOverlap = (p1: number, w1: number, p2: number, w2: number): number =>
   Math.min(p1 + w1, p2 + w2) - Math.max(p1, p2);
@@ -263,8 +310,12 @@ export const laneOverlap = (p1: number, w1: number, p2: number, w2: number): num
 export class ChaosParkSim {
   phase: Phase = 'title';
   paused = false;
-  /** Laps completed this run, by everything. */
+  /** Points this run: a lap is worth `streakValue` of them, and a coin one. */
   score = 0;
+  /** Laps completed this run, by everything (and those a star knocked off the loop): what the difficulty goes by. */
+  laps = 0;
+  /** Laps since a life was last lost, for the streak. */
+  cleanLaps = 0;
   park: Park;
   movers: Mover[] = [];
   rats: Rat[] = [];
@@ -454,6 +505,7 @@ export class ChaosParkSim {
     if (this.phase !== 'playing') return;
     this.playTicks++;
     this.spawn();
+    for (const m of this.movers) if (m.autopilot > 0 && m.state === 'track' && m.daze === 0) this.steer(m);
     const gone = new Set<Mover>();
     for (const m of this.movers) {
       m.age++;
@@ -488,6 +540,7 @@ export class ChaosParkSim {
     if (m.p !== m.target) m.p += Math.max(-LANE_RATE, Math.min(LANE_RATE, m.target - m.p));
     m.progress += m.speed;
     this.countLaps(m);
+    if (m.lapsDone >= m.wearOff) this.wearOff(m);
     this.checkPatches(m);
     this.place(m);
 
@@ -615,16 +668,27 @@ export class ChaosParkSim {
     const length = this.park.track.length;
     while (!m.done && m.progress >= (m.lapsDone + 1) * length - 1e-6) {
       m.lapsDone++;
-      this.score += m.crowd;
+      const value = this.scoreLaps(m.crowd);
       this.events.push('lap');
-      this.pops.push({ id: this.nextId++, value: m.crowd, x: m.x, y: m.y, ticks: 0 });
+      this.pops.push({ id: this.nextId++, value, x: m.x, y: m.y, ticks: 0 });
       if (m.lapsDone >= m.laps) m.done = true;
     }
   }
 
+  /** Scores laps at the streak's value, then counts them toward the streak; returns the points. */
+  private scoreLaps(laps: number): number {
+    const before = streakValue(this.cleanLaps);
+    const value = laps * before;
+    this.score += value;
+    this.laps += laps;
+    this.cleanLaps += laps;
+    if (streakValue(this.cleanLaps) > before) this.events.push('streak');
+    return value;
+  }
+
   private checkPatches(m: Mover): void {
     const { patches, track } = this.park;
-    for (const patch of patches.slice(0, patchesShown(this.score))) {
+    for (const patch of patches.slice(0, patchesShown(this.laps))) {
       const over =
         Math.abs(loopDelta(patch.s, m.s, track.length)) < (patch.len + m.len) / 2 - 4 * ART &&
         laneOverlap(m.p, m.width, patch.lane, patch.width) > 0.3;
@@ -700,6 +764,7 @@ export class ChaosParkSim {
   /** Takes a life for a collision or wreck at `at`; true if that was the last, ending the run. */
   private loseLife(at: { x: number; y: number }, ids: number[]): boolean {
     this.lives--;
+    this.cleanLaps = 0;
     if (this.lives > 0) return false;
     this.crash = { ...at, ids };
     this.events.push('crash');
@@ -711,6 +776,7 @@ export class ChaosParkSim {
   private stun(victim: Mover, at: { x: number; y: number }): void {
     victim.daze = Math.max(victim.daze, STUN_TICKS);
     victim.boosted = false;
+    victim.autoSlow = false;
     victim.speed = victim.baseSpeed;
     this.impacts.push({ id: this.nextId++, ...at, ticks: 0 });
     this.events.push('hit');
@@ -798,8 +864,7 @@ export class ChaosParkSim {
       this.carriageWait = Math.round(lo + this.rng() * (hi - lo));
       return;
     }
-    const value = Math.max(1, m.laps - m.lapsDone) * m.crowd;
-    this.score += value;
+    const value = this.scoreLaps(Math.max(1, m.laps - m.lapsDone) * m.crowd);
     this.pops.push({ id: this.nextId++, value, x: m.x, y: m.y, ticks: 0 });
   }
 
@@ -809,39 +874,42 @@ export class ChaosParkSim {
   private spawn(): void {
     this.spawnSpecials();
     const active = this.movers.filter((m) => m.kind !== 'carriage' && m.state !== 'leaving').length;
-    // One carriage, and a second from SECOND_CARRIAGE_SCORE; one knocked off is replaced after a wait.
-    const carriages = this.score >= SECOND_CARRIAGE_SCORE ? 2 : 1;
+    // One carriage, and a second from SECOND_CARRIAGE_SCORE laps; one knocked off is replaced after a wait.
+    const carriages = this.laps >= SECOND_CARRIAGE_SCORE ? 2 : 1;
     if (this.carriageWait > 0) this.carriageWait--;
     else if (this.carriagesSent < carriages && this.arrive('carriage')) this.carriagesSent++;
     if (active === 0) this.spawnTimer = Math.min(this.spawnTimer, 30);
     if (--this.spawnTimer > 0) return;
-    if (active >= maxMovers(this.score)) {
+    if (active >= maxMovers(this.laps)) {
       this.spawnTimer = 30;
       return;
     }
-    const base = Math.max(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL - this.score * SPAWN_INTERVAL_STEP);
+    const base = Math.max(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL - level(this.laps) * SPAWN_INTERVAL_STEP);
     this.spawnTimer = Math.round(base * (0.75 + this.rng() * 0.5));
     if (!this.arrive(this.pickKind())) this.spawnTimer = 20;
   }
 
-  /** The rare ones: run groups and rats, each on its own long timer once the score is high enough. */
+  /** The rare ones: run groups and rats, each on its own long timer once there have been enough laps. */
   private spawnSpecials(): void {
     const between = ([lo, hi]: readonly [number, number]) =>
       Math.round(lo + this.rng() * (hi - lo));
-    // A group comes GROUP_INTERVAL after the score reaches GROUP_FROM_SCORE, and again that long after each one
-    // has gone, so there is never more than one.
-    if (this.score >= GROUP_FROM_SCORE) {
+    // A group comes a while after the laps reach GROUP_FROM_SCORE, and again a while after each one has gone, so
+    // there is never more than one.
+    if (this.laps >= GROUP_FROM_SCORE) {
       if (this.movers.some((m) => m.kind === 'group')) this.groupTimer = 0;
-      else if (this.groupTimer <= 0) this.groupTimer = between(GROUP_INTERVAL);
+      else if (this.groupTimer <= 0)
+        this.groupTimer = between(
+          this.laps < GROUP_EARLY_UNTIL ? GROUP_INTERVAL_EARLY : GROUP_INTERVAL,
+        );
       // Every gate busy: try again in a moment.
       else if (--this.groupTimer <= 0 && !this.arrive('group')) this.groupTimer = 10;
     }
-    if (this.score >= RAT_FROM_SCORE) {
+    if (this.laps >= RAT_FROM_SCORE) {
       if (this.ratTimer <= 0) this.ratTimer = between(RAT_INTERVAL) / 2;
       else if (--this.ratTimer <= 0) this.ratTimer = this.sendRat() ? between(RAT_INTERVAL) : 120;
     }
     // One pick-up at a time: the next is timed from when the last one went.
-    if (this.score >= PICKUP_FROM_SCORE && !this.pickups.length) {
+    if (this.laps >= PICKUP_FROM_SCORE && !this.pickups.length) {
       if (this.pickupTimer <= 0) this.pickupTimer = between(PICKUP_FIRST);
       else if (--this.pickupTimer <= 0)
         this.pickupTimer = this.placePickup() ? between(PICKUP_INTERVAL) : 30;
@@ -886,8 +954,8 @@ export class ChaosParkSim {
       const taker = this.movers.find(
         (m) =>
           m.state === 'track' &&
-          m.kind !== 'carriage' &&
           m.kind !== 'group' &&
+          !(m.kind === 'carriage' && (p.kind === 'double' || p.kind === 'strength')) &&
           Math.abs(loopDelta(p.s, m.s, length)) < (PICKUP_LEN + m.len) / 2 &&
           laneOverlap(m.p, m.width, p.lane, 1) > LATERAL_OVERLAP,
       );
@@ -933,11 +1001,104 @@ export class ChaosParkSim {
         case 'spiral':
           this.warp = WARP_SLOW_TICKS + WARP_EASE_TICKS;
           break;
+        case 'autopilot':
+          taker.autopilot = 1;
+          break;
+      }
+      // A carriage never leaves, so what it took lasts it a couple of laps rather than for good.
+      if (taker.kind === 'carriage' && LASTING.has(p.kind)) {
+        if (!Number.isFinite(taker.wearOff)) taker.plainSpeed = taker.baseSpeed / speedFactor(p.kind);
+        taker.wearOff = taker.lapsDone + CARRIAGE_EFFECT_LAPS;
       }
       this.events.push(p.kind === 'heart' ? 'life' : p.kind);
       this.pops.push({ id: this.nextId++, value: 0, pickup: p.kind, x: taker.x, y: taker.y, ticks: 0 });
     }
     this.pickups = this.pickups.filter((p) => p.ticks < PICKUP_TICKS);
+  }
+
+  /** A carriage's pick-ups wear off: it shows again, stops knocking people off, and goes back to its usual speed. */
+  private wearOff(m: Mover): void {
+    m.wearOff = Infinity;
+    m.ghost = 0;
+    m.star = 0;
+    m.autopilot = 0;
+    m.autoSlow = false;
+    m.baseSpeed = m.plainSpeed;
+    m.speed = m.baseSpeed * (m.boosted ? BOOST : 1);
+  }
+
+  // -------------------------------------------------------------------------------------------------------------
+  // Autopilot.
+
+  /**
+   * The soonest, in ticks, anything on the loop would touch `m` were it in lanes [lo, lo + w): 0 for anything
+   * alongside or nearly so, `Infinity` for nothing on the way. Ignores anyone invisible, and anyone it is already
+   * passing through.
+   */
+  private contactIn(m: Mover, lo: number, w: number): number {
+    const length = this.park.track.length;
+    let soonest = Infinity;
+    for (const o of this.movers) {
+      if (o === m || o.state !== 'track' || o.ghost > 0) continue;
+      if (this.passing.has(`${m.id}:${o.id}`) || this.passing.has(`${o.id}:${m.id}`)) continue;
+      const oLo = Math.min(o.p, o.target);
+      const oW = Math.max(o.p, o.target) + o.width - oLo;
+      if (laneOverlap(lo, w, oLo, oW) <= 0.1) continue;
+      const delta = loopDelta(m.s, o.s, length);
+      const gap = Math.abs(delta) - (m.len + o.len) / 2;
+      if (gap > WARN_MAX_GAP * 2) continue;
+      if (gap < 6 * ART) return 0;
+      const closing = -Math.sign(delta) * (pace(o) * o.dir - pace(m) * m.dir);
+      if (closing > 0) soonest = Math.min(soonest, gap / closing);
+    }
+    return soonest;
+  }
+
+  /**
+   * Someone on autopilot about to touch someone moves to whichever lane beside it is clear for longest, or failing
+   * that slows to keep behind whoever is ahead; once clear it goes back to its usual speed.
+   */
+  private steer(m: Mover): void {
+    const length = this.park.track.length;
+    const soon = this.contactIn(m, m.target, m.width);
+    if (soon >= WARN_TICKS) {
+      if (m.autoSlow) {
+        m.autoSlow = false;
+        m.speed = m.baseSpeed * (m.boosted ? BOOST : 1);
+      }
+      return;
+    }
+    let lane = m.target;
+    let clear = soon;
+    for (const next of [m.target - 1, m.target + 1]) {
+      if (next < 0 || next > LANES - m.width) continue;
+      const t = this.contactIn(m, next, m.width);
+      if (t > clear) {
+        lane = next;
+        clear = t;
+      }
+    }
+    if (lane !== m.target && clear >= AUTO_SAFE_TICKS) {
+      m.target = lane;
+      return;
+    }
+    // Nowhere to go: keep behind the nearest one ahead in its lane going the same way, if slower.
+    let ahead: Mover | null = null;
+    let nearest = Infinity;
+    for (const o of this.movers) {
+      if (o === m || o.state !== 'track' || o.dir !== m.dir || o.ghost > 0) continue;
+      if (laneOverlap(m.target, m.width, Math.min(o.p, o.target), Math.abs(o.p - o.target) + o.width) <= 0.1)
+        continue;
+      const d = wrap((o.s - m.s) * m.dir, length);
+      if (d < nearest && d < length / 2) {
+        nearest = d;
+        ahead = o;
+      }
+    }
+    if (ahead && pace(ahead) < m.speed) {
+      m.speed = pace(ahead) * AUTO_SLOW;
+      m.autoSlow = true;
+    }
   }
 
   /**
@@ -986,9 +1147,9 @@ export class ChaosParkSim {
     const weight = (k: Kind): number =>
       k !== 'car'
         ? KIND_SPECS[k].weight
-        : this.score < CARS_FROM_SCORE || carIn
+        : this.laps < CARS_FROM_SCORE || carIn
           ? 0
-          : KIND_SPECS.car.weight + Math.min(0.05, (this.score - CARS_FROM_SCORE) * 0.002);
+          : KIND_SPECS.car.weight + Math.min(0.05, (level(this.laps) - CARS_FROM_SCORE) * 0.002);
     const total = kinds.reduce((sum, k) => sum + weight(k), 0);
     let r = this.rng() * total;
     for (const k of kinds) {
@@ -1013,11 +1174,11 @@ export class ChaosParkSim {
     const m = this.create(kind, crowd);
     const wrongWayChance = Math.min(
       WRONG_WAY_MAX_CHANCE,
-      WRONG_WAY_CHANCE + (this.score - WRONG_WAY_FROM_SCORE) * 0.003,
+      WRONG_WAY_CHANCE + (level(this.laps) - WRONG_WAY_FROM_SCORE) * 0.003,
     );
     if (
       (kind === 'walker' || kind === 'runner') &&
-      this.score >= WRONG_WAY_FROM_SCORE &&
+      this.laps >= WRONG_WAY_FROM_SCORE &&
       this.rng() < wrongWayChance
     )
       m.dir = -1;
@@ -1099,6 +1260,10 @@ export class ChaosParkSim {
       shoutAt: -Infinity,
       ghost: 0,
       star: 0,
+      autopilot: 0,
+      autoSlow: false,
+      wearOff: Infinity,
+      plainSpeed: speed,
     };
   }
 
@@ -1186,6 +1351,8 @@ export class ChaosParkSim {
 
   private reset(): void {
     this.score = 0;
+    this.laps = 0;
+    this.cleanLaps = 0;
     this.movers = [];
     this.rats = [];
     this.pops = [];

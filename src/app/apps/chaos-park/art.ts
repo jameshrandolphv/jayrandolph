@@ -1167,6 +1167,7 @@ export const PICKUP_COLORS: Readonly<Record<PickupKind, number>> = {
   coin: 0xe0a91b,
   skull: 0x3d3a40,
   spiral: 0xc4479a,
+  autopilot: 0x47607a,
 };
 
 /** The colours a rainbow star cycles through, on its token and on whoever has taken one. */
@@ -1185,8 +1186,8 @@ export const starGlow = (kind: Kind, width: number, len: number): Graphics => {
 /**
  * A pick-up lying on the road, at the design lane width: a heart like the ones in the HUD (a life), or a disc with a
  * white ring and on it two stacked cards (a duplicate), a little ghost (invisibility), a flame (super speed), a
- * turtle (turtle speed), a dumbbell (extra laps), a gold coin (a point), a skull (a wreck), a spiral (a time warp) or, on rainbow
- * stripes, a gold star.
+ * turtle (turtle speed), a dumbbell (extra laps), a gold coin (a point), a skull (a wreck), a spiral (a time warp), a
+ * steering wheel (autopilot) or, on rainbow stripes, a gold star.
  */
 export const pickupToken = (kind: PickupKind): Container => {
   const c = new Container();
@@ -1295,6 +1296,12 @@ export const pickupToken = (kind: PickupKind): Container => {
       g.lineTo(Math.cos(a) * a * 0.6, Math.sin(a) * a * 0.6);
     }
     c.addChild(g.stroke({ width: 1.8, color: 0xffffff, cap: 'round', join: 'round' }));
+  } else if (kind === 'autopilot') {
+    const g = new Graphics().circle(0, 0, 6).stroke({ width: 1.8, color: 0xffffff });
+    // Spokes left, right and down from the hub, the way a steering wheel is seen from the driver's seat.
+    for (const [x, y] of [[-6, 0], [6, 0], [0, 6]] as const) g.moveTo(0, 0).lineTo(x, y);
+    g.stroke({ width: 1.6, color: 0xffffff, cap: 'round' });
+    c.addChild(g.circle(0, 0, 1.9).fill(0xffffff));
   } else if (kind === 'coin') {
     c.addChild(
       new Graphics()
