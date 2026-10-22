@@ -38,6 +38,8 @@ export interface CourseSpec {
   laneW: number;
   /** How strong the loop's bends are, times Chaos Park's. */
   bend: number;
+  /** Whether the loop winds like a river, its bends easing off only as far as they must to fit. */
+  river: boolean;
   /** Added to the difficulty level, so later courses start further up the ramp. */
   levelOffset: number;
   /** Arrival weights of the slow walker (one lane) and slow pair (two lanes); none on Chaos Park. */
@@ -76,6 +78,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     lanes: 4,
     laneW: 30,
     bend: 1,
+    river: false,
     levelOffset: 0,
     slow: 0,
     slowPair: 0,
@@ -94,7 +97,8 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     name: 'Wild Waters',
     lanes: 4,
     laneW: 30,
-    bend: 1.5,
+    bend: 3,
+    river: true,
     levelOffset: 3,
     slow: 0.12,
     slowPair: 0.06,
@@ -114,6 +118,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     lanes: 4,
     laneW: 30,
     bend: 1.5,
+    river: false,
     levelOffset: 6,
     slow: 0.12,
     slowPair: 0,
@@ -133,6 +138,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     lanes: 4,
     laneW: 30,
     bend: 2,
+    river: false,
     levelOffset: 9,
     slow: 0.12,
     slowPair: 0.06,
@@ -152,6 +158,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     lanes: 5,
     laneW: 24,
     bend: 2.5,
+    river: false,
     levelOffset: 12,
     slow: 0.1,
     slowPair: 0.06,

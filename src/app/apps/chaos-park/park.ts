@@ -472,9 +472,17 @@ const fits = (track: Track, frame: ParkFrame, half: number): boolean => {
   );
 };
 
-const makeTrack = (rng: () => number, frame: ParkFrame, half: number, bend: number): Track => {
+const makeTrack = (
+  rng: () => number,
+  frame: ParkFrame,
+  half: number,
+  bend: number,
+  river = false,
+): Track => {
   for (let tries = 0; tries < 80; tries++) {
-    const track = buildTrack(loopOutline(rng, frame, half, bend));
+    // A river winds as much as it can: when its bends don't fit, they ease off a little each try rather than giving up.
+    const amount = river ? bend * Math.max(0.3, 1 - tries / 50) : bend;
+    const track = buildTrack(loopOutline(rng, frame, half, amount));
     if (fits(track, frame, half)) return track;
   }
   // A plain rounded rectangle always fits and, however long or square the screen, still reaches its edges.
@@ -973,7 +981,7 @@ export const generatePark = (
   const chosen = season ?? SEASONS[Math.floor(rng() * SEASONS.length)]!;
   const wall = wallFor(frame);
   const half = roadHalf(course);
-  const track = makeTrack(rng, frame, half, course.bend);
+  const track = makeTrack(rng, frame, half, course.bend, course.river);
   const inner = edge(track, -half - 6);
   const xs = inner.map((p) => p.x);
   const ys = inner.map((p) => p.y);
