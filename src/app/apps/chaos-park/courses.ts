@@ -48,6 +48,8 @@ export interface CourseSpec {
   obstacle: Obstacle;
   event: CourseEvent;
   cover: Cover;
+  /** Whether the park has footpaths across its middle, and short cuts along them. */
+  paths: boolean;
   /** Whether a short stretch of the loop is rapids, where everyone goes `RAPIDS_SPEED` times faster. */
   rapids: boolean;
   /**
@@ -81,6 +83,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     obstacle: 'slip',
     event: 'none',
     cover: 'none',
+    paths: true,
     rapids: false,
     train: false,
     slowCars: false,
@@ -99,6 +102,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     obstacle: 'steer',
     event: 'hook',
     cover: 'none',
+    paths: false,
     rapids: true,
     train: false,
     slowCars: false,
@@ -117,6 +121,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     obstacle: 'steer',
     event: 'tumbleweed',
     cover: 'arch',
+    paths: false,
     rapids: false,
     train: true,
     slowCars: true,
@@ -135,6 +140,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     obstacle: 'steer',
     event: 'sting',
     cover: 'vine',
+    paths: true,
     rapids: false,
     train: false,
     slowCars: false,
@@ -153,6 +159,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     obstacle: 'slime',
     event: 'haunt',
     cover: 'mansion',
+    paths: false,
     rapids: false,
     train: false,
     slowCars: false,

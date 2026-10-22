@@ -985,10 +985,11 @@ export const generatePark = (
   };
   const inside: Interior = { inner, box };
   const entrances = makeEntrances(track, wall, half, rng);
-  const shortcuts = makeShortcuts(track, entrances, half, rng);
+  // Footpaths and the short cuts along them, on the courses that have them.
+  const shortcuts = course.paths ? makeShortcuts(track, entrances, half, rng) : [];
   const water = makeWater(inside, shortcuts, rng);
   const fields = makeFields(inside, water, shortcuts, rng);
-  const paths = makePaths(track, half, inside, water, fields, rng);
+  const paths = course.paths ? makePaths(track, half, inside, water, fields, rng) : [];
   const trees = makeTrees(
     track,
     half,
