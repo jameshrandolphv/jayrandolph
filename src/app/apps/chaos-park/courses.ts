@@ -65,6 +65,11 @@ export interface CourseSpec {
    */
   slowCars: boolean;
   /**
+   * Whether visitors step out of the trees anywhere along the road, inside or out, instead of coming in by the gates,
+   * and step back into them as soon as their laps are done (see `WILD_DEPTH`).
+   */
+  wild: boolean;
+  /**
    * The score on this course that unlocks the next, and earns its bronze medal; silver is `SILVER_MORE` more, and
    * gold `GOLD_MORE` more.
    */
@@ -90,6 +95,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     rapids: false,
     train: false,
     slowCars: false,
+    wild: false,
     unlock: 25,
   },
   waters: {
@@ -110,6 +116,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     rapids: true,
     train: false,
     slowCars: false,
+    wild: false,
     unlock: 30,
   },
   canyon: {
@@ -130,6 +137,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     rapids: false,
     train: true,
     slowCars: true,
+    wild: false,
     unlock: 35,
   },
   jungle: {
@@ -150,6 +158,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     rapids: false,
     train: false,
     slowCars: false,
+    wild: true,
     unlock: 40,
   },
   mansion: {
@@ -170,6 +179,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     rapids: false,
     train: false,
     slowCars: false,
+    wild: false,
     unlock: 45,
   },
 };
@@ -185,6 +195,13 @@ export const TRAIN_LEN = 44;
 /** On a course with slow cars, the share of cars that are slow, and how fast they go next to a car. */
 export const SLOW_CAR_SHARE = 0.5;
 export const SLOW_CAR_SPEED = 0.5;
+
+/**
+ * On a wild course, how far into the trees, from the road's edge, visitors step out from and back into; and how far
+ * along the loop two arriving at once must be apart.
+ */
+export const WILD_DEPTH = 30;
+export const WILD_GAP = 120;
 
 /** Medals on a course: bronze at its unlock score, silver this much more, gold this much more. */
 export const SILVER_MORE = 15;

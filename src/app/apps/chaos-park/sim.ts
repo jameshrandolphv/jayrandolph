@@ -98,6 +98,8 @@ import {
   RAPIDS_SPEED,
   SLOW_CAR_SHARE,
   SLOW_CAR_SPEED,
+  WILD_DEPTH,
+  WILD_GAP,
   TRAIN_LANE,
   TRAIN_LEN,
   type CourseId,
@@ -659,6 +661,11 @@ export class ChaosParkSim {
     this.checkPatches(m);
     this.place(m);
 
+    if (m.done && this.course.wild) {
+      // Back into the trees, on whichever side of the road it's nearer.
+      this.leaveWild(m);
+      return;
+    }
     if (m.done) {
       // The last lap ends at the entrance it came in by, so look a little either side as well as just ahead.
       const exit =
@@ -774,6 +781,24 @@ export class ChaosParkSim {
     m.state = 'leaving';
     m.warning = false;
     this.setRoute(m, [{ x: m.x, y: m.y }, e.throat, e.gate, e.street], null);
+  }
+
+  private leaveWild(m: Mover): void {
+    const { track, half, lanes } = this.park;
+    const side = m.p + m.width / 2 < lanes / 2 ? -1 : 1;
+    const edge = pose(track, m.s, side * (half + 4));
+    const out = pose(track, m.s, side * (half + WILD_DEPTH));
+    m.state = 'leaving';
+    m.warning = false;
+    this.setRoute(
+      m,
+      [
+        { x: m.x, y: m.y },
+        { x: edge.x, y: edge.y },
+        { x: out.x, y: out.y },
+      ],
+      null,
+    );
   }
 
   // -------------------------------------------------------------------------------------------------------------
@@ -1408,6 +1433,7 @@ export class ChaosParkSim {
 
   /** Sends a mover in through a free entrance; returns false when every entrance is busy. */
   private arrive(kind: Kind): boolean {
+    if (this.course.wild) return this.arriveWild(kind);
     const { entrances, track } = this.park;
     const free = entrances.filter(
       (e) => !this.movers.some((m) => m.state === 'arriving' && m.entrance === e.id),
@@ -1438,6 +1464,62 @@ export class ChaosParkSim {
     m.x = m.prevX = e.street.x;
     m.y = m.prevY = e.street.y;
     m.heading = m.prevHeading = Math.atan2(e.gate.y - e.street.y, e.gate.x - e.street.x);
+    this.movers.push(m);
+    return true;
+  }
+
+  /**
+   * On a wild course, sends a mover out of the trees at a random spot along the road, on the inside or the outside;
+   * returns false when another is already arriving near there.
+   */
+  private arriveWild(kind: Kind): boolean {
+    const { track, half, lanes } = this.park;
+    const s = this.rng() * track.length;
+    const inside = this.rng() < 0.5;
+    if (
+      this.movers.some(
+        (o) =>
+          o.state === 'arriving' &&
+          !!o.join &&
+          Math.abs(loopDelta(o.join.s, s, track.length)) < WILD_GAP,
+      )
+    )
+      return false;
+    const crowd =
+      kind === 'group'
+        ? GROUP_SIZE[0] + Math.floor(this.rng() * (GROUP_SIZE[1] - GROUP_SIZE[0] + 1))
+        : 1;
+    const m = this.create(kind, crowd);
+    const wrongWayChance = Math.min(
+      WRONG_WAY_MAX_CHANCE,
+      WRONG_WAY_CHANCE + (this.level - WRONG_WAY_FROM_SCORE) * 0.003,
+    );
+    if (
+      (kind === 'walker' || kind === 'runner') &&
+      this.laps >= WRONG_WAY_FROM_SCORE &&
+      this.rng() < wrongWayChance
+    )
+      m.dir = -1;
+    m.entrance = -1;
+    m.state = 'arriving';
+    m.alpha = 0;
+    const side = inside ? -1 : 1;
+    const p = inside ? 0 : lanes - m.width;
+    const from = pose(track, s, side * (half + WILD_DEPTH));
+    const edge = pose(track, s, side * (half + 4));
+    const merge = pose(track, s, laneOffset(p, m.width, this.park));
+    this.setRoute(
+      m,
+      [
+        { x: from.x, y: from.y },
+        { x: edge.x, y: edge.y },
+        { x: merge.x, y: merge.y },
+      ],
+      { s, p },
+    );
+    m.x = m.prevX = from.x;
+    m.y = m.prevY = from.y;
+    m.heading = m.prevHeading = Math.atan2(edge.y - from.y, edge.x - from.x);
     this.movers.push(m);
     return true;
   }

@@ -1416,6 +1416,41 @@ describe('course events', () => {
   });
 });
 
+describe('wild arrivals', () => {
+  it('on Jungle Jam, visitors step out of the trees anywhere and back in when done, not by the gates', () => {
+    const sim = new ChaosParkSim(seededRng(5), COURSES.jungle);
+    sim.start();
+    const { track, half } = sim.park;
+    const starts: number[] = [];
+    let left = 0;
+    const seen = new Set<number>();
+    for (let t = 0; t < 6000 && sim.phase === 'playing'; t++) {
+      for (const m of sim.movers) {
+        if (m.state === 'arriving' && !seen.has(m.id)) {
+          seen.add(m.id);
+          expect(m.entrance).toBe(-1);
+          // It starts in the trees, off the road's edge, beside the spot where it joins.
+          const near = track.points.reduce(
+            (d, p) => Math.min(d, Math.hypot(p.x - m.route[0]!.x, p.y - m.route[0]!.y)),
+            Infinity,
+          );
+          expect(near).toBeGreaterThan(half + 20);
+          starts.push(m.join!.s);
+        }
+        if (m.state === 'leaving' && m.route.length === 3) left++;
+      }
+      sim.step();
+    }
+    // Spread round the loop, not bunched at a few gates.
+    const quarters = new Set(
+      starts.map((s) => Math.floor((wrap(s, track.length) / track.length) * 4)),
+    );
+    expect(starts.length).toBeGreaterThan(5);
+    expect(quarters.size).toBe(4);
+    expect(left).toBeGreaterThan(0);
+  });
+});
+
 describe('course obstacles', () => {
   it('are steered round, a lane either way, without slipping', () => {
     const sim = onCourse('waters');
