@@ -48,6 +48,18 @@ export interface CourseSpec {
   obstacle: Obstacle;
   event: CourseEvent;
   cover: Cover;
+  /** Whether a short stretch of the loop is rapids, where everyone goes `RAPIDS_SPEED` times faster. */
+  rapids: boolean;
+  /**
+   * Whether the carriage is a train instead: one lane wide (`TRAIN_LEN` long), always in lane `TRAIN_LANE`, never
+   * moved by a swipe, an obstacle or a pick-up, and only ever one of it.
+   */
+  train: boolean;
+  /**
+   * Whether some of the cars (those with `look[0] < SLOW_CAR_SHARE`) are slow ones: `SLOW_CAR_SPEED` times as fast,
+   * and a carriage long.
+   */
+  slowCars: boolean;
   /**
    * The score on this course that unlocks the next, and earns its bronze medal; silver is `SILVER_MORE` more, and
    * gold `GOLD_MORE` more.
@@ -69,6 +81,9 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     obstacle: 'slip',
     event: 'none',
     cover: 'none',
+    rapids: false,
+    train: false,
+    slowCars: false,
     unlock: 25,
   },
   waters: {
@@ -79,11 +94,14 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     bend: 1.5,
     levelOffset: 3,
     slow: 0.12,
-    slowPair: 0,
+    slowPair: 0.06,
     predator: true,
     obstacle: 'steer',
     event: 'hook',
     cover: 'none',
+    rapids: true,
+    train: false,
+    slowCars: false,
     unlock: 30,
   },
   canyon: {
@@ -99,6 +117,9 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     obstacle: 'steer',
     event: 'tumbleweed',
     cover: 'arch',
+    rapids: false,
+    train: true,
+    slowCars: true,
     unlock: 35,
   },
   jungle: {
@@ -109,11 +130,14 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     bend: 2,
     levelOffset: 9,
     slow: 0.12,
-    slowPair: 0,
+    slowPair: 0.06,
     predator: true,
     obstacle: 'steer',
     event: 'sting',
     cover: 'vine',
+    rapids: false,
+    train: false,
+    slowCars: false,
     unlock: 40,
   },
   mansion: {
@@ -129,9 +153,24 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     obstacle: 'slime',
     event: 'haunt',
     cover: 'mansion',
+    rapids: false,
+    train: false,
+    slowCars: false,
     unlock: 45,
   },
 };
+
+/** How much faster everyone goes on a course's rapids, and how long the rapids are. */
+export const RAPIDS_SPEED = 1.25;
+export const RAPIDS_LEN: readonly [number, number] = [80, 110];
+
+/** A course's train: its lane (counted from the inside) and length at the design lane width. */
+export const TRAIN_LANE = 1;
+export const TRAIN_LEN = 44;
+
+/** On a course with slow cars, the share of cars that are slow, and how fast they go next to a car. */
+export const SLOW_CAR_SHARE = 0.5;
+export const SLOW_CAR_SPEED = 0.5;
 
 /** Medals on a course: bronze at its unlock score, silver this much more, gold this much more. */
 export const SILVER_MORE = 15;

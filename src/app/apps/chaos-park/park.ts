@@ -13,7 +13,7 @@ import {
   WALL_RADIUS,
   type Rect,
 } from './constants';
-import { COURSES, type CourseId, type CourseSpec } from './courses';
+import { COURSES, RAPIDS_LEN, TRAIN_LANE, type CourseId, type CourseSpec } from './courses';
 
 export interface Point {
   x: number;
@@ -150,6 +150,8 @@ export interface Park {
   laneW: number;
   half: number;
   cover: Covered | null;
+  /** The stretch of rapids, on a course that has them (see `CourseSpec.rapids`). */
+  rapids: Covered | null;
   track: Track;
   entrances: Entrance[];
   shortcuts: Shortcut[];
@@ -827,6 +829,8 @@ export const PATCH_COUNT = PATCH_SCORES.length;
 const makePatches = (
   track: Track,
   lanes: number,
+  /** A lane kept clear, for a course's train; -1 for none. */
+  keepClear: number,
   entrances: readonly Entrance[],
   shortcuts: readonly Shortcut[],
   rng: () => number,
@@ -839,7 +843,8 @@ const makePatches = (
       const s = rng() * track.length;
       if (avoid.some((a) => Math.abs(loopDelta(a, s, track.length)) < 60)) continue;
       if (out.some((o) => Math.abs(loopDelta(o.s, s, track.length)) < spread)) continue;
-      const lane = Math.floor(rng() * lanes);
+      const pick = Math.floor(rng() * (keepClear < 0 ? lanes : lanes - 1));
+      const lane = keepClear >= 0 && pick >= keepClear ? pick + 1 : pick;
       out.push({ id: out.length, s, lane, width: 1, len: (18 + rng() * 6) * ART });
     }
   }
@@ -856,8 +861,9 @@ const makeCover = (
   shortcuts: readonly Shortcut[],
   patches: readonly Patch[],
   rng: () => number,
+  range: readonly [number, number] = COVER_LEN,
 ): Covered => {
-  const len = COVER_LEN[0] + rng() * (COVER_LEN[1] - COVER_LEN[0]);
+  const len = range[0] + rng() * (range[1] - range[0]);
   const avoid = [
     ...entrances.map((e) => e.s),
     ...shortcuts.flatMap((c) => [c.a, c.b]),
@@ -996,9 +1002,11 @@ export const generatePark = (
     wall,
     rng,
   );
-  const patches = makePatches(track, course.lanes, entrances, shortcuts, rng);
+  const patches = makePatches(track, course.lanes, course.train ? TRAIN_LANE : -1, entrances, shortcuts, rng);
   const cover =
     course.cover === 'none' ? null : makeCover(track, entrances, shortcuts, patches, rng);
+  // Rapids, like a covered stretch, clear of the entrances, short cuts and patches.
+  const rapids = course.rapids ? makeCover(track, entrances, shortcuts, patches, rng, RAPIDS_LEN) : null;
   return {
     season: chosen,
     frame,
@@ -1007,6 +1015,7 @@ export const generatePark = (
     laneW: course.laneW,
     half,
     cover,
+    rapids,
     track,
     entrances,
     shortcuts,

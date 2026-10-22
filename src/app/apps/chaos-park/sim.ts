@@ -93,7 +93,16 @@ import {
   type Kind,
   type PickupKind,
 } from './constants';
-import { COURSES, type CourseId, type CourseSpec } from './courses';
+import {
+  COURSES,
+  RAPIDS_SPEED,
+  SLOW_CAR_SHARE,
+  SLOW_CAR_SPEED,
+  TRAIN_LANE,
+  TRAIN_LEN,
+  type CourseId,
+  type CourseSpec,
+} from './courses';
 import {
   DEFAULT_FRAME,
   generatePark,
@@ -572,7 +581,7 @@ export class ChaosParkSim {
     if (this.phase !== 'playing' || this.paused) return false;
     const m = this.movers.find((o) => o.id === id && o.state === 'track');
     if (!m) return false;
-    if (m.boosted === on || m.daze > 0) {
+    if (m.boosted === on || m.daze > 0 || this.isTrain(m)) {
       this.events.push('bump');
       return false;
     }
@@ -639,10 +648,12 @@ export class ChaosParkSim {
     }
     if (m.swerve > 0) this.swerveStep(m);
     const from = m.s;
-    const delta = m.speed * m.dir;
+    // Faster through the rapids.
+    const pace = underCover(this.park.rapids, m.s, track.length) ? m.speed * RAPIDS_SPEED : m.speed;
+    const delta = pace * m.dir;
     m.s = wrap(m.s + delta, track.length);
     if (m.p !== m.target) m.p += Math.max(-LANE_RATE, Math.min(LANE_RATE, m.target - m.p));
-    m.progress += m.speed;
+    m.progress += pace;
     this.countLaps(m);
     if (m.lapsDone >= m.wearOff) this.wearOff(m);
     this.checkPatches(m);
@@ -839,11 +850,17 @@ export class ChaosParkSim {
    * mansion and a wall parts them from the rest.
    */
   private canChange(m: Mover, lane: number): boolean {
+    if (this.isTrain(m)) return false;
     if (this.course.cover !== 'mansion') return true;
     const { cover, track } = this.park;
     if (!underCover(cover, m.s, track.length)) return true;
     const inside = (p: number) => p < 2;
     return inside(lane) === inside(m.p) && inside(lane + m.width - 1) === inside(m.p + m.width - 1);
+  }
+
+  /** Whether a mover is the course's train, which keeps to its lane whatever happens. */
+  private isTrain(m: Mover): boolean {
+    return m.kind === 'carriage' && this.course.train;
   }
 
   /** A biker bearing down on someone on foot tells them to get out of the way. */
@@ -1061,7 +1078,7 @@ export class ChaosParkSim {
       (m) => m.kind !== 'carriage' && m.kind !== 'predator' && m.state !== 'leaving',
     ).length;
     // One carriage, and a second from SECOND_CARRIAGE_SCORE laps; one knocked off is replaced after a wait.
-    const carriages = this.laps >= SECOND_CARRIAGE_SCORE ? 2 : 1;
+    const carriages = this.laps >= SECOND_CARRIAGE_SCORE && !this.course.train ? 2 : 1;
     if (this.carriageWait > 0) this.carriageWait--;
     else if (this.carriagesSent < carriages && this.arrive('carriage')) this.carriagesSent++;
     if (active === 0) this.spawnTimer = Math.min(this.spawnTimer, 30);
@@ -1159,6 +1176,7 @@ export class ChaosParkSim {
           m.kind !== 'group' &&
           m.kind !== 'predator' &&
           !(m.kind === 'carriage' && (p.kind === 'double' || p.kind === 'strength')) &&
+          !this.isTrain(m) &&
           Math.abs(loopDelta(p.s, m.s, length)) < (PICKUP_LEN + m.len) / 2 &&
           laneOverlap(m.p, m.width, p.lane, 1) > LATERAL_OVERLAP,
       );
@@ -1414,7 +1432,7 @@ export class ChaosParkSim {
     m.entrance = e.id;
     m.state = 'arriving';
     m.alpha = 0;
-    const p = this.park.lanes - m.width;
+    const p = this.isTrain(m) ? TRAIN_LANE : this.park.lanes - m.width;
     const merge = pose(track, e.s, laneOffset(p, m.width, this.park));
     this.setRoute(m, [e.street, e.gate, e.throat, { x: merge.x, y: merge.y }], { s: e.s, p });
     m.x = m.prevX = e.street.x;
@@ -1430,6 +1448,7 @@ export class ChaosParkSim {
     m.state = 'track';
     m.s = this.rng() * this.park.track.length;
     m.p = m.target = this.rng() < 0.5 ? 0 : this.park.lanes - 2;
+    if (this.isTrain(m)) m.p = m.target = TRAIN_LANE;
     this.place(m);
     m.heading = m.prevHeading = pose(this.park.track, m.s).angle;
     m.prevX = m.x;
@@ -1446,7 +1465,7 @@ export class ChaosParkSim {
       ? lo + Math.floor(this.rng() ** 1.6 * (hi - lo + 1))
       : Infinity;
     const speed = spec.speed * (1 + (this.rng() * 2 - 1) * SPEED_SPREAD);
-    return {
+    const m: Mover = {
       id: this.nextId++,
       kind,
       width: spec.width,
@@ -1498,6 +1517,15 @@ export class ChaosParkSim {
       slime: 0,
       turnedAt: -Infinity,
     };
+    if (kind === 'carriage' && this.course.train) {
+      m.width = 1;
+      m.len = TRAIN_LEN * ART;
+    }
+    if (kind === 'car' && this.course.slowCars && m.look[0] < SLOW_CAR_SHARE) {
+      m.speed = m.baseSpeed = m.plainSpeed = speed * SLOW_CAR_SPEED;
+      m.len = KIND_SPECS.carriage.len;
+    }
+    return m;
   }
 
   // -------------------------------------------------------------------------------------------------------------
@@ -1754,7 +1782,8 @@ export class ChaosParkSim {
       if (m) {
         w.ticks = -1;
         this.impacts.push({ id: this.nextId++, x: w.x, y: w.y, ticks: 0 });
-        if (m.star > 0) {
+        // A star breaks it up, and so does the train.
+        if (m.star > 0 || this.isTrain(m)) {
           this.events.push('knock');
           continue;
         }
