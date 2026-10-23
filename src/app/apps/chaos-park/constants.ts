@@ -206,8 +206,8 @@ export const SECOND_CARRIAGE_SCORE = 110;
 export const CARRIAGE_RETURN: readonly [number, number] = [20 * 60, 40 * 60];
 /** Walkers and runners going the wrong way (clockwise) appear from this many laps, more often as the level rises. */
 export const WRONG_WAY_FROM_SCORE = 3;
-export const WRONG_WAY_CHANCE = 0.1;
-export const WRONG_WAY_MAX_CHANCE = 0.2;
+export const WRONG_WAY_CHANCE = 0.05;
+export const WRONG_WAY_MAX_CHANCE = 0.1;
 
 /** How much faster a mover goes after a forward swipe, until swiped back. */
 export const BOOST = 1.6;

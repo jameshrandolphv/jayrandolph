@@ -1464,11 +1464,13 @@ describe('wild arrivals', () => {
   it('on Jungle Jam, visitors step out of the trees anywhere and back in when done, not by the gates', () => {
     const sim = new ChaosParkSim(seededRng(5), COURSES.jungle);
     sim.start();
+    // Enough lives to keep going through the collisions nobody steers round.
+    sim.lives = 1000;
     const { track, half } = sim.park;
     const starts: number[] = [];
     let left = 0;
     const seen = new Set<number>();
-    for (let t = 0; t < 6000 && sim.phase === 'playing'; t++) {
+    for (let t = 0; t < 6000 && sim.phase !== 'gameOver'; t++) {
       for (const m of sim.movers) {
         if (m.state === 'arriving' && !seen.has(m.id)) {
           seen.add(m.id);
