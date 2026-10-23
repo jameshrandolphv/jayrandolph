@@ -212,13 +212,10 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
   },
 };
 
-/**
- * How much faster anyone in a lane of rapids goes, and how long each lane's rapids are; a second lane alongside has
- * rapids `RAPIDS_SECOND` of the time.
- */
-export const RAPIDS_SPEED = 1.25;
+/** How much faster anyone in the rapids goes, and how long the rapids are. They span `RAPIDS_LANES` lanes side by side. */
+export const RAPIDS_SPEED = 1.5;
 export const RAPIDS_LEN: readonly [number, number] = [60, 150];
-export const RAPIDS_SECOND = 0.5;
+export const RAPIDS_LANES = 2;
 
 /**
  * Waves, on a course with them: from `WAVE_FROM_SCORE` laps, one every `WAVE_INTERVAL` ticks swells up at the bank,
