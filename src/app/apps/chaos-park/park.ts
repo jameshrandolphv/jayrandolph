@@ -455,10 +455,15 @@ const roundedPolygon = (corners: readonly Point[], radius: (i: number) => number
     const bx = d1.x + d2.x;
     const by = d1.y + d2.y;
     const bl = Math.hypot(bx, by);
-    const halfAngle = Math.acos(Math.max(-1, Math.min(1, d1.x * d2.x + d1.y * d2.y))) / 2;
+    // The tangent and sine of half the angle between the sides, from their dot and cross products (no inverse trig,
+    // so every port gets the same numbers).
+    const cos = Math.max(-1, Math.min(1, d1.x * d2.x + d1.y * d2.y));
+    const sin = Math.abs(d1.x * d2.y - d1.y * d2.x);
+    const tanHalf = sin / (1 + cos);
+    const sinHalf = Math.sqrt((1 - cos) / 2);
     // A straight run through this corner has nothing to round.
-    const t = bl < 1e-6 ? 0 : radius(i) / Math.tan(halfAngle);
-    return { v, d1, d2, bx, by, bl, halfAngle, t, l2 };
+    const t = bl < 1e-6 ? 0 : radius(i) / tanHalf;
+    return { v, d1, d2, bx, by, bl, tanHalf, sinHalf, t, l2 };
   });
   // Where two curves would overlap along a side, each gives way in proportion.
   const most = turns.map((c, i) => {
@@ -471,8 +476,8 @@ const roundedPolygon = (corners: readonly Point[], radius: (i: number) => number
   const arcs = turns.map((c, i) => {
     if (c.t === 0) return { a: c.v, b: c.v, c: c.v, r: 0 };
     const t = Math.min(c.t, most[i]!);
-    const r = t * Math.tan(c.halfAngle);
-    const k = r / Math.sin(c.halfAngle) / c.bl;
+    const r = t * c.tanHalf;
+    const k = r / c.sinHalf / c.bl;
     return {
       a: { x: c.v.x + c.d1.x * t, y: c.v.y + c.d1.y * t },
       b: { x: c.v.x + c.d2.x * t, y: c.v.y + c.d2.y * t },
