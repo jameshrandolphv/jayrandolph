@@ -7,6 +7,7 @@
 - Chaos Park: a new autopilot token (a steering wheel). Whoever takes it glows blue and changes lane, or slows down behind someone slower, to stay out of collisions for the rest of their laps
 - Chaos Park: streaks. Every 10 laps in a row without losing a life makes each lap worth a point more (x2, x3...), shown by the hearts; losing a life starts it again
 - Chaos Park: dusk falls from lap 120, and cars switch on their headlights and carriages their lanterns
+- Chaos Park: bikers turn up more often (about one visitor in four, was one in six), so the first ones come sooner
 
 ## 1.9.3
 - Chaos Park: six new tokens, ten in all, and a token's effect now lasts for the rest of the visitor's laps instead of a few seconds. A rare rainbow star flashes its taker through the rainbow and knocks anyone it touches off the track with no life lost, scoring the laps they had left (a carriage scores nothing, and another comes along later). Fire gives super speed (1.5x) and a turtle halves it; strength adds two laps; a coin adds a point; a skull is a wreck that costs a life (unless they have a star); and a spiral slows the whole game to half speed for 10 seconds before easing back. Carriages and run groups still can't take tokens

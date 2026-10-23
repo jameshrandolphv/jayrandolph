@@ -82,7 +82,7 @@ export const KIND_SPECS: Readonly<Record<Kind, KindSpec>> = {
   walker: spec(0.72, 14, 1, [1, 2], 0.3),
   dog: spec(0.72, 24, 2, [1, 1], 0.12),
   runner: spec(1.15, 14, 1, [1, 3], 0.3),
-  biker: spec(1.8, 30, 1, [1, 4], 0.22),
+  biker: spec(1.8, 30, 1, [1, 4], 0.32),
   /** Only a little faster than a bike. */
   car: spec(2.0, 46, 2, [1, 2], 0.07),
   carriage: spec(0.72, 62, 2, [Infinity, Infinity], 0),
