@@ -758,14 +758,16 @@ const clearOfItself = (track: Track, half: number): boolean => {
   const inner = edge(track, -half);
   const n = track.points.length;
   const near = Math.ceil((half * 4) / track.step);
-  const least = (half + MIDDLE_GAP) ** 2;
+  const least = (half + MIDDLE_GAP) * (half + MIDDLE_GAP);
   for (let i = 0; i < n; i++) {
     const p = inner[i]!;
     for (let j = 0; j < n; j++) {
       const apart = Math.abs(i - j);
       if (Math.min(apart, n - apart) <= near) continue;
       const q = track.points[j]!;
-      if ((p.x - q.x) ** 2 + (p.y - q.y) ** 2 < least) return false;
+      const dx = p.x - q.x;
+      const dy = p.y - q.y;
+      if (dx * dx + dy * dy < least) return false;
     }
   }
   return true;

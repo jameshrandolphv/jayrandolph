@@ -151,7 +151,7 @@ interface Counter {
 
 const COUNTER = { w: 108, h: 36, digits: 5 };
 /** The streak's glow round the edges of the screen: how far in it reaches, in how many bands. */
-const STREAK_GLOW_WIDTH = 34;
+const STREAK_GLOW_WIDTH = 44;
 const STREAK_GLOW_BANDS = 10;
 /** Ticks the streak's words stay up (popping in, then fading), and when the glow starts to come up. */
 const STREAK_TEXT_TICKS = 100;
@@ -802,7 +802,7 @@ export class ChaosParkView {
         ).stroke({
           width: w,
           color: COLORS.gold,
-          alpha: 0.55 * (1 - i / STREAK_GLOW_BANDS) ** 2,
+          alpha: 0.9 * (1 - i / STREAK_GLOW_BANDS) ** 2,
         });
       }
     }
