@@ -121,7 +121,7 @@ export const SPEED_SPREAD = 0.08;
  * level for each lap after. What comes in at a given number of laps (cars, groups, patches...) goes by the laps.
  */
 export const LEVEL_KNEE = 10;
-export const LEVEL_RATE = 0.5;
+export const LEVEL_RATE = 0.4;
 export const level = (laps: number): number =>
   laps <= LEVEL_KNEE ? laps : LEVEL_KNEE + (laps - LEVEL_KNEE) * LEVEL_RATE;
 
@@ -346,8 +346,8 @@ export const SPAWN_INTERVAL_STEP = 4;
  */
 export const MAX_MOVERS_START = 3;
 export const MAX_MOVERS = 22;
-export const LAPS_PER_EXTRA = 4;
-export const EARLY_LAPS_PER_EXTRA = 3;
+export const LAPS_PER_EXTRA = 5;
+export const EARLY_LAPS_PER_EXTRA = 4;
 export const EARLY_MAX_MOVERS = 5;
 export const LATE_FROM = 150;
 export const LATE_LAPS_PER_EXTRA = 10;

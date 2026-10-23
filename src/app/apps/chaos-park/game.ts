@@ -58,6 +58,7 @@ const SOUNDS: Readonly<Record<SimEvent, SfxName>> = {
   sting: 'alert',
   haunt: 'alert',
   slime: 'slip',
+  wave: 'swish',
 };
 
 /**

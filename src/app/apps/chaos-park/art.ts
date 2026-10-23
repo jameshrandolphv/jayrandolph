@@ -787,6 +787,25 @@ const groupMembers = (crowd: number, look: Look['look']): Member[] => {
   });
 };
 
+/** Of the cars that aren't taxis, the share (by `look[2]`) that are police cars. */
+export const POLICE_SHARE = 0.3;
+
+/** A police car's white doors and roof, over its black body, with the light bar across the roof. */
+const policeLivery = (g: Graphics): void => {
+  g.rect(-12, -16.5, 18, 33).fill(0xf6f6f2);
+  g.moveTo(-12, -16.5)
+    .lineTo(6, -16.5)
+    .moveTo(-12, 16.5)
+    .lineTo(6, 16.5)
+    .stroke({ width: 2, color: INK });
+  g.roundRect(-12, -12, 18, 24, 4).fill(0xffffff).stroke({ width: 1, color: 0x9a9a9a });
+  g.roundRect(-6, -11, 5, 22, 2).fill(0x2a2a2e);
+  g.roundRect(-5.2, -10, 3.4, 9.4, 1.2).fill(0xe8393a);
+  g.roundRect(-5.2, 0.6, 3.4, 9.4, 1.2).fill(0x2f6fe0);
+  g.circle(-3.5, -6, 1.2).fill({ color: 0xffffff, alpha: 0.6 });
+  g.circle(-3.5, 4.6, 1.2).fill({ color: 0xffffff, alpha: 0.6 });
+};
+
 /** The body of a mover, which doesn't change as it moves. */
 export const moverBody = ({ kind, look, season, crowd = 1 }: Look): Graphics => {
   const g = new Graphics();
@@ -803,7 +822,28 @@ export const moverBody = ({ kind, look, season, crowd = 1 }: Look): Graphics => 
       person(g, 0, 0, pick(SPORT, a), pick(HAIR, b), false, c, true);
       break;
     case 'slow':
-      person(g, 0, 0, pick(COATS, a), 0xd8d4cc, winter, c);
+      if (b < 0.5) {
+        // A wheelchair: its wheels either side, the seat, the push handles and the footrest, then who sits in it.
+        for (const y of [-11, 11]) g.roundRect(-9, y - 1.8, 16, 3.6, 1.8).fill(0x2a2a2e);
+        g.roundRect(-8, -9, 14, 18, 3).fill(0x4f5866).stroke(OUTLINE);
+        g.moveTo(-10, -8).lineTo(-7, -8).moveTo(-10, 8).lineTo(-7, 8);
+        g.stroke({ width: 2, color: 0x2a2a2e, cap: 'round' });
+        g.roundRect(6, -5.5, 4, 11, 1.5).fill(0x3a3f47);
+        person(g, -1, 0, pick(COATS, a), 0xd8d4cc, winter, c);
+      } else {
+        // A walking frame out in front, its rubber feet at the corners.
+        person(g, -2, 0, pick(COATS, a), 0xd8d4cc, winter, c);
+        const frame = (width: number, color: number, alpha = 1) =>
+          g
+            .moveTo(2, -10.5)
+            .lineTo(10, -10.5)
+            .lineTo(10, 10.5)
+            .lineTo(2, 10.5)
+            .stroke({ width, color, alpha, cap: 'round', join: 'round' });
+        frame(3.4, INK, 0.6);
+        frame(1.8, 0xc4cad2);
+        for (const x of [2, 10]) for (const y of [-10.5, 10.5]) g.circle(x, y, 1.5).fill(0x3a3836);
+      }
       break;
     case 'pair':
       for (const side of [-1, 1])
@@ -892,7 +932,8 @@ export const moverBody = ({ kind, look, season, crowd = 1 }: Look): Graphics => 
     }
     case 'car': {
       const taxi = a < 0.55;
-      const body = taxi ? 0xf7c531 : pick(CARS, b);
+      const police = !taxi && c < POLICE_SHARE;
+      const body = taxi ? 0xf7c531 : police ? 0x1f2228 : pick(CARS, b);
       const dark = mix(body, 0x000000, 0.3);
       g.roundRect(-23, -16.5, 46, 33, 9)
         .fill(body)
@@ -914,6 +955,7 @@ export const moverBody = ({ kind, look, season, crowd = 1 }: Look): Graphics => 
         g.moveTo(-17, -16.5).lineTo(22, -16.5).moveTo(-17, 16.5).lineTo(22, 16.5);
         g.stroke({ width: 1.6, color: INK, alpha: 0.55 });
       }
+      if (police) policeLivery(g);
       break;
     }
     case 'carriage': {
@@ -1035,9 +1077,28 @@ export const drawLimbs = (
     case 'runner':
       stride(0, 0, 5, 3);
       break;
-    case 'slow':
-      stride(0, 0, 2, 1.2);
+    case 'slow': {
+      const hand = (x: number, y: number) =>
+        g
+          .circle(x, y, 1.6 * K)
+          .fill(sleeve ? pick(COATS, look[0]) : skin)
+          .stroke({ width: 0.9, color: INK, alpha: 0.6 });
+      if (look[1] < 0.5) {
+        // Feet on the footrest, and hands pushing the wheels round.
+        for (const y of [-3.5, 3.5]) g.ellipse(8, y, 2.2 * K, 1.6 * K).fill(shoe);
+        const s = Math.sin(phase);
+        hand(-1 + s * 2.5, -10);
+        hand(-1 + s * 2.5, 10);
+      } else {
+        // A shuffle behind the frame, hands on its rails.
+        const s = Math.sin(phase);
+        g.ellipse(-2 + s * 1.4 * K, -2.6 * K, 2.2 * K, 1.6 * K).fill(shoe);
+        g.ellipse(-2 - s * 1.4 * K, 2.6 * K, 2.2 * K, 1.6 * K).fill(shoe);
+        hand(4, -9.6);
+        hand(4, 9.6);
+      }
       break;
+    }
     case 'pair':
       stride(0, -DESIGN_LANE / 2, 2, 1.2);
       stride(0, DESIGN_LANE / 2, 2, 1.2, 1.3);

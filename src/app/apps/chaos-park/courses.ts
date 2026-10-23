@@ -53,7 +53,10 @@ export interface CourseSpec {
   river: boolean;
   /** Added to the difficulty level, so later courses start further up the ramp. */
   levelOffset: number;
-  /** Arrival weights of the slow walker (one lane) and slow pair (two lanes); none on Chaos Park. */
+  /**
+   * Arrival weights of the slow walker (one lane) and slow pair (two lanes). On Chaos Park the slow walkers come with a
+   * walking frame or in a wheelchair, and there are no pairs.
+   */
   slow: number;
   slowPair: number;
   /** Whether a predator (shark, coyote, leopard, skeleton dog) comes round now and then. */
@@ -68,6 +71,8 @@ export interface CourseSpec {
    * `RAPIDS_SPEED` times faster.
    */
   rapids: boolean;
+  /** Whether a wave now and then rolls across the lanes, pushing whoever it passes one lane on (see `WAVE_RATE`). */
+  waves: boolean;
   /**
    * Whether the carriage is a train instead: one lane wide (`TRAIN_LEN` long), always in lane `TRAIN_LANE`, never
    * moved by a swipe, an obstacle or a pick-up, and only ever one of it.
@@ -84,8 +89,7 @@ export interface CourseSpec {
    */
   wild: boolean;
   /**
-   * The score on this course that unlocks the next, and earns its bronze medal; silver is `SILVER_MORE` more, and
-   * gold `GOLD_MORE` more.
+   * The score on this course that unlocks the next. Medals go by `BRONZE_SCORE`, `SILVER_SCORE` and `GOLD_SCORE`.
    */
   unlock: number;
 }
@@ -100,7 +104,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     bend: 1,
     river: false,
     levelOffset: 0,
-    slow: 0,
+    slow: 0.06,
     slowPair: 0,
     predator: false,
     obstacle: 'slip',
@@ -108,6 +112,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     cover: 'none',
     paths: true,
     rapids: false,
+    waves: false,
     train: false,
     slowCars: false,
     wild: false,
@@ -121,7 +126,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     layout: 'loop',
     bend: 3,
     river: true,
-    levelOffset: 3,
+    levelOffset: 2,
     slow: 0.12,
     slowPair: 0.06,
     predator: true,
@@ -130,6 +135,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     cover: 'none',
     paths: false,
     rapids: true,
+    waves: true,
     train: false,
     slowCars: false,
     wild: false,
@@ -143,7 +149,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     layout: 'switchback',
     bend: 1.5,
     river: false,
-    levelOffset: 6,
+    levelOffset: 3,
     slow: 0.12,
     slowPair: 0,
     predator: true,
@@ -152,6 +158,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     cover: 'arch',
     paths: false,
     rapids: false,
+    waves: false,
     train: true,
     slowCars: true,
     wild: false,
@@ -165,7 +172,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     layout: 'eight',
     bend: 2,
     river: false,
-    levelOffset: 9,
+    levelOffset: 5,
     slow: 0.12,
     slowPair: 0.06,
     predator: true,
@@ -174,6 +181,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     cover: 'vine',
     paths: false,
     rapids: false,
+    waves: false,
     train: false,
     slowCars: false,
     wild: true,
@@ -187,7 +195,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     layout: 'manor',
     bend: 2.5,
     river: false,
-    levelOffset: 12,
+    levelOffset: 6,
     slow: 0.1,
     slowPair: 0.06,
     predator: true,
@@ -196,6 +204,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     cover: 'none',
     paths: false,
     rapids: false,
+    waves: false,
     train: false,
     slowCars: false,
     wild: false,
@@ -210,6 +219,18 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
 export const RAPIDS_SPEED = 1.25;
 export const RAPIDS_LEN: readonly [number, number] = [60, 150];
 export const RAPIDS_SECOND = 0.5;
+
+/**
+ * Waves, on a course with them: from `WAVE_FROM_SCORE` laps, one every `WAVE_INTERVAL` ticks swells up at the bank,
+ * inside or out, for `WAVE_SWELL` ticks, then rolls across every lane at `WAVE_RATE` lanes a tick over a stretch
+ * `WAVE_LEN` long. Whoever it passes is pushed a lane the way it is rolling, if there is a lane to go to.
+ */
+export const WAVE_FROM_SCORE = 8;
+export const WAVE_INTERVAL: readonly [number, number] = [20 * 60, 40 * 60];
+export const WAVE_SWELL = 60;
+export const WAVE_RATE = 0.06;
+/** At the design lane width. */
+export const WAVE_LEN = 90;
 
 /** A course's train: its lane (counted from the inside) and length at the design lane width. */
 export const TRAIN_LANE = 1;
@@ -226,18 +247,19 @@ export const SLOW_CAR_SPEED = 0.5;
 export const WILD_DEPTH = 30;
 export const WILD_GAP = 120;
 
-/** Medals on a course: bronze at its unlock score, silver this much more, gold this much more. */
-export const SILVER_MORE = 15;
-export const GOLD_MORE = 75;
+/** Medal scores, the same on every course. */
+export const BRONZE_SCORE = 25;
+export const SILVER_SCORE = 50;
+export const GOLD_SCORE = 100;
 
 export type Medal = 'none' | 'bronze' | 'silver' | 'gold';
 
 export const medalFor = (course: CourseSpec, best: number): Medal =>
-  best >= course.unlock + GOLD_MORE
+  best >= GOLD_SCORE
     ? 'gold'
-    : best >= course.unlock + SILVER_MORE
+    : best >= SILVER_SCORE
       ? 'silver'
-      : best >= course.unlock
+      : best >= BRONZE_SCORE
         ? 'bronze'
         : 'none';
 

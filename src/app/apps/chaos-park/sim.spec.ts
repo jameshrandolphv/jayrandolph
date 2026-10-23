@@ -33,7 +33,7 @@ import {
   type Kind,
   type PickupKind,
 } from './constants';
-import { COURSES, COURSE_IDS, medalFor, unlocked, type CourseId } from './courses';
+import { COURSES, COURSE_IDS, WAVE_SWELL, medalFor, unlocked, type CourseId } from './courses';
 import { ChaosParkGame, frameFor, placePark, screenToPark } from './game';
 import { generatePark, laneOffset, pose, seededRng, wrap } from './park';
 import {
@@ -323,11 +323,11 @@ describe('ChaosParkSim', () => {
     expect(maxMovers(10_000)).toBe(26);
   });
 
-  it('let a fourth and fifth in sooner, then ramp up half as fast after ten laps', () => {
+  it('let a fourth and fifth in over the first laps, then ramp up at 0.4 of the pace after ten', () => {
     expect([0, 3, 6, 10, 20, 30, 50, 100, 150, 190].map((l) => maxMovers(l))).toEqual([
-      3, 4, 5, 5, 6, 8, 10, 16, 22, 26,
+      3, 3, 4, 5, 5, 6, 8, 12, 16, 23,
     ]);
-    expect([0, 10, 30, 50].map(level)).toEqual([0, 10, 20, 30]);
+    expect([0, 10, 30, 50].map(level)).toEqual([0, 10, 18, 26]);
   });
 
   it('moves to game over after the crash and locks out a hasty retry', () => {
@@ -1228,17 +1228,17 @@ describe('courses', () => {
     expect(COURSE_IDS.map((id) => COURSES[id].unlock)).toEqual([25, 30, 35, 40, 45]);
   });
 
-  it('give bronze at the unlock score, silver 15 more and gold 75 more', () => {
-    const waters = COURSES.waters;
-    expect([0, 29, 30, 44, 45, 104, 105].map((b) => medalFor(waters, b))).toEqual([
-      'none',
-      'none',
-      'bronze',
-      'bronze',
-      'silver',
-      'silver',
-      'gold',
-    ]);
+  it('give bronze at 25, silver at 50 and gold at 100 on every course', () => {
+    for (const id of COURSE_IDS)
+      expect([0, 24, 25, 49, 50, 99, 100].map((b) => medalFor(COURSES[id], b))).toEqual([
+        'none',
+        'none',
+        'bronze',
+        'bronze',
+        'silver',
+        'silver',
+        'gold',
+      ]);
   });
 
   it('make Chaos Park as before, Jungle Jam a five-lane figure of eight and the mansion five lanes round a hall', () => {
@@ -1258,7 +1258,7 @@ describe('courses', () => {
   it('start later courses further up the difficulty ramp', () => {
     expect(maxMovers(0, COURSES.mansion.levelOffset)).toBeGreaterThan(maxMovers(0));
     const sim = new ChaosParkSim(seededRng(1), COURSES.jungle);
-    expect(sim.level).toBe(9);
+    expect(sim.level).toBe(5);
   });
 
   it('can be changed on the title card, with a new park', () => {
@@ -1494,6 +1494,27 @@ describe('rapids', () => {
     expect(wrap(fast.s - a, sim.park.track.length)).toBeGreaterThan(
       wrap(plain.s - b, sim.park.track.length) * 1.2,
     );
+  });
+});
+
+describe('waves', () => {
+  it('push whoever they roll past one lane on, once, and nobody away from them', () => {
+    const sim = onCourse('waters');
+    const near = put(sim, 'walker', 200, 1, { speed: 0.01 });
+    const edge = put(sim, 'walker', 220, 3, { speed: 0.01 });
+    const far = put(sim, 'walker', 600, 1, { speed: 0.01 });
+    sim.waves = [{ id: 1, s: 200, q: 0, dir: 1, state: 'swell', ticks: 0, hit: [] }];
+    ticks(sim, WAVE_SWELL + 10);
+    expect(near.target).toBe(1);
+    ticks(sim, 60);
+    expect(near.target).toBe(2);
+    expect(edge.target).toBe(3);
+    expect(far.target).toBe(1);
+    expect(sim.waves).toEqual([]);
+  });
+
+  it('only come on Wild Waters', () => {
+    expect(COURSE_IDS.filter((id) => COURSES[id].waves)).toEqual(['waters']);
   });
 });
 

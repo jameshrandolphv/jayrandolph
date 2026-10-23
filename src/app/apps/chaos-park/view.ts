@@ -41,6 +41,7 @@ import {
 } from './art';
 import {
   BACK_BUTTON,
+  STREAK_LAPS,
   BUTTON_TEXT,
   CARD,
   HELP_CARD,
@@ -66,7 +67,8 @@ import {
 } from './constants';
 import { placePark, type ChaosParkGame } from './game';
 import { noticeBoard, plaqueButton, roundPauseButton, trophy } from './ui';
-import type { Park } from './park';
+import { laneOffset, pose, type Park } from './park';
+import { WAVE_LEN, WAVE_RATE, WAVE_SWELL } from './courses';
 import { duskAt, lapsLeft, patchesShown, streakValue, type Mover } from './sim';
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
@@ -148,6 +150,20 @@ interface Counter {
 }
 
 const COUNTER = { w: 108, h: 36, digits: 5 };
+/** The streak's glow round the edges of the screen: how far in it reaches, in how many bands. */
+const STREAK_GLOW_WIDTH = 34;
+const STREAK_GLOW_BANDS = 10;
+/** Ticks the streak's words stay up (popping in, then fading), and when the glow starts to come up. */
+const STREAK_TEXT_TICKS = 100;
+const STREAK_GLOW_FROM = 60;
+const STREAK_GLOW_IN = 30;
+
+/** The streak's words and glow `t` ticks after it was reached: their opacity, and the words' scale. */
+export const streakLook = (t: number): { text: number; scale: number; glow: number } => ({
+  text: t < 0 || t >= STREAK_TEXT_TICKS ? 0 : Math.min(1, (STREAK_TEXT_TICKS - t) / 25),
+  scale: 0.6 + 0.4 * easeOut(Math.min(1, Math.max(0, t) / 12)),
+  glow: Math.min(1, Math.max(0, (t - STREAK_GLOW_FROM) / STREAK_GLOW_IN)),
+});
 /** Bangers' line box sits its digits low; this centres the ink rather than the box. */
 const DIGIT_DROP = -3;
 
@@ -180,9 +196,15 @@ export class ChaosParkView {
   /** Dusk, over the park, and the headlights that shine through it. */
   private readonly duskShade = new Graphics();
   private readonly lights = new Graphics();
-  /** "STREAK x2" after the hearts, while laps are worth more than one. */
+  /**
+   * "10 STREAK" in the middle of the screen for a moment as each streak is reached, then a glow round the edges of the
+   * screen for as long as it lasts.
+   */
   private readonly streakText: Text;
+  private readonly streakGlow = new Graphics();
   private shownStreak = -1;
+  private streakAt = -Infinity;
+  private glowKey = '';
   private readonly hud = new Container();
   private readonly hudLeft = new Container();
   private readonly hudRight = new Container();
@@ -234,13 +256,13 @@ export class ChaosParkView {
       this.hearts.push(h);
       this.hudLeft.addChild(h);
     }
-    this.streakText = label('', 24, 0xffffff, {
-      stroke: { color: COLORS.red, width: 6, join: 'round' },
-      letterSpacing: 1,
+    this.streakText = label('', 64, 0xffffff, {
+      stroke: { color: COLORS.red, width: 10, join: 'round' },
+      letterSpacing: 2,
+      padding: 16,
     });
-    this.streakText.anchor.set(0, 0.5);
-    this.streakText.position.set(this.lapsText.box.x + COUNTER.w / 2 + 14 + MAX_LIVES * 30, 32);
-    this.hudLeft.addChild(this.streakText);
+    this.streakText.anchor.set(0.5);
+    this.streakText.visible = false;
     const best = label('BEST:', 28, COLORS.ink, {
       stroke: { color: 0xffffff, width: 5, join: 'round' },
       letterSpacing: 1,
@@ -250,7 +272,13 @@ export class ChaosParkView {
     this.bestText.box.position.set(-78, 32);
     this.hudRight.addChild(best, this.bestText.box);
     this.pauseButton = roundPauseButton();
-    this.hud.addChild(this.hudLeft, this.hudRight, this.pauseButton);
+    this.hud.addChild(
+      this.streakGlow,
+      this.streakText,
+      this.hudLeft,
+      this.hudRight,
+      this.pauseButton,
+    );
 
     this.titleBest = label('0', 54, COLORS.ink, {});
     // Padding keeps the slanted digits and their outline from being clipped at the edge of the text texture.
@@ -297,7 +325,7 @@ export class ChaosParkView {
     this.syncPickups();
     this.syncImpacts();
     this.syncHearts();
-    this.syncStreak();
+    this.syncStreak(bounds);
     this.syncDusk(alpha);
 
     this.hud.visible = inPlay || phase === 'gameOver';
@@ -584,8 +612,22 @@ export class ChaosParkView {
 
   /** The fisherman and his hook, and any tumbleweed. */
   private syncCourse(alpha: number): void {
-    const { hooks, weeds, clock } = this.game.sim;
+    const { hooks, weeds, waves, clock, park } = this.game.sim;
     const g = this.courseLayer.clear();
+    // A wave: a white crest bowed the way it rolls, rising at the bank, then sweeping across.
+    for (const w of waves) {
+      const rolling = w.state === 'roll';
+      const q = rolling ? w.q + w.dir * WAVE_RATE * alpha : w.q;
+      const rise = rolling ? 1 : Math.min(1, (w.ticks + alpha) / WAVE_SWELL);
+      const len = WAVE_LEN * ART;
+      const crest = Array.from({ length: 13 }, (_, i) => {
+        const bow = Math.sin((i / 12) * Math.PI) * 8 * rise * w.dir;
+        const p = pose(park.track, w.s - len / 2 + (len * i) / 12, laneOffset(q, 0, park) + bow);
+        return { x: p.x, y: p.y };
+      });
+      g.poly(crest, false).stroke({ width: 9 * rise, color: 0x2f7fa8, alpha: 0.35, cap: 'round' });
+      g.poly(crest, false).stroke({ width: 4 * rise, color: 0xffffff, alpha: 0.85, cap: 'round' });
+    }
     for (const h of hooks)
       drawHook(g, h.from, h.x, h.y, h.state === 'cast' ? h.ticks / HOOK_CAST : 1, clock);
     for (const w of weeds) {
@@ -725,12 +767,46 @@ export class ChaosParkView {
   }
 
   /** A heart for each life left; a lost one simply goes, and one just gained grows in. */
-  private syncStreak(): void {
-    const value = streakValue(this.game.sim.cleanLaps);
-    if (value === this.shownStreak) return;
-    this.shownStreak = value;
-    this.streakText.visible = value > 1;
-    this.streakText.text = `STREAK x${value}`;
+  private syncStreak(b: Bounds): void {
+    const { sim } = this.game;
+    const value = streakValue(sim.cleanLaps);
+    if (value !== this.shownStreak) {
+      if (value > this.shownStreak && this.shownStreak >= 1) {
+        this.streakAt = sim.clock;
+        this.streakText.text = `${(value - 1) * STREAK_LAPS} STREAK`;
+      }
+      this.shownStreak = value;
+    }
+    const t = sim.clock - this.streakAt;
+    const look = streakLook(t);
+    this.streakText.visible = look.text > 0;
+    this.streakText.alpha = look.text;
+    this.streakText.scale.set(look.scale);
+    this.streakText.position.set((b.left + b.right) / 2, (b.top + b.bottom) / 2);
+    const on = value > 1 && (sim.phase === 'playing' || sim.phase === 'crashed');
+    this.streakGlow.visible = on && look.glow > 0;
+    if (!this.streakGlow.visible) return;
+    const key = `${b.left},${b.top},${b.right},${b.bottom}`;
+    if (key !== this.glowKey) {
+      this.glowKey = key;
+      const g = this.streakGlow.clear();
+      // Bands from the edge inwards, each fainter than the last.
+      for (let i = 0; i < STREAK_GLOW_BANDS; i++) {
+        const w = STREAK_GLOW_WIDTH / STREAK_GLOW_BANDS;
+        const inset = i * w + w / 2;
+        g.rect(
+          b.left + inset,
+          b.top + inset,
+          b.right - b.left - inset * 2,
+          b.bottom - b.top - inset * 2,
+        ).stroke({
+          width: w,
+          color: COLORS.gold,
+          alpha: 0.55 * (1 - i / STREAK_GLOW_BANDS) ** 2,
+        });
+      }
+    }
+    this.streakGlow.alpha = look.glow * (0.8 + 0.2 * Math.sin(sim.clock * 0.08));
   }
 
   /** Darkens the park as dusk falls late in a run, with cars' headlights shining ahead of them. */

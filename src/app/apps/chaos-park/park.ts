@@ -558,7 +558,7 @@ const switchbackOutline = (
   // A mirror image runs the other way round; put it back counterclockwise.
   if (fx * fy < 0) unit.reverse();
   const corners = placeCorners(unit, frame, half, 0.9 + rng() * 0.08, 0.92 + rng() * 0.06);
-  const radii = corners.map(() => cornerRadius(half) * (1.03 + rng() * 0.15));
+  const radii = corners.map(() => cornerRadius(half) * CORNER_SOFTEN * (1.03 + rng() * 0.15));
   return roundedPolygon(corners, (i) => radii[i]!);
 };
 
@@ -603,7 +603,7 @@ const manorOutline = (
     [1 - cut * k, 1],
     [1, 1 - cut],
   ];
-  const r = cornerRadius(half) * (1.03 + rng() * 0.1);
+  const r = cornerRadius(half) * CORNER_SOFTEN * (1.03 + rng() * 0.1);
   return roundedPolygon(placeCorners(unit, frame, half, sx, sy), () => r);
 };
 
@@ -638,9 +638,40 @@ const eightOutline = (
     [x1, 1],
   ].map(([u, v]) => [u!, v! * flip]);
   if (flip < 0) unit.reverse();
-  const r = cornerRadius(half) * (1.03 + rng() * 0.1);
+  const r = cornerRadius(half) * CORNER_SOFTEN * (1.03 + rng() * 0.1);
   return roundedPolygon(placeCorners(unit, frame, half, sx, sy), () => r);
 };
+
+/**
+ * Softens a closed outline so its corners and kinks read as curves: evenly resampled, then each point moved to the
+ * average of those within `reach` px either way along it, twice.
+ */
+const softened = (raw: readonly Point[], reach: number): Point[] => {
+  const even = buildTrack(raw);
+  let points = even.points;
+  const n = points.length;
+  const w = Math.max(1, Math.round(reach / even.step));
+  for (let pass = 0; pass < 2; pass++) {
+    const from = points;
+    points = from.map((_, i) => {
+      let x = 0;
+      let y = 0;
+      for (let j = -w; j <= w; j++) {
+        const p = from[(i + j + n) % n]!;
+        x += p.x;
+        y += p.y;
+      }
+      return { x: x / (w * 2 + 1), y: y / (w * 2 + 1) };
+    });
+  }
+  return points;
+};
+
+/**
+ * How far along the road a switchback's, manor's or figure of eight's outline is averaged out (see `softened`), as
+ * shares of its length: the most first, then less where that tightens a bend too far.
+ */
+const SOFTEN_REACH = [0.022, 0.014, 0.007];
 
 /** Resamples a closed outline to evenly spaced points and works out its directions. */
 export const buildTrack = (raw: readonly Point[], samples = TRACK_SAMPLES): Track => {
@@ -701,6 +732,12 @@ const minRadius = (half: number): number => (half + 16) / 0.85;
  */
 const cornerRadius = (half: number): number => half / 0.84;
 
+/**
+ * How much rounder than `cornerRadius` the corners are drawn, where their sides leave room, so the road reads as
+ * curves rather than a polygon.
+ */
+const CORNER_SOFTEN = 1.25;
+
 const fits = (track: Track, frame: ParkFrame, half: number, radius = minRadius(half)): boolean => {
   const m = frameMargins(frame);
   const within = (p: Point) =>
@@ -712,6 +749,28 @@ const fits = (track: Track, frame: ParkFrame, half: number, radius = minRadius(h
     edge(track, -half).every(within)
   );
 };
+
+/**
+ * Whether the road keeps clear of itself across the middle: every point of its inner edge at least `MIDDLE_GAP` further
+ * than the road's half width from the centre line anywhere not just beside it.
+ */
+const clearOfItself = (track: Track, half: number): boolean => {
+  const inner = edge(track, -half);
+  const n = track.points.length;
+  const near = Math.ceil((half * 4) / track.step);
+  const least = (half + MIDDLE_GAP) ** 2;
+  for (let i = 0; i < n; i++) {
+    const p = inner[i]!;
+    for (let j = 0; j < n; j++) {
+      const apart = Math.abs(i - j);
+      if (Math.min(apart, n - apart) <= near) continue;
+      const q = track.points[j]!;
+      if ((p.x - q.x) ** 2 + (p.y - q.y) ** 2 < least) return false;
+    }
+  }
+  return true;
+};
+const MIDDLE_GAP = 6;
 
 const makeTrack = (
   rng: () => number,
@@ -731,9 +790,16 @@ const makeTrack = (
           : layout === 'eight'
             ? eightOutline(rng, frame, half, Math.max(0.5, 1.1 - tries / 80))
             : loopOutline(rng, frame, half, amount);
+    const radius = layout === 'loop' ? minRadius(half) : cornerRadius(half);
+    // Softened where that still fits: averaging tightens a bend that is already as tight as it can go.
     const track = buildTrack(raw);
-    if (fits(track, frame, half, layout === 'loop' ? minRadius(half) : cornerRadius(half)))
-      return track;
+    if (layout !== 'loop')
+      for (const share of SOFTEN_REACH) {
+        const soft = buildTrack(softened(raw, track.length * share));
+        if (fits(soft, frame, half, radius) && (layout === 'eight' || clearOfItself(soft, half)))
+          return soft;
+      }
+    if (fits(track, frame, half, radius)) return track;
   }
 
   // A plain rounded rectangle always fits and, however long or square the screen, still reaches its edges.

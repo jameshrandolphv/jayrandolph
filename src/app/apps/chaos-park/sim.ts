@@ -104,6 +104,11 @@ import {
   WILD_GAP,
   TRAIN_LANE,
   TRAIN_LEN,
+  WAVE_FROM_SCORE,
+  WAVE_INTERVAL,
+  WAVE_LEN,
+  WAVE_RATE,
+  WAVE_SWELL,
   type CourseId,
   type CourseSpec,
 } from './courses';
@@ -158,7 +163,8 @@ export type SimEvent =
   | 'roll'
   | 'sting'
   | 'haunt'
-  | 'slime';
+  | 'slime'
+  | 'wave';
 
 /**
  * Where a mover is: walking in from the street, on the loop, cutting across the park, or heading out. Only movers on
@@ -305,6 +311,20 @@ export interface Tumbleweed {
   prevY: number;
 }
 
+/**
+ * A wave at `s`: swelling at the bank, then rolling across the lanes (`q` is how far across its front is, in lanes from
+ * the inside, moving by `dir`). `hit` holds whoever it has already pushed.
+ */
+export interface Wave {
+  id: number;
+  s: number;
+  q: number;
+  dir: 1 | -1;
+  state: 'swell' | 'roll';
+  ticks: number;
+  hit: number[];
+}
+
 /** A burst where two movers collided without ending the run. */
 export interface Impact {
   id: number;
@@ -414,6 +434,7 @@ export class ChaosParkSim {
   pickups: Pickup[] = [];
   hooks: Hook[] = [];
   weeds: Tumbleweed[] = [];
+  waves: Wave[] = [];
   /** Ticks left of a time warp, from taking a spiral: see `timeScale`. */
   warp = 0;
   impacts: Impact[] = [];
@@ -433,6 +454,7 @@ export class ChaosParkSim {
   private pickupTimer = 0;
   private predatorTimer = 0;
   private eventTimer = 0;
+  private waveTimer = 0;
   /** Pairs already warned about, so the alert sounds once per close call. */
   private warnedPairs = new Set<string>();
   /** Pairs that have collided and are still overlapping as one passes the other; they don't collide again. */
@@ -634,6 +656,7 @@ export class ChaosParkSim {
     this.moveHooks();
     this.moveWeeds();
     if (this.phase !== 'playing') return;
+    this.moveWaves();
     for (const i of this.impacts) i.ticks++;
     this.impacts = this.impacts.filter((i) => i.ticks < IMPACT_TICKS);
     for (const p of this.pops) p.ticks++;
@@ -1175,6 +1198,11 @@ export class ChaosParkSim {
       if (this.eventTimer <= 0) this.eventTimer = between(EVENT_INTERVAL) / 2;
       else if (--this.eventTimer <= 0)
         this.eventTimer = this.startEvent() ? between(EVENT_INTERVAL) : 120;
+    }
+    // Waves, one at a time, on their own timer.
+    if (this.course.waves && this.laps >= WAVE_FROM_SCORE && !this.waves.length) {
+      if (this.waveTimer <= 0) this.waveTimer = between(WAVE_INTERVAL);
+      else if (--this.waveTimer <= 0 && !this.sendWave()) this.waveTimer = 30;
     }
     // One pick-up at a time: the next is timed from when the last one went.
     if (this.laps >= PICKUP_FROM_SCORE && !this.pickups.length) {
@@ -1868,6 +1896,59 @@ export class ChaosParkSim {
     return true;
   }
 
+  /** A wave swells up at the bank, inside or out, somewhere in the open. */
+  private sendWave(): boolean {
+    const { track, lanes } = this.park;
+    const s = this.rng() * track.length;
+    const dir: 1 | -1 = this.rng() < 0.5 ? 1 : -1;
+    if (underCover(this.park.cover, s, track.length) || onBridge(this.park.bridge, s, track.length))
+      return false;
+    this.waves.push({
+      id: this.nextId++,
+      s,
+      q: dir > 0 ? 0 : lanes,
+      dir,
+      state: 'swell',
+      ticks: 0,
+      hit: [],
+    });
+    this.events.push('wave');
+    return true;
+  }
+
+  /**
+   * A rolling wave pushes whoever its front passes one lane the way it is going, once each, unless they are invisible,
+   * dazed, the train, or already in the last lane that way.
+   */
+  private moveWaves(): void {
+    const { track, lanes } = this.park;
+    for (const w of this.waves) {
+      w.ticks++;
+      if (w.state === 'swell') {
+        if (w.ticks >= WAVE_SWELL) {
+          w.state = 'roll';
+          w.ticks = 0;
+        }
+        continue;
+      }
+      w.q += WAVE_RATE * w.dir;
+      for (const m of this.movers) {
+        if (m.state !== 'track' || w.hit.includes(m.id)) continue;
+        if (Math.abs(loopDelta(w.s, m.s, track.length)) >= (WAVE_LEN * ART + m.len) / 2) continue;
+        const middle = m.p + m.width / 2;
+        if (w.dir > 0 ? w.q < middle : w.q > middle) continue;
+        w.hit.push(m.id);
+        if (m.ghost > 0 || m.daze > 0 || this.isTrain(m)) continue;
+        const next = m.target + w.dir;
+        if (next < 0 || next > lanes - m.width || !this.canChange(m, next)) continue;
+        m.target = next;
+        this.events.push('shift');
+      }
+      if (w.q < 0 || w.q > lanes) w.ticks = -1;
+    }
+    this.waves = this.waves.filter((w) => w.ticks >= 0);
+  }
+
   /** Whoever a rolling tumbleweed touches has collided with it, unless invisible; a star breaks it up. */
   private moveWeeds(): void {
     const { track, lanes } = this.park;
@@ -1933,8 +2014,10 @@ export class ChaosParkSim {
     this.pickupTimer = 0;
     this.predatorTimer = 0;
     this.eventTimer = 0;
+    this.waveTimer = 0;
     this.hooks = [];
     this.weeds = [];
+    this.waves = [];
     this.playTicks = 0;
     this.warnedPairs.clear();
   }
