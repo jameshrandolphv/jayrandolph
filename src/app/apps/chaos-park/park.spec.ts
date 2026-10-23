@@ -16,6 +16,7 @@ import {
   wrap,
   type ParkFrame,
 } from './park';
+import { COURSES, COURSE_IDS } from './courses';
 
 const SEEDS = Array.from({ length: 60 }, (_, i) => i + 1);
 
@@ -84,6 +85,33 @@ describe('generatePark', () => {
       }
     }
   });
+
+  // One test per course, so each gets its own time limit.
+  for (const id of COURSE_IDS) {
+    it(`fits ${id}'s layout on phones and tablets without folding a lane`, () => {
+      const phones: ParkFrame[] = [
+        { w: 759, h: 393, hud: 'left' },
+        { w: 734, h: 372, hud: 'top' },
+        { w: 667, h: 355, hud: 'left' },
+        { w: 1342, h: 1004, hud: 'top' },
+      ];
+      const course = COURSES[id];
+      for (const frame of [...FRAMES, ...phones]) {
+        const m = frameMargins(frame);
+        for (const seed of SEEDS.slice(0, 6)) {
+          const park = generatePark(seededRng(seed), undefined, frame, course);
+          const out = [...edge(park.track, park.half), ...edge(park.track, -park.half)].filter(
+            (p) =>
+              !(p.x > m.left && p.x < frame.w - m.right && p.y > m.top && p.y < frame.h - m.bottom),
+          );
+          expect(out, `${id} ${frame.w}x${frame.h}, seed ${seed}`).toEqual([]);
+          expect(maxCurvature(park.track) * park.half).toBeLessThan(0.9);
+          if (course.layout === 'eight') expect(park.bridge).not.toBeNull();
+          if (course.layout === 'manor' && frame.h > 500) expect(park.shortcuts).toHaveLength(1);
+        }
+      }
+    });
+  }
 
   it('runs counterclockwise on screen with the normals pointing out', () => {
     for (const seed of SEEDS.slice(0, 10)) {

@@ -161,6 +161,12 @@ export const PREDATOR_FROM_SCORE = 8;
 export const PREDATOR_INTERVAL: readonly [number, number] = [40 * 60, 70 * 60];
 export const PREDATOR_TURN = 50;
 export const PREDATOR_SIGHT = 160 * ART;
+/**
+ * With nobody in sight, a predator that hasn't moved lane for `PREDATOR_WANDER` ticks has this chance each tick of
+ * wandering a lane either way.
+ */
+export const PREDATOR_WANDER = 90;
+export const PREDATOR_WANDER_CHANCE = 0.02;
 
 /** A course's own event (see `CourseEvent`) comes every `EVENT_INTERVAL` ticks from `EVENT_FROM_SCORE` laps. */
 export const EVENT_FROM_SCORE = 6;

@@ -24,18 +24,29 @@ export type Obstacle = 'slip' | 'steer' | 'slime';
  */
 export type CourseEvent = 'none' | 'hook' | 'tumbleweed' | 'sting' | 'haunt';
 
-/** A stretch of the loop drawn under cover: an arch, a big vine, or the mansion, which the inner two lanes go through. */
-export type Cover = 'none' | 'arch' | 'vine' | 'mansion';
+/** A stretch of the loop drawn under cover: an arch of rock, or a big vine across the road. */
+export type Cover = 'none' | 'arch' | 'vine';
+
+/**
+ * The shape of a course's road:
+ * - loop: a rounded rectangle with a few gentle bends (bent further by `bend`, and winding like a river if `river`);
+ * - switchback: an uneven polygon of straights and tight corners, like a road through a canyon;
+ * - eight: a figure of eight, one way over the other on a bridge where they cross;
+ * - manor: a formal drive, a rectangle with its corners cut off, round a house in the middle with a hall through it
+ *   from one side of the road to the other that people now and then take (see `Shortcut`).
+ */
+export type Layout = 'loop' | 'switchback' | 'eight' | 'manor';
 
 export interface CourseSpec {
   id: CourseId;
   name: string;
   lanes: number;
   /**
-   * How wide each lane is. The mansion's five are narrower, so its road is no wider than the others' four and still
-   * fits a phone; people and vehicles are drawn the same size.
+   * How wide each lane is. Five lanes are narrower, so the road is no wider than four and still fits a phone; people
+   * and vehicles are drawn the same size.
    */
   laneW: number;
+  layout: Layout;
   /** How strong the loop's bends are, times Chaos Park's. */
   bend: number;
   /** Whether the loop winds like a river, its bends easing off only as far as they must to fit. */
@@ -52,7 +63,10 @@ export interface CourseSpec {
   cover: Cover;
   /** Whether the park has footpaths across its middle, and short cuts along them. */
   paths: boolean;
-  /** Whether a short stretch of the loop is rapids, where everyone goes `RAPIDS_SPEED` times faster. */
+  /**
+   * Whether one or two lanes have a short stretch of rapids, each its own length, where whoever is in that lane goes
+   * `RAPIDS_SPEED` times faster.
+   */
   rapids: boolean;
   /**
    * Whether the carriage is a train instead: one lane wide (`TRAIN_LEN` long), always in lane `TRAIN_LANE`, never
@@ -82,6 +96,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     name: 'Chaos Park',
     lanes: 4,
     laneW: 30,
+    layout: 'loop',
     bend: 1,
     river: false,
     levelOffset: 0,
@@ -103,6 +118,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     name: 'Wild Waters',
     lanes: 4,
     laneW: 30,
+    layout: 'loop',
     bend: 3,
     river: true,
     levelOffset: 3,
@@ -124,6 +140,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     name: 'Dusty Canyon',
     lanes: 4,
     laneW: 30,
+    layout: 'switchback',
     bend: 1.5,
     river: false,
     levelOffset: 6,
@@ -143,8 +160,9 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
   jungle: {
     id: 'jungle',
     name: 'Jungle Jam',
-    lanes: 4,
-    laneW: 30,
+    lanes: 5,
+    laneW: 24,
+    layout: 'eight',
     bend: 2,
     river: false,
     levelOffset: 9,
@@ -154,7 +172,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     obstacle: 'steer',
     event: 'sting',
     cover: 'vine',
-    paths: true,
+    paths: false,
     rapids: false,
     train: false,
     slowCars: false,
@@ -166,6 +184,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     name: 'Haunted Mansion',
     lanes: 5,
     laneW: 24,
+    layout: 'manor',
     bend: 2.5,
     river: false,
     levelOffset: 12,
@@ -174,7 +193,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     predator: true,
     obstacle: 'slime',
     event: 'haunt',
-    cover: 'mansion',
+    cover: 'none',
     paths: false,
     rapids: false,
     train: false,
@@ -184,9 +203,13 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
   },
 };
 
-/** How much faster everyone goes on a course's rapids, and how long the rapids are. */
+/**
+ * How much faster anyone in a lane of rapids goes, and how long each lane's rapids are; a second lane alongside has
+ * rapids `RAPIDS_SECOND` of the time.
+ */
 export const RAPIDS_SPEED = 1.25;
-export const RAPIDS_LEN: readonly [number, number] = [80, 110];
+export const RAPIDS_LEN: readonly [number, number] = [60, 150];
+export const RAPIDS_SECOND = 0.5;
 
 /** A course's train: its lane (counted from the inside) and length at the design lane width. */
 export const TRAIN_LANE = 1;

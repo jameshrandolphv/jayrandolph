@@ -67,6 +67,8 @@ import {
   PREDATOR_FROM_SCORE,
   PREDATOR_INTERVAL,
   PREDATOR_SIGHT,
+  PREDATOR_WANDER,
+  PREDATOR_WANDER_CHANCE,
   PREDATOR_TURN,
   SHOUT_COOLDOWN,
   SHOUT_TICKS,
@@ -109,7 +111,10 @@ import {
   DEFAULT_FRAME,
   generatePark,
   laneOffset,
+  inRapids,
   loopDelta,
+  nearPolyline,
+  onBridge,
   pose,
   underCover,
   wrap,
@@ -651,7 +656,9 @@ export class ChaosParkSim {
     if (m.swerve > 0) this.swerveStep(m);
     const from = m.s;
     // Faster through the rapids.
-    const pace = underCover(this.park.rapids, m.s, track.length) ? m.speed * RAPIDS_SPEED : m.speed;
+    const pace = inRapids(this.park.rapids, m.s, m.p, m.width, track.length)
+      ? m.speed * RAPIDS_SPEED
+      : m.speed;
     const delta = pace * m.dir;
     m.s = wrap(m.s + delta, track.length);
     if (m.p !== m.target) m.p += Math.max(-LANE_RATE, Math.min(LANE_RATE, m.target - m.p));
@@ -785,7 +792,10 @@ export class ChaosParkSim {
 
   private leaveWild(m: Mover): void {
     const { track, half, lanes } = this.park;
-    const side = m.p + m.width / 2 < lanes / 2 ? -1 : 1;
+    const near = m.p + m.width / 2 < lanes / 2 ? -1 : 1;
+    // On a figure of eight, not into the other road: the far side if the near one is blocked, or on a little further.
+    const side = this.clearOfRoad(m.s, near) ? near : this.clearOfRoad(m.s, -near) ? -near : 0;
+    if (side === 0) return;
     const edge = pose(track, m.s, side * (half + 4));
     const out = pose(track, m.s, side * (half + WILD_DEPTH));
     m.state = 'leaving';
@@ -799,6 +809,17 @@ export class ChaosParkSim {
       ],
       null,
     );
+  }
+
+  /**
+   * Whether the trees `WILD_DEPTH` out from the road at `s`, on `side`, are clear of any other road: always on a loop,
+   * not near where a figure of eight's halves meet.
+   */
+  private clearOfRoad(s: number, side: number): boolean {
+    if (!this.park.bridge) return true;
+    const { track, half } = this.park;
+    const out = pose(track, s, side * (half + WILD_DEPTH));
+    return !nearPolyline(track.points, out, half + 8, true);
   }
 
   // -------------------------------------------------------------------------------------------------------------
@@ -870,17 +891,9 @@ export class ChaosParkSim {
     }
   }
 
-  /**
-   * Whether a mover may change to `lane` here: not on the mansion's stretch, where the inner two lanes go through the
-   * mansion and a wall parts them from the rest.
-   */
-  private canChange(m: Mover, lane: number): boolean {
-    if (this.isTrain(m)) return false;
-    if (this.course.cover !== 'mansion') return true;
-    const { cover, track } = this.park;
-    if (!underCover(cover, m.s, track.length)) return true;
-    const inside = (p: number) => p < 2;
-    return inside(lane) === inside(m.p) && inside(lane + m.width - 1) === inside(m.p + m.width - 1);
+  /** Whether a mover may change to `lane`: anyone but the course's train. */
+  private canChange(m: Mover, _lane: number): boolean {
+    return !this.isTrain(m);
   }
 
   /** Whether a mover is the course's train, which keeps to its lane whatever happens. */
@@ -1067,9 +1080,23 @@ export class ChaosParkSim {
         prey = o;
       }
     }
-    if (!prey) return;
-    const lane =
-      prey.target < m.target ? m.target - 1 : prey.target > m.target ? m.target + 1 : m.target;
+    let lane = !prey
+      ? m.target
+      : prey.target < m.target
+        ? m.target - 1
+        : prey.target > m.target
+          ? m.target + 1
+          : m.target;
+    // With nobody to go for, it wanders a lane now and then of its own accord.
+    if (
+      !prey &&
+      this.playTicks - m.turnedAt >= PREDATOR_WANDER &&
+      this.rng() < PREDATOR_WANDER_CHANCE
+    ) {
+      const up =
+        m.target === 0 ? true : m.target >= this.park.lanes - m.width ? false : this.rng() < 0.5;
+      lane = m.target + (up ? 1 : -1);
+    }
     if (lane === m.target || !this.canChange(m, lane)) return;
     m.target = lane;
     m.turnedAt = this.playTicks;
@@ -1177,6 +1204,7 @@ export class ChaosParkSim {
     }
     const s = this.rng() * track.length;
     const lane = Math.floor(this.rng() * this.park.lanes);
+    if (onBridge(this.park.bridge, s, track.length)) return false;
     for (const m of this.movers) {
       if (m.state !== 'track') continue;
       if (
@@ -1458,7 +1486,7 @@ export class ChaosParkSim {
     m.entrance = e.id;
     m.state = 'arriving';
     m.alpha = 0;
-    const p = this.isTrain(m) ? TRAIN_LANE : this.park.lanes - m.width;
+    const p = this.isTrain(m) ? TRAIN_LANE : e.side > 0 ? this.park.lanes - m.width : 0;
     const merge = pose(track, e.s, laneOffset(p, m.width, this.park));
     this.setRoute(m, [e.street, e.gate, e.throat, { x: merge.x, y: merge.y }], { s: e.s, p });
     m.x = m.prevX = e.street.x;
@@ -1476,6 +1504,9 @@ export class ChaosParkSim {
     const { track, half, lanes } = this.park;
     const s = this.rng() * track.length;
     const inside = this.rng() < 0.5;
+    // Not where a figure of eight's other road (or its bridge) is right there.
+    if (onBridge(this.park.bridge, s, track.length) || !this.clearOfRoad(s, inside ? -1 : 1))
+      return false;
     if (
       this.movers.some(
         (o) =>
@@ -1749,7 +1780,8 @@ export class ChaosParkSim {
     const { track, lanes, half } = this.park;
     const s = this.rng() * track.length;
     const lane = Math.floor(this.rng() * lanes);
-    if (underCover(this.park.cover, s, track.length)) return false;
+    if (underCover(this.park.cover, s, track.length) || onBridge(this.park.bridge, s, track.length))
+      return false;
     for (const m of this.movers) {
       if (m.state !== 'track') continue;
       if (
@@ -1816,7 +1848,8 @@ export class ChaosParkSim {
     const { track, lanes } = this.park;
     const s = this.rng() * track.length;
     const dir: 1 | -1 = this.rng() < 0.5 ? 1 : -1;
-    if (underCover(this.park.cover, s, track.length)) return false;
+    if (underCover(this.park.cover, s, track.length) || onBridge(this.park.bridge, s, track.length))
+      return false;
     const q = dir > 0 ? -1.2 : lanes + 0.2;
     const at = pose(track, s, laneOffset(q, 1, this.park));
     this.weeds.push({

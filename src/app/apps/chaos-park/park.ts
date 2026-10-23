@@ -13,7 +13,14 @@ import {
   WALL_RADIUS,
   type Rect,
 } from './constants';
-import { COURSES, RAPIDS_LEN, TRAIN_LANE, type CourseId, type CourseSpec } from './courses';
+import {
+  COURSES,
+  RAPIDS_LEN,
+  RAPIDS_SECOND,
+  TRAIN_LANE,
+  type CourseId,
+  type CourseSpec,
+} from './courses';
 
 export interface Point {
   x: number;
@@ -81,6 +88,11 @@ export interface Entrance {
   street: Point;
   gate: Point;
   throat: Point;
+  /**
+   * Which side of the road it comes in on: 1 outward (the outer lane), as on every loop; -1 the other way (the inner
+   * lane), where a figure of eight's normals point into its other half.
+   */
+  side: 1 | -1;
 }
 
 /** A path across the middle of the park between two points on the loop's inner edge. */
@@ -141,6 +153,21 @@ export interface Covered {
   len: number;
 }
 
+/** A stretch of rapids in one lane. */
+export interface Rapid extends Covered {
+  lane: number;
+}
+
+/**
+ * Where a figure of eight crosses itself: the stretch of road that goes over on the bridge, the stretch that goes
+ * under it, and the point where they cross.
+ */
+export interface Bridge {
+  over: Covered;
+  under: Covered;
+  at: Point;
+}
+
 export interface Park {
   season: Season;
   frame: ParkFrame;
@@ -150,8 +177,10 @@ export interface Park {
   laneW: number;
   half: number;
   cover: Covered | null;
-  /** The stretch of rapids, on a course that has them (see `CourseSpec.rapids`). */
-  rapids: Covered | null;
+  /** The lanes' stretches of rapids, on a course that has them (see `CourseSpec.rapids`). */
+  rapids: Rapid[];
+  /** Where a figure of eight crosses itself. */
+  bridge: Bridge | null;
   track: Track;
   entrances: Entrance[];
   shortcuts: Shortcut[];
@@ -409,6 +438,203 @@ const loopOutline = (rng: () => number, frame: ParkFrame, half: number, bend: nu
   return raw;
 };
 
+/**
+ * A closed polygon with every corner rounded off to a circle of `radius(i)` (less where its sides are too short),
+ * sampled every 2 px.
+ */
+const roundedPolygon = (corners: readonly Point[], radius: (i: number) => number): Point[] => {
+  const n = corners.length;
+  // Each corner's turn, and how far back along its sides its curve would start at its full radius.
+  const turns = corners.map((v, i) => {
+    const prev = corners[(i - 1 + n) % n]!;
+    const next = corners[(i + 1) % n]!;
+    const l1 = Math.hypot(prev.x - v.x, prev.y - v.y);
+    const l2 = Math.hypot(next.x - v.x, next.y - v.y);
+    const d1 = { x: (prev.x - v.x) / l1, y: (prev.y - v.y) / l1 };
+    const d2 = { x: (next.x - v.x) / l2, y: (next.y - v.y) / l2 };
+    const bx = d1.x + d2.x;
+    const by = d1.y + d2.y;
+    const bl = Math.hypot(bx, by);
+    const halfAngle = Math.acos(Math.max(-1, Math.min(1, d1.x * d2.x + d1.y * d2.y))) / 2;
+    // A straight run through this corner has nothing to round.
+    const t = bl < 1e-6 ? 0 : radius(i) / Math.tan(halfAngle);
+    return { v, d1, d2, bx, by, bl, halfAngle, t, l2 };
+  });
+  // Where two curves would overlap along a side, each gives way in proportion.
+  const most = turns.map((c, i) => {
+    const before = turns[(i - 1 + n) % n]!;
+    const after = turns[(i + 1) % n]!;
+    const share = (other: number, len: number) =>
+      c.t + other > 0 ? (len * c.t) / (c.t + other) : 0;
+    return Math.min(share(before.t, before.l2), share(after.t, c.l2));
+  });
+  const arcs = turns.map((c, i) => {
+    if (c.t === 0) return { a: c.v, b: c.v, c: c.v, r: 0 };
+    const t = Math.min(c.t, most[i]!);
+    const r = t * Math.tan(c.halfAngle);
+    const k = r / Math.sin(c.halfAngle) / c.bl;
+    return {
+      a: { x: c.v.x + c.d1.x * t, y: c.v.y + c.d1.y * t },
+      b: { x: c.v.x + c.d2.x * t, y: c.v.y + c.d2.y * t },
+      c: { x: c.v.x + c.bx * k, y: c.v.y + c.by * k },
+      r,
+    };
+  });
+  const raw: Point[] = [];
+  arcs.forEach((arc, i) => {
+    if (arc.r > 0) {
+      const a0 = Math.atan2(arc.a.y - arc.c.y, arc.a.x - arc.c.x);
+      let sweep = Math.atan2(arc.b.y - arc.c.y, arc.b.x - arc.c.x) - a0;
+      if (sweep > Math.PI) sweep -= Math.PI * 2;
+      if (sweep < -Math.PI) sweep += Math.PI * 2;
+      const steps = Math.max(1, Math.ceil((Math.abs(sweep) * arc.r) / 2));
+      for (let j = 0; j < steps; j++) {
+        const th = a0 + (sweep * j) / steps;
+        raw.push({ x: arc.c.x + Math.cos(th) * arc.r, y: arc.c.y + Math.sin(th) * arc.r });
+      }
+    }
+    const to = arcs[(i + 1) % n]!.a;
+    const steps = Math.max(1, Math.ceil(Math.hypot(to.x - arc.b.x, to.y - arc.b.y) / 2));
+    for (let j = 0; j < steps; j++) {
+      raw.push({
+        x: arc.b.x + ((to.x - arc.b.x) * j) / steps,
+        y: arc.b.y + ((to.y - arc.b.y) * j) / steps,
+      });
+    }
+  });
+  return raw;
+};
+
+/** Corners given in the loop's space (-1 to 1 each way from its middle), scaled to `ax` by `by` about the middle. */
+const placeCorners = (
+  unit: readonly (readonly [number, number])[],
+  frame: ParkFrame,
+  half: number,
+  sx: number,
+  sy: number,
+): Point[] => {
+  const { cx, cy, ax, by } = loopSpace(frame, half);
+  return unit.map(([u, v]) => ({ x: cx + u * ax * sx, y: cy + v * by * sy }));
+};
+
+/**
+ * A canyon road: straights joined by corners as tight as the lanes allow, pointed at the ends and kinked along the
+ * sides like a road cut round the rock; counterclockwise on screen. Each corner is nudged at random and the whole
+ * thing may be mirrored either way.
+ */
+const switchbackOutline = (
+  rng: () => number,
+  frame: ParkFrame,
+  half: number,
+  /** 1 for the full kinks and points; less blunts them, for a screen too short to turn so tightly. */
+  amount: number,
+): Point[] => {
+  const base: [number, number][] = [
+    [0.78, -1],
+    [0.12, -0.72],
+    [-0.5, -1],
+    [-1, 0.08],
+    [-0.62, 1],
+    [0.18, 0.76],
+    [0.84, 1],
+    [1, -0.04],
+  ];
+  const fx = rng() < 0.5 ? 1 : -1;
+  const fy = rng() < 0.5 ? 1 : -1;
+  const unit = base.map(([u, v]) => {
+    // Blunting moves the corners either side of a point out to the end, and the kinks out to the side.
+    const bu = Math.abs(v) === 1 ? Math.sign(u) * (1 - (1 - Math.abs(u)) * amount) : u;
+    const bv =
+      Math.abs(v) === 1 || Math.abs(u) === 1 ? v : Math.sign(v) * (1 - (1 - Math.abs(v)) * amount);
+    const ju = Math.abs(u) === 1 || Math.abs(v) === 1 ? bu + (rng() - 0.5) * 0.16 * amount : bu;
+    const jv = Math.abs(v) === 1 ? bv : bv + (rng() - 0.5) * 0.2 * amount;
+    return [Math.max(-1, Math.min(1, ju)) * fx, jv * fy] as [number, number];
+  });
+  // A mirror image runs the other way round; put it back counterclockwise.
+  if (fx * fy < 0) unit.reverse();
+  const corners = placeCorners(unit, frame, half, 0.9 + rng() * 0.08, 0.92 + rng() * 0.06);
+  const radii = corners.map(() => cornerRadius(half) * (1.03 + rng() * 0.15));
+  return roundedPolygon(corners, (i) => radii[i]!);
+};
+
+/**
+ * A manor's drive: a rectangle with its corners cut off, and (where there is room) a shallow forecourt pushed in at
+ * the middle of its top or bottom; counterclockwise on screen from the top right.
+ */
+const manorOutline = (
+  rng: () => number,
+  frame: ParkFrame,
+  half: number,
+  court: boolean,
+): Point[] => {
+  const { ax, by } = loopSpace(frame, half);
+  // Across, as a share of the width, for a 45 degree slope.
+  const k = by / ax;
+  const sx = 0.9 + rng() * 0.07;
+  const sy = 0.92 + rng() * 0.06;
+  // The cut corners, as a share of the height, and the forecourt's half width and depth.
+  // Short of height, the cuts keep long enough to round and leave a side long enough to round too.
+  const cut = Math.min(Math.max(0.5, (0.4 + rng() * 0.25) * Math.min(1, 130 / by)), 0.9 - 40 / by);
+  const cw = 0.2 + rng() * 0.1;
+  const cd = 0.3 + rng() * 0.12;
+  const top = rng() < 0.5;
+  const dent: [number, number][] = [
+    [cw + cd * k, -1],
+    [cw, -1 + cd],
+    [-cw, -1 + cd],
+    [-cw - cd * k, -1],
+  ];
+  const unit: [number, number][] = [
+    [1, -1 + cut],
+    [1 - cut * k, -1],
+    ...(court && top ? dent : []),
+    [-1 + cut * k, -1],
+    [-1, -1 + cut],
+    [-1, 1 - cut],
+    [-1 + cut * k, 1],
+    ...(court && !top ? dent.map(([u, v]) => [-u, -v] as [number, number]) : []),
+    [1 - cut * k, 1],
+    [1, 1 - cut],
+  ];
+  const r = cornerRadius(half) * (1.03 + rng() * 0.1);
+  return roundedPolygon(placeCorners(unit, frame, half, sx, sy), () => r);
+};
+
+/**
+ * A figure of eight: two rounded boxes, one either side of the middle, whose inner corners are joined by two
+ * straights that cross in the middle; its right half runs counterclockwise on screen and its left half clockwise.
+ * `slant` is how far from the middle (as a share of the height) the crossing straights meet the top and bottom.
+ */
+const eightOutline = (
+  rng: () => number,
+  frame: ParkFrame,
+  half: number,
+  slant: number,
+): Point[] => {
+  const { by } = loopSpace(frame, half);
+  const sx = 0.9 + rng() * 0.08;
+  const sy = 0.92 + rng() * 0.06;
+  // In the loop's space, where 1 across is `ax` and 1 down is `by`: the straights' ends, `x1` out from the middle.
+  const { ax } = loopSpace(frame, half);
+  const x1 = (slant * by) / ax;
+  const flip = rng() < 0.5 ? 1 : -1;
+  // Counterclockwise round the right half: up its far side, left along its top, down across the middle to the left
+  // half's bottom, clockwise round that, then up across the middle again.
+  const unit: [number, number][] = [
+    [1, 1],
+    [1, -1],
+    [x1, -1],
+    [-x1, 1],
+    [-1, 1],
+    [-1, -1],
+    [-x1, -1],
+    [x1, 1],
+  ].map(([u, v]) => [u!, v! * flip]);
+  if (flip < 0) unit.reverse();
+  const r = cornerRadius(half) * (1.03 + rng() * 0.1);
+  return roundedPolygon(placeCorners(unit, frame, half, sx, sy), () => r);
+};
+
 /** Resamples a closed outline to evenly spaced points and works out its directions. */
 export const buildTrack = (raw: readonly Point[], samples = TRACK_SAMPLES): Track => {
   const lengths = [0];
@@ -462,13 +688,21 @@ export const maxCurvature = (track: Track): number => {
 /** The loop's centre line keeps at least this far from where it bends tightest, so the inner lane never folds. */
 const minRadius = (half: number): number => (half + 16) / 0.85;
 
-const fits = (track: Track, frame: ParkFrame, half: number): boolean => {
+/**
+ * The tightest a switchback's, manor's or figure of eight's corners go: tighter than a loop's bends, as they need room
+ * to turn in a phone's height, but still clear of folding the inner lane.
+ */
+const cornerRadius = (half: number): number => half / 0.84;
+
+const fits = (track: Track, frame: ParkFrame, half: number, radius = minRadius(half)): boolean => {
   const m = frameMargins(frame);
+  const within = (p: Point) =>
+    p.x > m.left && p.x < frame.w - m.right && p.y > m.top && p.y < frame.h - m.bottom;
+  // Both edges, as a figure of eight's normals point inward on its left half.
   return (
-    maxCurvature(track) * minRadius(half) < 1 &&
-    edge(track, half).every(
-      (p) => p.x > m.left && p.x < frame.w - m.right && p.y > m.top && p.y < frame.h - m.bottom,
-    )
+    maxCurvature(track) * radius < 1 &&
+    edge(track, half).every(within) &&
+    edge(track, -half).every(within)
   );
 };
 
@@ -476,15 +710,25 @@ const makeTrack = (
   rng: () => number,
   frame: ParkFrame,
   half: number,
-  bend: number,
-  river = false,
+  course: CourseSpec,
 ): Track => {
+  const { bend, river, layout } = course;
   for (let tries = 0; tries < 80; tries++) {
     // A river winds as much as it can: when its bends don't fit, they ease off a little each try rather than giving up.
     const amount = river ? bend * Math.max(0.3, 1 - tries / 50) : bend;
-    const track = buildTrack(loopOutline(rng, frame, half, amount));
-    if (fits(track, frame, half)) return track;
+    const raw =
+      layout === 'switchback'
+        ? switchbackOutline(rng, frame, half, Math.max(0, 1 - tries / 50))
+        : layout === 'manor'
+          ? manorOutline(rng, frame, half, tries < 40)
+          : layout === 'eight'
+            ? eightOutline(rng, frame, half, Math.max(0.5, 1.1 - tries / 80))
+            : loopOutline(rng, frame, half, amount);
+    const track = buildTrack(raw);
+    if (fits(track, frame, half, layout === 'loop' ? minRadius(half) : cornerRadius(half)))
+      return track;
   }
+
   // A plain rounded rectangle always fits and, however long or square the screen, still reaches its edges.
   const { cx, cy, ax, by } = loopSpace(frame, half);
   const a = ax * 0.95;
@@ -522,15 +766,29 @@ const makeTrack = (
 // ---------------------------------------------------------------------------------------------------------------
 // Entrances and short cuts.
 
-const makeEntrances = (track: Track, wall: Rect, half: number, rng: () => number): Entrance[] => {
+const makeEntrances = (
+  track: Track,
+  wall: Rect,
+  half: number,
+  rng: () => number,
+  eight = false,
+): Entrance[] => {
   const count = rng() < 0.5 ? 3 : 4;
   const { normals, step, length } = track;
   const corner = WALL_RADIUS + 34;
+  // The side of the road facing the wall: always outward on a loop; on a figure of eight, away from the middle.
+  const middle = { x: wall.x + wall.w / 2, y: wall.y + wall.h / 2 };
+  const sideAt = (i: number): 1 | -1 => {
+    if (!eight) return 1;
+    const p = track.points[i]!;
+    const n = normals[i]!;
+    return n.x * (p.x - middle.x) + n.y * (p.y - middle.y) >= 0 ? 1 : -1;
+  };
   // Only where the loop faces a side of the wall squarely, so each gate opens straight onto a street.
   const candidates: number[] = [];
   normals.forEach((nrm, i) => {
     if (Math.abs(nrm.x) < 0.94 && Math.abs(nrm.y) < 0.94) return;
-    const t = pose(track, i * step, half + 8);
+    const t = pose(track, i * step, sideAt(i) * (half + 8));
     const vertical = Math.abs(nrm.y) > Math.abs(nrm.x);
     const along = vertical ? t.x : t.y;
     const [lo, hi] = vertical ? [wall.x, wall.x + wall.w] : [wall.y, wall.y + wall.h];
@@ -557,8 +815,9 @@ const makeEntrances = (track: Track, wall: Rect, half: number, rng: () => number
   }
   return best.map((i, id) => {
     const s = i * step;
-    const nrm = normals[i]!;
-    const throat = pose(track, s, half + 8);
+    const side = sideAt(i);
+    const nrm = { x: normals[i]!.x * side, y: normals[i]!.y * side };
+    const throat = pose(track, s, side * (half + 8));
     let gate: Point;
     let street: Point;
     // Movers appear on the far pavement and cross the street to the gate.
@@ -572,7 +831,7 @@ const makeEntrances = (track: Track, wall: Rect, half: number, rng: () => number
       gate = { x: left ? wall.x : wall.x + wall.w, y: throat.y };
       street = { x: gate.x + (left ? -out : out), y: throat.y };
     }
-    return { id, s, street, gate, throat };
+    return { id, s, street, gate, throat, side };
   });
 };
 
@@ -627,6 +886,87 @@ const makeShortcuts = (
   }
   return out;
 };
+
+/**
+ * A manor's hall: straight across the middle from the top of the loop to the bottom, through the house, clear of the
+ * entrances.
+ */
+const makeHall = (track: Track, entrances: readonly Entrance[], half: number): Shortcut[] => {
+  const { normals, step, length, points } = track;
+  const xs = points.map((p) => p.x);
+  const mid = (Math.min(...xs) + Math.max(...xs)) / 2;
+  const reach = (Math.max(...xs) - Math.min(...xs)) * 0.35;
+  const clear = (s: number) => entrances.every((e) => Math.abs(loopDelta(e.s, s, length)) > 70);
+  const bottoms = normals.flatMap((n, i) => (n.y > 0.85 ? [i] : []));
+  let top = -1;
+  let bottom = -1;
+  for (const [i, n] of normals.entries()) {
+    const x = points[i]!.x;
+    if (n.y > -0.85 || Math.abs(x - mid) > reach || !clear(i * step)) continue;
+    // Straight across, not slanting.
+    const j = bottoms.find((k) => Math.abs(points[k]!.x - x) < 12 && clear(k * step));
+    if (j === undefined) continue;
+    if (top < 0 || Math.abs(x - mid) < Math.abs(points[top]!.x - mid)) {
+      top = i;
+      bottom = j;
+    }
+  }
+  if (top < 0) return [];
+  const a = top * step;
+  const b = bottom * step;
+  const pa = pose(track, a, -half - 2);
+  const pb = pose(track, b, -half - 2);
+  const path = cubic(
+    pa,
+    { x: pa.x + (pb.x - pa.x) / 3, y: pa.y + (pb.y - pa.y) / 3 },
+    { x: pa.x + ((pb.x - pa.x) * 2) / 3, y: pa.y + ((pb.y - pa.y) * 2) / 3 },
+    pb,
+    20,
+  );
+  return [{ id: 0, a, b, path }];
+};
+
+/**
+ * Where a figure of eight crosses itself: the two passes through the middle, the one that goes over chosen at random,
+ * each stretch as long as the other road is wide (and its rails).
+ */
+const makeBridge = (track: Track, half: number, rng: () => number): Bridge => {
+  const { points, tangents, step, length } = track;
+  const n = points.length;
+  // The two samples nearest the crossing, one in each half of the loop.
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const at = {
+    x: (Math.min(...xs) + Math.max(...xs)) / 2,
+    y: (Math.min(...ys) + Math.max(...ys)) / 2,
+  };
+  const nearest = (from: number, to: number): number => {
+    let best = from;
+    for (let i = from; i < to; i++) {
+      const d = Math.hypot(points[i]!.x - at.x, points[i]!.y - at.y);
+      if (d < Math.hypot(points[best]!.x - at.x, points[best]!.y - at.y)) best = i;
+    }
+    return best;
+  };
+  const i = nearest(0, Math.floor(n / 2));
+  const j = nearest(Math.floor(n / 2), n);
+  const ti = tangents[i]!;
+  const tj = tangents[j]!;
+  const sin = Math.abs(ti.x * tj.y - ti.y * tj.x) || 1;
+  const len = (half * 2 + 16) / sin;
+  const first = rng() < 0.5;
+  const over = (first ? i : j) * step;
+  const under = (first ? j : i) * step;
+  return {
+    over: { s: wrap(over - len / 2, length), len },
+    under: { s: wrap(under - len / 2, length), len },
+    at,
+  };
+};
+
+/** Whether `s` is on either stretch of a bridge. */
+export const onBridge = (bridge: Bridge | null, s: number, length: number): boolean =>
+  !!bridge && (underCover(bridge.over, s, length) || underCover(bridge.under, s, length));
 
 // ---------------------------------------------------------------------------------------------------------------
 // The middle of the park.
@@ -776,6 +1116,7 @@ const makeTrees = (
   season: Season,
   wall: Rect,
   rng: () => number,
+  eight = false,
 ): Tree[] => {
   const out: Tree[] = [];
   const outer = edge(track, half + 6);
@@ -791,9 +1132,23 @@ const makeTrees = (
       const ty = y + (rng() - 0.5) * 9;
       const r = 8 + rng() * 5.5;
       const p = { x: tx, y: ty };
-      const middle = insidePolygon(inside.inner, tx, ty);
+      // A figure of eight's edges cross, so its road is kept clear by distance instead, and its middles are inside
+      // the centre line.
+      if (eight && nearPolyline(track.points, p, half + r + 3, true)) continue;
+      const middle = eight
+        ? insidePolygon(track.points, tx, ty)
+        : insidePolygon(inside.inner, tx, ty);
       let chance: number;
-      if (middle) {
+      if (eight) {
+        if (
+          tx < wall.x + r + 5 ||
+          tx > wall.x + wall.w - r - 5 ||
+          ty < wall.y + r + 5 ||
+          ty > wall.y + wall.h - r - 5
+        )
+          continue;
+        chance = (middle ? 0.42 : 0.62) + 0.4 * clump(tx, ty);
+      } else if (middle) {
         if (nearPolyline(inside.inner, p, r + 2, true)) continue;
         if (
           water.some(
@@ -842,14 +1197,19 @@ const makePatches = (
   entrances: readonly Entrance[],
   shortcuts: readonly Shortcut[],
   rng: () => number,
+  bridge: Bridge | null = null,
 ): Patch[] => {
   const out: Patch[] = [];
-  const avoid = [...entrances.map((e) => e.s), ...shortcuts.flatMap((c) => [c.a, c.b])];
+  const avoid = [
+    ...entrances.map((e) => e.s),
+    ...shortcuts.flatMap((c) => [c.a, c.b]),
+    ...(bridge ? [bridge.over.s + bridge.over.len / 2, bridge.under.s + bridge.under.len / 2] : []),
+  ];
   for (let spread = track.length / 3; out.length < PATCH_COUNT && spread > 0; spread -= 40) {
     out.length = 0;
     for (let tries = 0; tries < 200 && out.length < PATCH_COUNT; tries++) {
       const s = rng() * track.length;
-      if (avoid.some((a) => Math.abs(loopDelta(a, s, track.length)) < 60)) continue;
+      if (avoid.some((a) => Math.abs(loopDelta(a, s, track.length)) < (bridge ? 90 : 60))) continue;
       if (out.some((o) => Math.abs(loopDelta(o.s, s, track.length)) < spread)) continue;
       const pick = Math.floor(rng() * (keepClear < 0 ? lanes : lanes - 1));
       const lane = keepClear >= 0 && pick >= keepClear ? pick + 1 : pick;
@@ -870,21 +1230,61 @@ const makeCover = (
   patches: readonly Patch[],
   rng: () => number,
   range: readonly [number, number] = COVER_LEN,
+  bridge: Bridge | null = null,
 ): Covered => {
   const len = range[0] + rng() * (range[1] - range[0]);
   const avoid = [
     ...entrances.map((e) => e.s),
     ...shortcuts.flatMap((c) => [c.a, c.b]),
     ...patches.map((p) => p.s),
+    ...(bridge ? [bridge.over.s + bridge.over.len / 2, bridge.under.s + bridge.under.len / 2] : []),
   ];
   let s = 0;
   for (let tries = 0; tries < 100; tries++) {
     s = rng() * track.length;
     const mid = s + len / 2;
-    if (avoid.every((a) => Math.abs(loopDelta(a, mid, track.length)) > len / 2 + 40)) break;
+    if (
+      avoid.every((a) => Math.abs(loopDelta(a, mid, track.length)) > len / 2 + (bridge ? 90 : 40))
+    )
+      break;
   }
   return { s, len };
 };
+
+/** One lane of rapids, or two side by side, each its own length, where a covered stretch could go. */
+const makeRapids = (
+  track: Track,
+  lanes: number,
+  entrances: readonly Entrance[],
+  shortcuts: readonly Shortcut[],
+  patches: readonly Patch[],
+  rng: () => number,
+): Rapid[] => {
+  const first = makeCover(track, entrances, shortcuts, patches, rng, RAPIDS_LEN);
+  const lane = Math.floor(rng() * lanes);
+  const out: Rapid[] = [{ ...first, lane }];
+  if (rng() < RAPIDS_SECOND) {
+    const next = lane === 0 ? 1 : lane === lanes - 1 ? lane - 1 : lane + (rng() < 0.5 ? -1 : 1);
+    const len = RAPIDS_LEN[0] + rng() * (RAPIDS_LEN[1] - RAPIDS_LEN[0]);
+    // Starting a little before or after the first, so the two don't line up.
+    const s = wrap(first.s + first.len / 2 - len / 2 + (rng() - 0.5) * 50, track.length);
+    out.push({ s, len, lane: next });
+  }
+  return out;
+};
+
+/** Whether a mover spanning lanes `p` to `p + width - 1` is in rapids at `s`. */
+export const inRapids = (
+  rapids: readonly Rapid[],
+  s: number,
+  p: number,
+  width: number,
+  length: number,
+): boolean =>
+  rapids.some(
+    (r) =>
+      r.lane >= Math.round(p) && r.lane < Math.round(p) + width && wrap(s - r.s, length) < r.len,
+  );
 
 /** Whether `s` is within a covered stretch. */
 export const underCover = (cover: Covered | null, s: number, length: number): boolean =>
@@ -981,7 +1381,8 @@ export const generatePark = (
   const chosen = season ?? SEASONS[Math.floor(rng() * SEASONS.length)]!;
   const wall = wallFor(frame);
   const half = roadHalf(course);
-  const track = makeTrack(rng, frame, half, course.bend, course.river);
+  const track = makeTrack(rng, frame, half, course);
+  const eight = course.layout === 'eight';
   const inner = edge(track, -half - 6);
   const xs = inner.map((p) => p.x);
   const ys = inner.map((p) => p.y);
@@ -992,11 +1393,17 @@ export const generatePark = (
     h: Math.max(...ys) - Math.min(...ys),
   };
   const inside: Interior = { inner, box };
-  const entrances = makeEntrances(track, wall, half, rng);
-  // Footpaths and the short cuts along them, on the courses that have them.
-  const shortcuts = course.paths ? makeShortcuts(track, entrances, half, rng) : [];
-  const water = makeWater(inside, shortcuts, rng);
-  const fields = makeFields(inside, water, shortcuts, rng);
+  const entrances = makeEntrances(track, wall, half, rng, eight);
+  const bridge = eight ? makeBridge(track, half, rng) : null;
+  // Footpaths and the short cuts along them, on the courses that have them; or a manor's hall.
+  const shortcuts = course.paths
+    ? makeShortcuts(track, entrances, half, rng)
+    : course.layout === 'manor'
+      ? makeHall(track, entrances, half)
+      : [];
+  // A figure of eight's middles are too small for water or fields.
+  const water = eight ? [] : makeWater(inside, shortcuts, rng);
+  const fields = eight ? [] : makeFields(inside, water, shortcuts, rng);
   const paths = course.paths ? makePaths(track, half, inside, water, fields, rng) : [];
   const trees = makeTrees(
     track,
@@ -1010,12 +1417,25 @@ export const generatePark = (
     chosen,
     wall,
     rng,
+    eight,
   );
-  const patches = makePatches(track, course.lanes, course.train ? TRAIN_LANE : -1, entrances, shortcuts, rng);
+  const patches = makePatches(
+    track,
+    course.lanes,
+    course.train ? TRAIN_LANE : -1,
+    entrances,
+    shortcuts,
+    rng,
+    bridge,
+  );
   const cover =
-    course.cover === 'none' ? null : makeCover(track, entrances, shortcuts, patches, rng);
+    course.cover === 'none'
+      ? null
+      : makeCover(track, entrances, shortcuts, patches, rng, COVER_LEN, bridge);
   // Rapids, like a covered stretch, clear of the entrances, short cuts and patches.
-  const rapids = course.rapids ? makeCover(track, entrances, shortcuts, patches, rng, RAPIDS_LEN) : null;
+  const rapids = course.rapids
+    ? makeRapids(track, course.lanes, entrances, shortcuts, patches, rng)
+    : [];
   return {
     season: chosen,
     frame,
@@ -1025,6 +1445,7 @@ export const generatePark = (
     half,
     cover,
     rapids,
+    bridge,
     track,
     entrances,
     shortcuts,

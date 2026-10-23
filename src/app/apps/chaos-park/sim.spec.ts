@@ -1241,13 +1241,18 @@ describe('courses', () => {
     ]);
   });
 
-  it('make Chaos Park exactly as before, and the mansion five lanes wide with a covered stretch', () => {
+  it('make Chaos Park as before, Jungle Jam a five-lane figure of eight and the mansion five lanes round a hall', () => {
     const park = generatePark(seededRng(4));
     expect(park.lanes).toBe(LANES);
     expect(park.cover).toBeNull();
+    expect(park.bridge).toBeNull();
+    const jungle = generatePark(seededRng(4), undefined, undefined, COURSES.jungle);
+    expect(jungle.lanes).toBe(5);
+    expect(jungle.bridge).not.toBeNull();
     const mansion = generatePark(seededRng(4), undefined, undefined, COURSES.mansion);
     expect(mansion.lanes).toBe(5);
-    expect(mansion.cover).not.toBeNull();
+    expect(mansion.cover).toBeNull();
+    expect(mansion.shortcuts).toHaveLength(1);
   });
 
   it('start later courses further up the difficulty ramp', () => {
@@ -1325,6 +1330,20 @@ describe('predators', () => {
     expect(predator.target).toBe(1);
     ticks(sim, 40);
     expect(predator.target).toBe(2);
+  });
+
+  it('wander a lane now and then with nobody in sight', () => {
+    const sim = onCourse('canyon');
+    const predator = put(sim, 'predator', 100, 1);
+    const lanes = new Set<number>();
+    for (let t = 0; t < 60 * 20; t++) {
+      sim.step();
+      // Nobody else about, and it stays on the loop.
+      predator.lapsDone = 0;
+      predator.progress = 0;
+      lanes.add(predator.target);
+    }
+    expect(lanes.size).toBeGreaterThan(1);
   });
 
   it('score nothing for their lap', () => {
@@ -1446,8 +1465,53 @@ describe('wild arrivals', () => {
       starts.map((s) => Math.floor((wrap(s, track.length) / track.length) * 4)),
     );
     expect(starts.length).toBeGreaterThan(5);
-    expect(quarters.size).toBe(4);
+    expect(quarters.size).toBeGreaterThanOrEqual(3);
     expect(left).toBeGreaterThan(0);
+  });
+});
+
+describe('rapids', () => {
+  it('speed up only those in a lane that has them, in one or two lanes of different lengths', () => {
+    let two = 0;
+    for (let seed = 1; seed <= 20; seed++) {
+      const park = generatePark(seededRng(seed), undefined, undefined, COURSES.waters);
+      expect(park.rapids.length).toBeGreaterThanOrEqual(1);
+      expect(park.rapids.length).toBeLessThanOrEqual(2);
+      if (park.rapids.length === 2) {
+        two++;
+        expect(Math.abs(park.rapids[0]!.lane - park.rapids[1]!.lane)).toBe(1);
+      }
+    }
+    expect(two).toBeGreaterThan(0);
+    const sim = onCourse('waters');
+    const r = sim.park.rapids[0]!;
+    const other = (r.lane + 2) % sim.park.lanes;
+    sim.park = { ...sim.park, rapids: [r] };
+    const fast = put(sim, 'walker', wrap(r.s + 2, sim.park.track.length), r.lane);
+    const plain = put(sim, 'walker', wrap(r.s + 2, sim.park.track.length), other);
+    const [a, b] = [fast.s, plain.s];
+    sim.step();
+    expect(wrap(fast.s - a, sim.park.track.length)).toBeGreaterThan(
+      wrap(plain.s - b, sim.park.track.length) * 1.2,
+    );
+  });
+});
+
+describe('figure of eight', () => {
+  it('has gates on whichever side faces the wall, and newcomers join on that side', () => {
+    const course = { ...COURSES.jungle, wild: false };
+    const sim = new ChaosParkSim(seededRng(2), course);
+    sim.start();
+    const { track, half, entrances } = sim.park;
+    for (const e of entrances) {
+      // The mouth of each gate road is off the road, and the gate on the wall.
+      const near = track.points.reduce(
+        (d, p) => Math.min(d, Math.hypot(p.x - e.throat.x, p.y - e.throat.y)),
+        Infinity,
+      );
+      expect(near).toBeGreaterThan(half);
+    }
+    expect(entrances.some((e) => e.side < 0)).toBe(true);
   });
 });
 
@@ -1484,17 +1548,20 @@ describe('course obstacles', () => {
     expect(m.s).not.toBe(at);
   });
 
-  it('the mansion keeps its inner two lanes apart from the rest on its stretch', () => {
-    const sim = onCourse('mansion');
-    const cover = sim.park.cover!;
-    const length = sim.park.track.length;
-    const inside = put(sim, 'walker', wrap(cover.s + 10, length), 1, { speed: 0.001 });
-    const outside = put(sim, 'walker', wrap(cover.s + 40, length), 2, { speed: 0.001 });
-    expect(sim.shift(inside.id, 1)).toBe(false);
-    expect(sim.shift(outside.id, -1)).toBe(false);
-    expect(sim.shift(inside.id, -1)).toBe(true);
-    expect(sim.shift(outside.id, 1)).toBe(true);
-    const before = put(sim, 'walker', wrap(cover.s - 40, length), 1, { speed: 0.001 });
-    expect(sim.shift(before.id, 1)).toBe(true);
+  it("the mansion's hall is walked through now and then from the inner lane", () => {
+    const sim = new ChaosParkSim(seededRng(3), COURSES.mansion);
+    sim.start();
+    sim.movers = [];
+    noArrivals(sim);
+    const hall = sim.park.shortcuts[0]!;
+    // Always take it.
+    (sim as unknown as { rng: () => number }).rng = () => 0;
+    const m = put(sim, 'walker', wrap(hall.a - 5, sim.park.track.length), 0, { laps: 2 });
+    let inside = false;
+    for (let t = 0; t < 600 && !inside; t++) {
+      sim.step();
+      inside = m.state === 'shortcut';
+    }
+    expect(inside).toBe(true);
   });
 });

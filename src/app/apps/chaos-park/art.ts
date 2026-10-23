@@ -1262,25 +1262,6 @@ export const drawCover = (park: Park): Graphics => {
   };
   const a = cover.s;
   const b = cover.s + cover.len;
-  if (course.cover === 'mansion') {
-    const wall = laneOffset(2, 0, park);
-    g.poly(strip(a, b, -half - 10, wall))
-      .fill(0x3b3346)
-      .stroke({ width: 2, color: INK });
-    // Roof ridges and a few lit windows.
-    for (let s = a + 12; s < b - 6; s += 18) {
-      const p = pose(track, s, (wall - half - 10) / 2);
-      g.rect(p.x - 3, p.y - 3, 6, 6).fill(0xf2d16b);
-    }
-    polyline(
-      g,
-      Array.from({ length: Math.ceil(cover.len / 4) + 1 }, (_, i) => pose(track, a + i * 4, wall)),
-    ).stroke({
-      width: 3,
-      color: 0x241f2b,
-    });
-    return g;
-  }
   const rock = course.cover === 'arch';
   const len = rock ? cover.len : 34;
   const mid = (a + b) / 2;
