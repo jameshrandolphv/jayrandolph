@@ -1223,10 +1223,10 @@ const onCourse = (id: CourseId, seed = 3): ChaosParkSim => {
 };
 
 describe('courses', () => {
-  it('unlock one after another at 25, 30, 35 and 40', () => {
+  it('unlock one after another with a bronze (25) on the course before', () => {
     const best: Record<CourseId, number> = {
       park: 25,
-      waters: 29,
+      waters: 24,
       canyon: 0,
       jungle: 0,
       mansion: 0,
@@ -1238,7 +1238,7 @@ describe('courses', () => {
       false,
       false,
     ]);
-    expect(COURSE_IDS.map((id) => COURSES[id].unlock)).toEqual([25, 30, 35, 40, 45]);
+    expect(COURSE_IDS.map((id) => COURSES[id].unlock)).toEqual([25, 25, 25, 25, 25]);
   });
 
   it('give bronze at 25, silver at 50 and gold at 100 on every course', () => {

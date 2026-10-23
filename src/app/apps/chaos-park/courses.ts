@@ -94,7 +94,8 @@ export interface CourseSpec {
    */
   wild: boolean;
   /**
-   * The score on this course that unlocks the next. Medals go by `BRONZE_SCORE`, `SILVER_SCORE` and `GOLD_SCORE`.
+   * The score on this course that unlocks the next: a bronze medal, the same on every course. Medals go by
+   * `BRONZE_SCORE`, `SILVER_SCORE` and `GOLD_SCORE`.
    */
   unlock: number;
 }
@@ -146,7 +147,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     train: false,
     slowCars: false,
     wild: false,
-    unlock: 30,
+    unlock: 25,
   },
   canyon: {
     id: 'canyon',
@@ -170,7 +171,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     train: true,
     slowCars: true,
     wild: false,
-    unlock: 35,
+    unlock: 25,
   },
   jungle: {
     id: 'jungle',
@@ -194,7 +195,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     train: false,
     slowCars: false,
     wild: true,
-    unlock: 40,
+    unlock: 25,
   },
   mansion: {
     id: 'mansion',
@@ -218,7 +219,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     train: false,
     slowCars: false,
     wild: false,
-    unlock: 45,
+    unlock: 25,
   },
 };
 
