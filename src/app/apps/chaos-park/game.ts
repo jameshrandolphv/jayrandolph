@@ -13,10 +13,11 @@ import {
   inPlaque,
   inRect,
   pauseButton,
+  soundButton,
   type Bounds,
 } from './constants';
 import type { CourseId } from './courses';
-import type { ParkFrame, Point } from './park';
+import { seededRng, type ParkFrame, type Point } from './park';
 import { ChaosParkSim, type SimEvent } from './sim';
 
 export const GAME_ID = 'chaos-park';
@@ -66,6 +67,8 @@ const SOUNDS: Readonly<Record<SimEvent, SfxName>> = {
  * speeds up (forward) or slows back down (backward).
  */
 const SWIPE_MIN = 12;
+/** The crowd behind the title is kept to this many laps, so it stays an early run's. */
+export const DEMO_LAPS = 4;
 
 /** The park is landscape; on a portrait screen it is turned a quarter clockwise. */
 export const isPortrait = (size: LogicalSize): boolean => size.height > size.width;
@@ -133,7 +136,17 @@ export class ChaosParkGame {
   size: LogicalSize = { width: 860, height: 600 };
   bounds: Bounds = { left: 0, top: 0, right: 860, bottom: 600 };
 
+  /** The site's sound switch, which the title's sound button turns on and off; no button without it. */
+  sound: { muted(): boolean; toggle(): void } | null = null;
+
   private readonly step = new FixedStep();
+  /**
+   * The crowd going round behind the title and its cards: a run of its own in the same park, everyone on autopilot
+   * and kept to its first few laps. Nothing it does scores or sounds.
+   */
+  demo: ChaosParkSim | null = null;
+  private readonly demoStep = new FixedStep();
+  private demoSeed = 1;
   private readonly swipes = new Map<number, Swipe>();
   private run = 0;
 
@@ -170,8 +183,25 @@ export class ChaosParkGame {
       this.sim.step();
       if (before !== 'gameOver' && this.sim.phase === 'gameOver') this.saveScore();
     });
+    this.runDemo(deltaMs);
     for (const event of this.sim.drainEvents()) this.sfx.play(SOUNDS[event]);
     return this.step.alpha;
+  }
+
+  private runDemo(deltaMs: number): void {
+    if (this.sim.phase !== 'title' && this.sim.phase !== 'help') {
+      this.demo = null;
+      return;
+    }
+    if (this.demo?.park !== this.sim.park)
+      this.demo = ChaosParkSim.inPark(this.sim.park, seededRng(++this.demoSeed));
+    const demo = this.demo;
+    this.demoStep.advance(deltaMs, () => {
+      demo.step();
+      for (const m of demo.movers) m.autopilot = 1;
+      demo.laps = Math.min(demo.laps, DEMO_LAPS);
+    });
+    demo.drainEvents();
   }
 
   /** A pointer pressed, in screen logical coordinates. Several pointers can each swipe a mover at once. */
@@ -183,7 +213,10 @@ export class ChaosParkGame {
     const cy = y - this.size.height / 2;
     switch (sim.phase) {
       case 'title':
-        if (inPlaque(PLAY_BUTTON, cx, cy)) this.start();
+        if (this.sound && inRect(soundButton(this.bounds), x, y)) {
+          this.sound.toggle();
+          this.sfx.play('click');
+        } else if (inPlaque(PLAY_BUTTON, cx, cy)) this.start();
         else if (inPlaque(HELP_BUTTON, cx, cy)) {
           this.sfx.play('click');
           sim.showHelp();

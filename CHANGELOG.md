@@ -1,13 +1,19 @@
 # Changelog
 
 ## 1.10.0
-- Chaos Park 1.1: the difficulty climbs half as fast after 10 laps, so laps 10 to 30 play like 10 to 20 used to and 30 to 50 like 20 to 30. The start is a touch harder: a 4th visitor can come in at 3 laps and a 5th at 6 (were 4 and 8). From 150 laps one more can come in every 10 laps, up to 26
+- Chaos Park 1.1: the difficulty climbs much more slowly after 10 laps (at 0.4 of the rate, so laps 10 to 35 play like 10 to 20 used to), and a visitor more can come in every 5 levels instead of 4. From 150 laps one more can come in every 10 laps, up to 26
 - Chaos Park: patches arrive at 50 and 100 laps (were 25, 50 and 100), the second carriage at 110 laps (was 10), and run groups from 12 laps, every 20 to 50 seconds until 50 laps
 - Chaos Park: carriages now take tokens, except a duplicate or extra laps, and what they take lasts them two laps
 - Chaos Park: a new autopilot token (a steering wheel). Whoever takes it glows blue and changes lane, or slows down behind someone slower, to stay out of collisions for the rest of their laps
-- Chaos Park: streaks. Every 10 laps in a row without losing a life makes each lap worth a point more (x2, x3...), shown by the hearts; losing a life starts it again
+- Chaos Park: streaks. Every 10 laps in a row without losing a life makes each lap worth a point more (x2, x3...); losing a life starts it again
 - Chaos Park: dusk falls from lap 120, and cars switch on their headlights and carriages their lanterns
 - Chaos Park: bikers turn up more often (about one visitor in four, was one in six), so the first ones come sooner
+- Chaos Park: the streak shows as "10 STREAK" in the middle of the screen for a moment, then a gold glow round the edges of the screen while it lasts
+- Chaos Park: bikers and cars are a little slower (about 6%)
+- Chaos Park: now and then a slow visitor comes round with a walking frame or in a wheelchair, and some cars are police cars
+- Chaos Park: back on the title, the park keeps the season of the one just played, and a crowd of visitors on autopilot goes round behind the title and how-to-play cards
+- Chaos Park: the how-to-play rules sit centred between the title and GOT IT!, with shorter wording
+- Chaos Park: a sound button at the bottom left of the title switches sound on and off (the same switch as the menu bar's)
 
 ## 1.9.3
 - Chaos Park: six new tokens, ten in all, and a token's effect now lasts for the rest of the visitor's laps instead of a few seconds. A rare rainbow star flashes its taker through the rainbow and knocks anyone it touches off the track with no life lost, scoring the laps they had left (a carriage scores nothing, and another comes along later). Fire gives super speed (1.5x) and a turtle halves it; strength adds two laps; a coin adds a point; a skull is a wreck that costs a life (unless they have a star); and a spiral slows the whole game to half speed for 10 seconds before easing back. Carriages and run groups still can't take tokens

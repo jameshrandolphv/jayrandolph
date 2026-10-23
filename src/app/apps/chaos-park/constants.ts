@@ -388,6 +388,14 @@ export const pauseButton = (b: Bounds): Rect => ({
   h: 48,
 });
 
+/** Bottom left of the title, opposite where the pause button is in play: sound on or off. */
+export const soundButton = (b: Bounds): Rect => ({
+  x: b.left + 22,
+  y: b.bottom - 70,
+  w: 48,
+  h: 48,
+});
+
 /** Sign-plaque buttons on the cards: centre relative to the middle of the screen, and half width and height. */
 export interface Plaque {
   x: number;

@@ -30,12 +30,13 @@ import {
   SLIME_TICKS,
   SWERVE_TICKS,
   groupLength,
+  soundButton,
   type Kind,
   type PickupKind,
 } from './constants';
 import { COURSES, COURSE_IDS, WAVE_SWELL, medalFor, unlocked, type CourseId } from './courses';
-import { ChaosParkGame, frameFor, placePark, screenToPark } from './game';
-import { generatePark, laneOffset, pose, seededRng, wrap } from './park';
+import { ChaosParkGame, DEMO_LAPS, frameFor, placePark, screenToPark } from './game';
+import { generatePark, laneOffset, loopDelta, pose, seededRng, wrap } from './park';
 import {
   ChaosParkSim,
   duskAt,
@@ -1013,10 +1014,15 @@ describe('autopilot', () => {
     put(sim, 'dog', 120, 2, { laps: 5 });
     put(sim, 'walker', 110, 0, { laps: 5 });
     sim.lives = 1;
-    ticks(sim, 120);
+    // It eases off and on as it closes in, so look over the whole stretch.
+    let slowed = false;
+    for (let i = 0; i < 120; i++) {
+      ticks(sim, 1);
+      if (biker.autoSlow && biker.speed <= walker.speed) slowed = true;
+    }
     expect(sim.phase).toBe('playing');
-    expect(biker.autoSlow).toBe(true);
-    expect(biker.speed).toBeLessThanOrEqual(walker.speed);
+    expect(slowed).toBe(true);
+    expect(loopDelta(biker.s, walker.s, sim.park.track.length)).toBeGreaterThan(0);
   });
 
   it('is taken from the road like any token', () => {
@@ -1584,5 +1590,44 @@ describe('course obstacles', () => {
       inside = m.state === 'shortcut';
     }
     expect(inside).toBe(true);
+  });
+});
+
+describe('title', () => {
+  const titleGame = () => {
+    const scores = { getBest: async () => 0, submit: async () => ({ best: 0, isNewBest: false }) };
+    const played: string[] = [];
+    const sfx = { play: (name: string) => played.push(name), unlock() {}, dispose() {} };
+    const game = new ChaosParkGame(scores as never, sfx as never, seededRng(3));
+    return { game, played };
+  };
+
+  it('has a crowd going round behind it on autopilot, kept to its first few laps', () => {
+    const { game } = titleGame();
+    for (let i = 0; i < 60 * 60; i++) game.frame(1000 / 60);
+    const demo = game.demo!;
+    expect(demo.park).toBe(game.sim.park);
+    expect(demo.movers.length).toBeGreaterThan(0);
+    expect(demo.movers.every((m) => m.autopilot > 0)).toBe(true);
+    expect(demo.laps).toBeLessThanOrEqual(DEMO_LAPS);
+    expect(demo.phase).toBe('playing');
+    expect(game.sim.phase).toBe('title');
+    expect(game.sim.score).toBe(0);
+    game.sim.start();
+    game.frame(1000 / 60);
+    expect(game.demo).toBeNull();
+  });
+
+  it('switches sound on and off with its sound button', () => {
+    const { game, played } = titleGame();
+    let muted = false;
+    game.sound = { muted: () => muted, toggle: () => (muted = !muted) };
+    const b = soundButton(game.bounds);
+    game.pointerDown(1, b.x + b.w / 2, b.y + b.h / 2);
+    expect(muted).toBe(true);
+    expect(game.sim.phase).toBe('title');
+    game.pointerDown(1, b.x + b.w / 2, b.y + b.h / 2);
+    expect(muted).toBe(false);
+    expect(played).toContain('click');
   });
 });

@@ -461,6 +461,9 @@ export class ChaosParkSim {
   /** Pairs that have collided and are still overlapping as one passes the other; they don't collide again. */
   private passing = new Set<string>();
 
+  /** Collisions never end the run: for the crowd behind the title (see `inPark`). */
+  endless = false;
+
   /** The shape of screen the next park is made for (see `fitFrame`). */
   frame: ParkFrame = DEFAULT_FRAME;
   /** Ticks the screen has kept its current shape. */
@@ -472,6 +475,17 @@ export class ChaosParkSim {
     public course: CourseSpec = COURSES.park,
   ) {
     this.park = generatePark(rng, undefined, DEFAULT_FRAME, course);
+  }
+
+  /** A run already under way in `park`, for the crowd behind the title: never ending, as `endless`. */
+  static inPark(park: Park, rng: () => number): ChaosParkSim {
+    const sim = new ChaosParkSim(rng, COURSES[park.course]);
+    sim.park = park;
+    sim.frame = park.frame;
+    sim.endless = true;
+    sim.placeCarriage();
+    sim.enter('playing');
+    return sim;
   }
 
   /** Picks the course for the next run, on the title or game-over card, with a new park for it behind the card. */
@@ -994,6 +1008,7 @@ export class ChaosParkSim {
 
   /** Takes a life for a collision or wreck at `at`; true if that was the last, ending the run. */
   private loseLife(at: { x: number; y: number }, ids: number[]): boolean {
+    if (this.endless) this.lives = LIVES;
     this.lives--;
     this.cleanLaps = 0;
     if (this.lives > 0) return false;
