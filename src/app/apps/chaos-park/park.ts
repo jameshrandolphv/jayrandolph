@@ -583,6 +583,8 @@ const manorOutline = (
   const cw = 0.2 + rng() * 0.1;
   const cd = 0.3 + rng() * 0.12;
   const top = rng() < 0.5;
+  // A short screen has no room for one: its middle is kept for the house.
+  const room = court && by > 200;
   const dent: [number, number][] = [
     [cw + cd * k, -1],
     [cw, -1 + cd],
@@ -592,12 +594,12 @@ const manorOutline = (
   const unit: [number, number][] = [
     [1, -1 + cut],
     [1 - cut * k, -1],
-    ...(court && top ? dent : []),
+    ...(room && top ? dent : []),
     [-1 + cut * k, -1],
     [-1, -1 + cut],
     [-1, 1 - cut],
     [-1 + cut * k, 1],
-    ...(court && !top ? dent.map(([u, v]) => [-u, -v] as [number, number]) : []),
+    ...(room && !top ? dent.map(([u, v]) => [-u, -v] as [number, number]) : []),
     [1 - cut * k, 1],
     [1, 1 - cut],
   ];
