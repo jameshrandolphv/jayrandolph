@@ -55,6 +55,7 @@ import {
   LANE_RATE,
   LANE_W,
   LAPS_PER_EXTRA,
+  LEVEL_RATE,
   LATERAL_OVERLAP,
   MAX_MOVERS,
   MAX_MOVERS_START,
@@ -366,14 +367,14 @@ export interface Pop {
  * Movers allowed in the park at once (not counting carriages) after a given number of laps, on a course whose level
  * starts `offset` higher.
  */
-export const maxMovers = (laps: number, offset = 0): number => {
+export const maxMovers = (laps: number, offset = 0, rate = LEVEL_RATE): number => {
   const early = Math.min(
     EARLY_MAX_MOVERS,
     MAX_MOVERS_START + Math.floor(laps / EARLY_LAPS_PER_EXTRA),
   );
   const ramp = Math.min(
     MAX_MOVERS,
-    MAX_MOVERS_START + Math.floor((level(laps) + offset) / LAPS_PER_EXTRA),
+    MAX_MOVERS_START + Math.floor((level(laps, rate) + offset) / LAPS_PER_EXTRA),
   );
   const late =
     laps > LATE_FROM
@@ -484,7 +485,7 @@ export class ChaosParkSim {
 
   /** The difficulty level now: from the laps, and higher on later courses. */
   get level(): number {
-    return level(this.laps) + this.course.levelOffset;
+    return level(this.laps, this.course.levelRate) + this.course.levelOffset;
   }
 
   drainEvents(): SimEvent[] {
@@ -1170,7 +1171,7 @@ export class ChaosParkSim {
     else if (this.carriagesSent < carriages && this.arrive('carriage')) this.carriagesSent++;
     if (active === 0) this.spawnTimer = Math.min(this.spawnTimer, 30);
     if (--this.spawnTimer > 0) return;
-    if (active >= maxMovers(this.laps, this.course.levelOffset)) {
+    if (active >= maxMovers(this.laps, this.course.levelOffset, this.course.levelRate)) {
       this.spawnTimer = 30;
       return;
     }

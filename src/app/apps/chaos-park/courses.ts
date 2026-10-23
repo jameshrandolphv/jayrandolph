@@ -54,6 +54,11 @@ export interface CourseSpec {
   /** Added to the difficulty level, so later courses start further up the ramp. */
   levelOffset: number;
   /**
+   * How much of a level each lap after the knee adds (`LEVEL_RATE` on Chaos Park): later courses start higher but
+   * climb more slowly, so the Haunted Mansion at 80 laps is about where it used to be at 50.
+   */
+  levelRate: number;
+  /**
    * Arrival weights of the slow walker (one lane) and slow pair (two lanes). On Chaos Park the slow walkers come with a
    * walking frame or in a wheelchair, and there are no pairs.
    */
@@ -104,6 +109,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     bend: 1,
     river: false,
     levelOffset: 0,
+    levelRate: 0.4,
     slow: 0.06,
     slowPair: 0,
     predator: false,
@@ -127,6 +133,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     bend: 3,
     river: true,
     levelOffset: 2,
+    levelRate: 0.34,
     slow: 0.12,
     slowPair: 0.06,
     predator: true,
@@ -150,6 +157,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     bend: 1.5,
     river: false,
     levelOffset: 3,
+    levelRate: 0.3,
     slow: 0.12,
     slowPair: 0,
     predator: true,
@@ -173,6 +181,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     bend: 2,
     river: false,
     levelOffset: 5,
+    levelRate: 0.26,
     slow: 0.12,
     slowPair: 0.06,
     predator: true,
@@ -196,6 +205,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     bend: 2.5,
     river: false,
     levelOffset: 6,
+    levelRate: 0.23,
     slow: 0.1,
     slowPair: 0.06,
     predator: true,
