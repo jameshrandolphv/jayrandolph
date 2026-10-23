@@ -122,8 +122,8 @@ export const SPEED_SPREAD = 0.08;
  */
 export const LEVEL_KNEE = 10;
 export const LEVEL_RATE = 0.4;
-export const level = (laps: number): number =>
-  laps <= LEVEL_KNEE ? laps : LEVEL_KNEE + (laps - LEVEL_KNEE) * LEVEL_RATE;
+export const level = (laps: number, rate = LEVEL_RATE): number =>
+  laps <= LEVEL_KNEE ? laps : LEVEL_KNEE + (laps - LEVEL_KNEE) * rate;
 
 /**
  * Run groups: 6 to 12 runners two abreast, doing one lap. The first comes as soon as the laps reach

@@ -336,7 +336,7 @@ describe('ChaosParkSim', () => {
     expect([0, 3, 6, 10, 20, 30, 50, 100, 150, 190].map((l) => maxMovers(l))).toEqual([
       3, 3, 4, 5, 5, 6, 8, 12, 16, 23,
     ]);
-    expect([0, 10, 30, 50].map(level)).toEqual([0, 10, 18, 26]);
+    expect([0, 10, 30, 50].map((l) => level(l))).toEqual([0, 10, 18, 26]);
   });
 
   it('moves to game over after the crash and locks out a hasty retry', () => {
@@ -1273,6 +1273,18 @@ describe('courses', () => {
     expect(maxMovers(0, COURSES.mansion.levelOffset)).toBeGreaterThan(maxMovers(0));
     const sim = new ChaosParkSim(seededRng(1), COURSES.jungle);
     expect(sim.level).toBe(5);
+  });
+
+  it('climb more slowly on later courses, so the Haunted Mansion at 80 laps is where it was at 50', () => {
+    const at = (id: CourseId, laps: number) =>
+      level(laps, COURSES[id].levelRate) + COURSES[id].levelOffset;
+    expect(at('mansion', 80)).toBeCloseTo(level(50) + COURSES.mansion.levelOffset, 0);
+    for (let i = 1; i < COURSE_IDS.length; i++) {
+      expect(COURSES[COURSE_IDS[i]].levelOffset).toBeGreaterThan(
+        COURSES[COURSE_IDS[i - 1]].levelOffset,
+      );
+      expect(COURSES[COURSE_IDS[i]].levelRate).toBeLessThan(COURSES[COURSE_IDS[i - 1]].levelRate);
+    }
   });
 
   it('can be changed on the title card, with a new park', () => {
