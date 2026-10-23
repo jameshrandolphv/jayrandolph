@@ -246,6 +246,8 @@ export const SLOW_CAR_SPEED = 0.5;
  */
 export const WILD_DEPTH = 30;
 export const WILD_GAP = 120;
+/** A wild course's visitor doesn't leave for the trees from a bridge, or within this of either end of it. */
+export const BRIDGE_EXIT_CLEAR = 40;
 
 /** Medal scores, the same on every course. */
 export const BRONZE_SCORE = 25;

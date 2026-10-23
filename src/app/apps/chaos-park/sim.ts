@@ -102,6 +102,7 @@ import {
   SLOW_CAR_SPEED,
   WILD_DEPTH,
   WILD_GAP,
+  BRIDGE_EXIT_CLEAR,
   TRAIN_LANE,
   TRAIN_LEN,
   WAVE_FROM_SCORE,
@@ -514,8 +515,9 @@ export class ChaosParkSim {
   toTitle(): boolean {
     if (this.phase === 'gameOver' && this.phaseTicks < GAME_OVER_LOCKOUT) return false;
     if (this.phase === 'title') return false;
+    // Back to the title in the same season as the park just played.
     if (this.phase !== 'help')
-      this.park = generatePark(this.rng, undefined, this.frame, this.course);
+      this.park = generatePark(this.rng, this.park.season, this.frame, this.course);
     this.reset();
     this.enter('title');
     return true;
@@ -814,7 +816,17 @@ export class ChaosParkSim {
   }
 
   private leaveWild(m: Mover): void {
-    const { track, half, lanes } = this.park;
+    const { track, half, lanes, bridge } = this.park;
+    // Not off a bridge: on over it first.
+    if (
+      bridge &&
+      underCover(
+        { s: bridge.over.s - BRIDGE_EXIT_CLEAR, len: bridge.over.len + 2 * BRIDGE_EXIT_CLEAR },
+        m.s,
+        track.length,
+      )
+    )
+      return;
     const near = m.p + m.width / 2 < lanes / 2 ? -1 : 1;
     // On a figure of eight, not into the other road: the far side if the near one is blocked, or on a little further.
     const side = this.clearOfRoad(m.s, near) ? near : this.clearOfRoad(m.s, -near) ? -near : 0;
