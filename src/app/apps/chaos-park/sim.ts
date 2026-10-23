@@ -1,8 +1,20 @@
 import {
   ART,
   BOOST,
+  CARRIAGE_EFFECT_LAPS,
   CARS_FROM_SCORE,
   COLLIDE_FACTOR,
+  DUSK_FROM,
+  DUSK_LAPS,
+  EARLY_LAPS_PER_EXTRA,
+  EARLY_MAX_MOVERS,
+  GROUP_EARLY_UNTIL,
+  GROUP_INTERVAL_EARLY,
+  LATE_FROM,
+  LATE_LAPS_PER_EXTRA,
+  MAX_MOVERS_LATE,
+  STREAK_LAPS,
+  level,
   CRASH_TICKS,
   DAZE_TICKS,
   DOUBLE_GAP,
@@ -34,10 +46,16 @@ import {
   JOIN_HOLD,
   JOIN_TICKS,
   KIND_SPECS,
-  LANES,
+  EVENT_FROM_SCORE,
+  EVENT_INTERVAL,
+  HAUNT_SPEEDS,
+  HOOK_CAST,
+  HOOK_LEN,
+  HOOK_TICKS,
   LANE_RATE,
   LANE_W,
   LAPS_PER_EXTRA,
+  LEVEL_RATE,
   LATERAL_OVERLAP,
   MAX_MOVERS,
   MAX_MOVERS_START,
@@ -47,17 +65,28 @@ import {
   RAT_INTERVAL,
   RAT_LURK,
   RAT_SPEED,
-  ROAD_HALF,
+  PREDATOR_FROM_SCORE,
+  PREDATOR_INTERVAL,
+  PREDATOR_SIGHT,
+  PREDATOR_WANDER,
+  PREDATOR_WANDER_CHANCE,
+  PREDATOR_TURN,
   SHOUT_COOLDOWN,
   SHOUT_TICKS,
   SECOND_CARRIAGE_SCORE,
   CARRIAGE_RETURN,
   SHORTCUT_CHANCE,
+  SLIME_TICKS,
   SLIP_TICKS,
   SPAWN_INTERVAL,
   SPAWN_INTERVAL_MIN,
   SPAWN_INTERVAL_STEP,
   SPEED_SPREAD,
+  STEER_AHEAD,
+  SWERVE_EVERY,
+  SWERVE_TICKS,
+  TUMBLE_LEN,
+  TUMBLE_RATE,
   WARN_MAX_GAP,
   WARN_TICKS,
   WRONG_WAY_CHANCE,
@@ -68,11 +97,33 @@ import {
   type PickupKind,
 } from './constants';
 import {
+  COURSES,
+  RAPIDS_SPEED,
+  SLOW_CAR_SHARE,
+  SLOW_CAR_SPEED,
+  WILD_DEPTH,
+  WILD_GAP,
+  BRIDGE_EXIT_CLEAR,
+  TRAIN_LANE,
+  TRAIN_LEN,
+  WAVE_FROM_SCORE,
+  WAVE_INTERVAL,
+  WAVE_LEN,
+  WAVE_RATE,
+  WAVE_SWELL,
+  type CourseId,
+  type CourseSpec,
+} from './courses';
+import {
   DEFAULT_FRAME,
   generatePark,
   laneOffset,
+  inRapids,
   loopDelta,
+  nearPolyline,
+  onBridge,
   pose,
+  underCover,
   wrap,
   type Entrance,
   type Park,
@@ -104,7 +155,18 @@ export type SimEvent =
   | 'coin'
   | 'skull'
   | 'spiral'
-  | 'knock';
+  | 'autopilot'
+  | 'streak'
+  | 'knock'
+  | 'eat'
+  | 'cast'
+  | 'reel'
+  | 'snap'
+  | 'roll'
+  | 'sting'
+  | 'haunt'
+  | 'slime'
+  | 'wave';
 
 /**
  * Where a mover is: walking in from the street, on the loop, cutting across the park, or heading out. Only movers on
@@ -180,6 +242,23 @@ export interface Mover {
   ghost: number;
   /** 1 once it has taken a rainbow star: it knocks everyone it touches off the loop for the rest of its laps. */
   star: number;
+  /** 1 once it has taken an autopilot token: it steers itself out of the way of collisions. */
+  autopilot: number;
+  /** Slowed by its autopilot to keep behind someone; back to its usual speed once clear. */
+  autoSlow: boolean;
+  /**
+   * A carriage's pick-up wears off once it has done this many laps (`Infinity` while it has none), going back to
+   * `plainSpeed`.
+   */
+  wearOff: number;
+  plainSpeed: number;
+  /** Ticks left swerving from lane to lane after a bee sting or a haunting, and whether it was a haunting. */
+  swerve: number;
+  haunted: boolean;
+  /** Ticks left stuck in slime (it stands still for as long, as if dazed). */
+  slime: number;
+  /** A predator's tick of its last move toward someone. */
+  turnedAt: number;
 }
 
 /**
@@ -187,6 +266,8 @@ export interface Mover {
  */
 export interface Rat {
   id: number;
+  /** A biter (the rat, or whatever bites on this course), a bee or a ghost. */
+  kind: 'bite' | 'sting' | 'haunt';
   state: 'lurk' | 'dash' | 'flee';
   /** The mover it is after. */
   target: number;
@@ -202,6 +283,50 @@ export interface Rat {
   ticks: number;
 }
 
+/** The fisherman's hook: cast from the bank into one lane at `s`, where it then sits. */
+export interface Hook {
+  id: number;
+  s: number;
+  lane: number;
+  /** Where the fisherman stands, and where the hook lands. */
+  from: Point;
+  x: number;
+  y: number;
+  state: 'cast' | 'set';
+  ticks: number;
+}
+
+/**
+ * A tumbleweed at `s`: waiting at the roadside, then rolling across the lanes from the side it started on (`q` is
+ * the lane its inner side is at, fractional as it rolls, moving by `dir`).
+ */
+export interface Tumbleweed {
+  id: number;
+  s: number;
+  q: number;
+  dir: 1 | -1;
+  state: 'wait' | 'roll';
+  ticks: number;
+  x: number;
+  y: number;
+  prevX: number;
+  prevY: number;
+}
+
+/**
+ * A wave at `s`: swelling at the bank, then rolling across the lanes (`q` is how far across its front is, in lanes from
+ * the inside, moving by `dir`). `hit` holds whoever it has already pushed.
+ */
+export interface Wave {
+  id: number;
+  s: number;
+  q: number;
+  dir: 1 | -1;
+  state: 'swell' | 'roll';
+  ticks: number;
+  hit: number[];
+}
+
 /** A burst where two movers collided without ending the run. */
 export interface Impact {
   id: number;
@@ -210,9 +335,9 @@ export interface Impact {
   ticks: number;
 }
 
-/** How many of the park's patches are on the road at a given score. */
-export const patchesShown = (score: number): number =>
-  PATCH_SCORES.filter((at) => score >= at).length;
+/** How many of the park's patches are on the road after a given number of laps. */
+export const patchesShown = (laps: number): number =>
+  PATCH_SCORES.filter((at) => laps >= at).length;
 
 /** A heart or token lying on the loop, in one lane, until someone takes it or it runs out. */
 export interface Pickup {
@@ -229,7 +354,7 @@ export interface Pickup {
 /** The "+1" that floats up where a lap is completed, or what a pick-up did where it was taken. */
 export interface Pop {
   id: number;
-  /** Points scored: 1, or the size of a run group. */
+  /** Points scored: 1, or the size of a run group, times the streak. */
   value: number;
   /** Set for a pick-up instead of a lap. */
   pickup?: PickupKind;
@@ -238,9 +363,32 @@ export interface Pop {
   ticks: number;
 }
 
-/** Movers allowed in the park at once (not counting carriages) at a given score. */
-export const maxMovers = (score: number): number =>
-  Math.min(MAX_MOVERS, MAX_MOVERS_START + Math.floor(score / LAPS_PER_EXTRA));
+/**
+ * Movers allowed in the park at once (not counting carriages) after a given number of laps, on a course whose level
+ * starts `offset` higher.
+ */
+export const maxMovers = (laps: number, offset = 0, rate = LEVEL_RATE): number => {
+  const early = Math.min(
+    EARLY_MAX_MOVERS,
+    MAX_MOVERS_START + Math.floor(laps / EARLY_LAPS_PER_EXTRA),
+  );
+  const ramp = Math.min(
+    MAX_MOVERS,
+    MAX_MOVERS_START + Math.floor((level(laps, rate) + offset) / LAPS_PER_EXTRA),
+  );
+  const late =
+    laps > LATE_FROM
+      ? Math.min(MAX_MOVERS_LATE - MAX_MOVERS, Math.floor((laps - LATE_FROM) / LATE_LAPS_PER_EXTRA))
+      : 0;
+  return Math.max(early, ramp) + late;
+};
+
+/** How far dusk has fallen after a given number of laps, 0 (day) to 1 (as dark as it gets). */
+export const duskAt = (laps: number): number =>
+  Math.max(0, Math.min(1, (laps - DUSK_FROM) / DUSK_LAPS));
+
+/** What each lap is worth after this many laps in a row without losing a life. */
+export const streakValue = (clean: number): number => 1 + Math.floor(clean / STREAK_LAPS);
 
 /** Ticks a new screen shape has to hold before the park on the title card is remade for it. */
 const FRAME_SETTLE = 20;
@@ -251,9 +399,18 @@ const sameFrame = (a: ParkFrame, b: ParkFrame): boolean =>
 /** How fast a mover is actually going: nothing while dazed. */
 export const pace = (m: Pick<Mover, 'speed' | 'daze'>): number => (m.daze > 0 ? 0 : m.speed);
 
-/** People a rat goes for, and who a biker shouts at. */
-const BITEABLE: ReadonlySet<Kind> = new Set(['walker', 'runner', 'dog']);
+/** People a rat goes for, who a biker shouts at, and who a predator eats. */
+const BITEABLE: ReadonlySet<Kind> = new Set(['walker', 'runner', 'dog', 'slow', 'pair']);
 const ON_FOOT = BITEABLE;
+
+/** Pick-ups whose effect lasts the taker's laps, and so only a couple of laps on a carriage. */
+const LASTING: ReadonlySet<PickupKind> = new Set(['ghost', 'star', 'fire', 'turtle', 'autopilot']);
+const speedFactor = (kind: PickupKind): number =>
+  kind === 'fire' ? FIRE_SPEED : kind === 'turtle' ? TURTLE_SPEED : 1;
+
+/** An autopilot only changes lane into one clear for at least this long, and slows to this share of who's ahead. */
+const AUTO_SAFE_TICKS = 30;
+const AUTO_SLOW = 0.95;
 
 /** How much of each lane span [p, p + w) overlaps, in lanes. */
 export const laneOverlap = (p1: number, w1: number, p2: number, w2: number): number =>
@@ -263,8 +420,12 @@ export const laneOverlap = (p1: number, w1: number, p2: number, w2: number): num
 export class ChaosParkSim {
   phase: Phase = 'title';
   paused = false;
-  /** Laps completed this run, by everything. */
+  /** Points this run: a lap is worth `streakValue` of them, and a coin one. */
   score = 0;
+  /** Laps completed this run, by everything (and those a star knocked off the loop): what the difficulty goes by. */
+  laps = 0;
+  /** Laps since a life was last lost, for the streak. */
+  cleanLaps = 0;
   park: Park;
   movers: Mover[] = [];
   rats: Rat[] = [];
@@ -273,6 +434,9 @@ export class ChaosParkSim {
   /** Lives left this run: a collision takes one, and the run ends when none are left. Hearts add one, up to `MAX_LIVES`. */
   lives = LIVES;
   pickups: Pickup[] = [];
+  hooks: Hook[] = [];
+  weeds: Tumbleweed[] = [];
+  waves: Wave[] = [];
   /** Ticks left of a time warp, from taking a spiral: see `timeScale`. */
   warp = 0;
   impacts: Impact[] = [];
@@ -290,18 +454,52 @@ export class ChaosParkSim {
   private groupTimer = 0;
   private ratTimer = 0;
   private pickupTimer = 0;
+  private predatorTimer = 0;
+  private eventTimer = 0;
+  private waveTimer = 0;
   /** Pairs already warned about, so the alert sounds once per close call. */
   private warnedPairs = new Set<string>();
   /** Pairs that have collided and are still overlapping as one passes the other; they don't collide again. */
   private passing = new Set<string>();
+
+  /** Collisions never end the run: for the crowd behind the title (see `inPark`). */
+  endless = false;
 
   /** The shape of screen the next park is made for (see `fitFrame`). */
   frame: ParkFrame = DEFAULT_FRAME;
   /** Ticks the screen has kept its current shape. */
   private frameSteady = 0;
 
-  constructor(private readonly rng: () => number = Math.random) {
-    this.park = generatePark(rng);
+  constructor(
+    private readonly rng: () => number = Math.random,
+    /** The course being played; see `setCourse`. */
+    public course: CourseSpec = COURSES.park,
+  ) {
+    this.park = generatePark(rng, undefined, DEFAULT_FRAME, course);
+  }
+
+  /** A run already under way in `park`, for the crowd behind the title: never ending, as `endless`. */
+  static inPark(park: Park, rng: () => number): ChaosParkSim {
+    const sim = new ChaosParkSim(rng, COURSES[park.course]);
+    sim.park = park;
+    sim.frame = park.frame;
+    sim.endless = true;
+    sim.placeCarriage();
+    sim.enter('playing');
+    return sim;
+  }
+
+  /** Picks the course for the next run, on the title or game-over card, with a new park for it behind the card. */
+  setCourse(id: CourseId): void {
+    if (this.course.id === id) return;
+    if (this.phase !== 'title' && this.phase !== 'gameOver' && this.phase !== 'help') return;
+    this.course = COURSES[id];
+    this.park = generatePark(this.rng, this.park.season, this.frame, this.course);
+  }
+
+  /** The difficulty level now: from the laps, and higher on later courses. */
+  get level(): number {
+    return level(this.laps, this.course.levelRate) + this.course.levelOffset;
   }
 
   drainEvents(): SimEvent[] {
@@ -314,10 +512,11 @@ export class ChaosParkSim {
   start(): void {
     if (this.phase === 'gameOver' && this.phaseTicks < GAME_OVER_LOCKOUT) return;
     if (this.phase !== 'title' && this.phase !== 'gameOver' && this.phase !== 'help') return;
-    if (this.phase === 'gameOver') this.park = generatePark(this.rng, undefined, this.frame);
+    if (this.phase === 'gameOver')
+      this.park = generatePark(this.rng, undefined, this.frame, this.course);
     // A park made before the screen's shape was known is remade to fit it, in the same season.
     else if (!sameFrame(this.park.frame, this.frame))
-      this.park = generatePark(this.rng, this.park.season, this.frame);
+      this.park = generatePark(this.rng, this.park.season, this.frame, this.course);
     this.reset();
     this.placeCarriage();
     this.enter('playing');
@@ -331,7 +530,9 @@ export class ChaosParkSim {
   toTitle(): boolean {
     if (this.phase === 'gameOver' && this.phaseTicks < GAME_OVER_LOCKOUT) return false;
     if (this.phase === 'title') return false;
-    if (this.phase !== 'help') this.park = generatePark(this.rng, undefined, this.frame);
+    // Back to the title in the same season as the park just played.
+    if (this.phase !== 'help')
+      this.park = generatePark(this.rng, this.park.season, this.frame, this.course);
     this.reset();
     this.enter('title');
     return true;
@@ -351,7 +552,7 @@ export class ChaosParkSim {
     const idle = this.phase === 'title' || this.phase === 'help';
     if (!idle || sameFrame(this.park.frame, this.frame)) return;
     if (this.clock === 0 || this.frameSteady >= FRAME_SETTLE)
-      this.park = generatePark(this.rng, this.park.season, this.frame);
+      this.park = generatePark(this.rng, this.park.season, this.frame, this.course);
   }
 
   setPaused(paused: boolean): void {
@@ -369,7 +570,8 @@ export class ChaosParkSim {
       const ux = Math.cos(m.heading);
       const uy = Math.sin(m.heading);
       const along = Math.max(-m.len / 2, Math.min(m.len / 2, (x - m.x) * ux + (y - m.y) * uy));
-      const d = Math.hypot(x - m.x - ux * along, y - m.y - uy * along) - (m.width * LANE_W) / 2;
+      const d =
+        Math.hypot(x - m.x - ux * along, y - m.y - uy * along) - (m.width * this.park.laneW) / 2;
       if (d < GRAB_RADIUS && d < bestDist) {
         best = m;
         bestDist = d;
@@ -391,9 +593,9 @@ export class ChaosParkSim {
     if (this.phase !== 'playing' || this.paused) return false;
     const m = this.movers.find((o) => o.id === id && o.state === 'track');
     if (!m) return false;
-    const next = Math.max(0, Math.min(LANES - m.width, m.target + delta));
-    // Someone dazed by a rat can't be moved on.
-    if (next === m.target || m.daze > 0) {
+    const next = Math.max(0, Math.min(this.park.lanes - m.width, m.target + delta));
+    // Someone dazed by a rat can't be moved on, and nobody can go through the mansion's wall.
+    if (next === m.target || m.daze > 0 || !this.canChange(m, next)) {
       this.events.push('bump');
       return false;
     }
@@ -425,7 +627,7 @@ export class ChaosParkSim {
     if (this.phase !== 'playing' || this.paused) return false;
     const m = this.movers.find((o) => o.id === id && o.state === 'track');
     if (!m) return false;
-    if (m.boosted === on || m.daze > 0) {
+    if (m.boosted === on || m.daze > 0 || this.isTrain(m)) {
       this.events.push('bump');
       return false;
     }
@@ -454,6 +656,10 @@ export class ChaosParkSim {
     if (this.phase !== 'playing') return;
     this.playTicks++;
     this.spawn();
+    for (const m of this.movers)
+      if (m.autopilot > 0 && m.state === 'track' && m.daze === 0) this.steer(m);
+    for (const m of this.movers)
+      if (m.kind === 'predator' && m.state === 'track' && m.daze === 0) this.hunt(m);
     const gone = new Set<Mover>();
     for (const m of this.movers) {
       m.age++;
@@ -464,6 +670,10 @@ export class ChaosParkSim {
     }
     if (gone.size) this.movers = this.movers.filter((m) => !gone.has(m));
     this.moveRats();
+    this.moveHooks();
+    this.moveWeeds();
+    if (this.phase !== 'playing') return;
+    this.moveWaves();
     for (const i of this.impacts) i.ticks++;
     this.impacts = this.impacts.filter((i) => i.ticks < IMPACT_TICKS);
     for (const p of this.pops) p.ticks++;
@@ -478,19 +688,31 @@ export class ChaosParkSim {
   private moveOnTrack(m: Mover): void {
     const { track, entrances, shortcuts } = this.park;
     if (m.daze > 0) {
-      // Standing still, seeing stars.
+      // Standing still, seeing stars (or stuck in slime).
       m.daze--;
+      if (m.slime > 0) m.slime--;
       return;
     }
+    if (m.swerve > 0) this.swerveStep(m);
     const from = m.s;
-    const delta = m.speed * m.dir;
+    // Faster through the rapids.
+    const pace = inRapids(this.park.rapids, m.s, m.p, m.width, track.length)
+      ? m.speed * RAPIDS_SPEED
+      : m.speed;
+    const delta = pace * m.dir;
     m.s = wrap(m.s + delta, track.length);
     if (m.p !== m.target) m.p += Math.max(-LANE_RATE, Math.min(LANE_RATE, m.target - m.p));
-    m.progress += m.speed;
+    m.progress += pace;
     this.countLaps(m);
+    if (m.lapsDone >= m.wearOff) this.wearOff(m);
     this.checkPatches(m);
     this.place(m);
 
+    if (m.done && this.course.wild) {
+      // Back into the trees, on whichever side of the road it's nearer.
+      this.leaveWild(m);
+      return;
+    }
     if (m.done) {
       // The last lap ends at the entrance it came in by, so look a little either side as well as just ahead.
       const exit =
@@ -580,7 +802,7 @@ export class ChaosParkSim {
 
   /** Puts a mover on the loop where `s` and `p` say, facing the way it moved. */
   private place(m: Mover): void {
-    const at = pose(this.park.track, m.s, laneOffset(m.p, m.width));
+    const at = pose(this.park.track, m.s, laneOffset(m.p, m.width, this.park));
     this.face(m, at.x, at.y, at.angle + (m.dir < 0 ? Math.PI : 0));
     m.x = at.x;
     m.y = at.y;
@@ -596,7 +818,7 @@ export class ChaosParkSim {
     const { track } = this.park;
     const to = reversed ? c.a : c.b;
     const path = reversed ? [...c.path].reverse() : c.path;
-    const end = pose(track, to, laneOffset(0, 1));
+    const end = pose(track, to, laneOffset(0, 1, this.park));
     m.state = 'shortcut';
     m.skip = wrap(to - m.s, track.length);
     this.setRoute(m, [{ x: m.x, y: m.y }, ...path, { x: end.x, y: end.y }], { s: to, p: 0 });
@@ -608,6 +830,48 @@ export class ChaosParkSim {
     this.setRoute(m, [{ x: m.x, y: m.y }, e.throat, e.gate, e.street], null);
   }
 
+  private leaveWild(m: Mover): void {
+    const { track, half, lanes, bridge } = this.park;
+    // Not off a bridge: on over it first.
+    if (
+      bridge &&
+      underCover(
+        { s: bridge.over.s - BRIDGE_EXIT_CLEAR, len: bridge.over.len + 2 * BRIDGE_EXIT_CLEAR },
+        m.s,
+        track.length,
+      )
+    )
+      return;
+    const near = m.p + m.width / 2 < lanes / 2 ? -1 : 1;
+    // On a figure of eight, not into the other road: the far side if the near one is blocked, or on a little further.
+    const side = this.clearOfRoad(m.s, near) ? near : this.clearOfRoad(m.s, -near) ? -near : 0;
+    if (side === 0) return;
+    const edge = pose(track, m.s, side * (half + 4));
+    const out = pose(track, m.s, side * (half + WILD_DEPTH));
+    m.state = 'leaving';
+    m.warning = false;
+    this.setRoute(
+      m,
+      [
+        { x: m.x, y: m.y },
+        { x: edge.x, y: edge.y },
+        { x: out.x, y: out.y },
+      ],
+      null,
+    );
+  }
+
+  /**
+   * Whether the trees `WILD_DEPTH` out from the road at `s`, on `side`, are clear of any other road: always on a loop,
+   * not near where a figure of eight's halves meet.
+   */
+  private clearOfRoad(s: number, side: number): boolean {
+    if (!this.park.bridge) return true;
+    const { track, half } = this.park;
+    const out = pose(track, s, side * (half + WILD_DEPTH));
+    return !nearPolyline(track.points, out, half + 8, true);
+  }
+
   // -------------------------------------------------------------------------------------------------------------
   // Laps, patches and collisions.
 
@@ -615,30 +879,76 @@ export class ChaosParkSim {
     const length = this.park.track.length;
     while (!m.done && m.progress >= (m.lapsDone + 1) * length - 1e-6) {
       m.lapsDone++;
-      this.score += m.crowd;
-      this.events.push('lap');
-      this.pops.push({ id: this.nextId++, value: m.crowd, x: m.x, y: m.y, ticks: 0 });
       if (m.lapsDone >= m.laps) m.done = true;
+      // A predator's lap scores nothing.
+      if (m.kind === 'predator') continue;
+      const value = this.scoreLaps(m.crowd);
+      this.events.push('lap');
+      this.pops.push({ id: this.nextId++, value, x: m.x, y: m.y, ticks: 0 });
     }
   }
 
+  /** Scores laps at the streak's value, then counts them toward the streak; returns the points. */
+  private scoreLaps(laps: number): number {
+    const before = streakValue(this.cleanLaps);
+    const value = laps * before;
+    this.score += value;
+    this.laps += laps;
+    this.cleanLaps += laps;
+    if (streakValue(this.cleanLaps) > before) this.events.push('streak');
+    return value;
+  }
+
+  /**
+   * Slippery patches slide whoever crosses them a lane; obstacles are steered round, a lane either way, a little
+   * before they are reached; slime holds whoever steps in it.
+   */
   private checkPatches(m: Mover): void {
     const { patches, track } = this.park;
-    for (const patch of patches.slice(0, patchesShown(this.score))) {
+    const { obstacle } = this.course;
+    for (const patch of patches.slice(0, patchesShown(this.laps))) {
+      const dist = Math.abs(loopDelta(patch.s, m.s, track.length));
       const over =
-        Math.abs(loopDelta(patch.s, m.s, track.length)) < (patch.len + m.len) / 2 - 4 * ART &&
-        laneOverlap(m.p, m.width, patch.lane, patch.width) > 0.3;
+        obstacle === 'steer'
+          ? dist < (patch.len + m.len) / 2 + STEER_AHEAD &&
+            laneOverlap(m.target, m.width, patch.lane, patch.width) > 0.3
+          : dist < (patch.len + m.len) / 2 - 4 * ART &&
+            laneOverlap(m.p, m.width, patch.lane, patch.width) > 0.3;
       if (!over) {
         m.onPatch.delete(patch.id);
         continue;
       }
       if (m.onPatch.has(patch.id)) continue;
       m.onPatch.add(patch.id);
-      const options = [m.target - 1, m.target + 1].filter((l) => l >= 0 && l <= LANES - m.width);
+      if (obstacle === 'slime') {
+        if (m.ghost > 0 || m.star > 0) continue;
+        m.daze = m.slime = SLIME_TICKS;
+        m.boosted = false;
+        m.autoSlow = false;
+        m.speed = m.baseSpeed;
+        this.events.push('slime');
+        continue;
+      }
+      const options = [m.target - 1, m.target + 1].filter(
+        (l) => l >= 0 && l <= this.park.lanes - m.width && this.canChange(m, l),
+      );
+      if (!options.length) continue;
       m.target = options[Math.floor(this.rng() * options.length)]!;
-      m.slip = SLIP_TICKS;
-      this.events.push('slip');
+      if (obstacle === 'slip') {
+        m.slip = SLIP_TICKS;
+        this.events.push('slip');
+      }
     }
+  }
+
+  /** Whether a mover may change to `lane`: anyone but the course's train. */
+  private canChange(m: Mover, _lane: number): boolean {
+    return !this.isTrain(m);
+  }
+
+  /** Whether a mover is the course's train, which keeps to its lane whatever happens. */
+  private isTrain(m: Mover): boolean {
+    return m.kind === 'carriage' && this.course.train;
   }
 
   /** A biker bearing down on someone on foot tells them to get out of the way. */
@@ -699,7 +1009,9 @@ export class ChaosParkSim {
 
   /** Takes a life for a collision or wreck at `at`; true if that was the last, ending the run. */
   private loseLife(at: { x: number; y: number }, ids: number[]): boolean {
+    if (this.endless) this.lives = LIVES;
     this.lives--;
+    this.cleanLaps = 0;
     if (this.lives > 0) return false;
     this.crash = { ...at, ids };
     this.events.push('crash');
@@ -711,6 +1023,7 @@ export class ChaosParkSim {
   private stun(victim: Mover, at: { x: number; y: number }): void {
     victim.daze = Math.max(victim.daze, STUN_TICKS);
     victim.boosted = false;
+    victim.autoSlow = false;
     victim.speed = victim.baseSpeed;
     this.impacts.push({ id: this.nextId++, ...at, ticks: 0 });
     this.events.push('hit');
@@ -758,6 +1071,14 @@ export class ChaosParkSim {
           continue;
         }
         if (touching) {
+          // A predator eats whoever on foot it touches; anything bigger it collides with.
+          const predator = a.kind === 'predator' ? a : b.kind === 'predator' ? b : null;
+          const prey = predator === a ? b : a;
+          if (predator && ON_FOOT.has(prey.kind)) {
+            if (this.eat(predator, prey)) return;
+            knocked.add(prey);
+            continue;
+          }
           if (this.collide(a, b, delta)) return;
           continue;
         }
@@ -781,7 +1102,55 @@ export class ChaosParkSim {
       }
     }
     this.warnedPairs = pairs;
-    for (const m of knocked) this.knockOff(m);
+    for (const m of knocked) if (this.movers.includes(m)) this.knockOff(m);
+  }
+
+  /** A predator catches someone: they're gone, their laps lost, and it costs a life. True if that ended the run. */
+  private eat(predator: Mover, prey: Mover): boolean {
+    this.events.push('eat');
+    const at = { x: prey.x, y: prey.y };
+    this.movers = this.movers.filter((o) => o !== prey);
+    this.impacts.push({ id: this.nextId++, ...at, ticks: 0 });
+    return this.loseLife(at, [predator.id, prey.id]);
+  }
+
+  /**
+   * A predator moves a lane at a time toward the nearest person on foot ahead of it, now and then, so a swipe can
+   * still put it off.
+   */
+  private hunt(m: Mover): void {
+    if (this.playTicks - m.turnedAt < PREDATOR_TURN || m.p !== m.target) return;
+    const length = this.park.track.length;
+    let prey: Mover | null = null;
+    let nearest = PREDATOR_SIGHT;
+    for (const o of this.movers) {
+      if (o.state !== 'track' || !ON_FOOT.has(o.kind) || o.ghost > 0) continue;
+      const d = wrap((o.s - m.s) * m.dir, length);
+      if (d < nearest) {
+        nearest = d;
+        prey = o;
+      }
+    }
+    let lane = !prey
+      ? m.target
+      : prey.target < m.target
+        ? m.target - 1
+        : prey.target > m.target
+          ? m.target + 1
+          : m.target;
+    // With nobody to go for, it wanders a lane now and then of its own accord.
+    if (
+      !prey &&
+      this.playTicks - m.turnedAt >= PREDATOR_WANDER &&
+      this.rng() < PREDATOR_WANDER_CHANCE
+    ) {
+      const up =
+        m.target === 0 ? true : m.target >= this.park.lanes - m.width ? false : this.rng() < 0.5;
+      lane = m.target + (up ? 1 : -1);
+    }
+    if (lane === m.target || !this.canChange(m, lane)) return;
+    m.target = lane;
+    m.turnedAt = this.playTicks;
   }
 
   /**
@@ -798,8 +1167,8 @@ export class ChaosParkSim {
       this.carriageWait = Math.round(lo + this.rng() * (hi - lo));
       return;
     }
-    const value = Math.max(1, m.laps - m.lapsDone) * m.crowd;
-    this.score += value;
+    if (m.kind === 'predator') return;
+    const value = this.scoreLaps(Math.max(1, m.laps - m.lapsDone) * m.crowd);
     this.pops.push({ id: this.nextId++, value, x: m.x, y: m.y, ticks: 0 });
   }
 
@@ -808,40 +1177,63 @@ export class ChaosParkSim {
 
   private spawn(): void {
     this.spawnSpecials();
-    const active = this.movers.filter((m) => m.kind !== 'carriage' && m.state !== 'leaving').length;
-    // One carriage, and a second from SECOND_CARRIAGE_SCORE; one knocked off is replaced after a wait.
-    const carriages = this.score >= SECOND_CARRIAGE_SCORE ? 2 : 1;
+    const active = this.movers.filter(
+      (m) => m.kind !== 'carriage' && m.kind !== 'predator' && m.state !== 'leaving',
+    ).length;
+    // One carriage, and a second from SECOND_CARRIAGE_SCORE laps; one knocked off is replaced after a wait.
+    const carriages = this.laps >= SECOND_CARRIAGE_SCORE && !this.course.train ? 2 : 1;
     if (this.carriageWait > 0) this.carriageWait--;
     else if (this.carriagesSent < carriages && this.arrive('carriage')) this.carriagesSent++;
     if (active === 0) this.spawnTimer = Math.min(this.spawnTimer, 30);
     if (--this.spawnTimer > 0) return;
-    if (active >= maxMovers(this.score)) {
+    if (active >= maxMovers(this.laps, this.course.levelOffset, this.course.levelRate)) {
       this.spawnTimer = 30;
       return;
     }
-    const base = Math.max(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL - this.score * SPAWN_INTERVAL_STEP);
+    const base = Math.max(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL - this.level * SPAWN_INTERVAL_STEP);
     this.spawnTimer = Math.round(base * (0.75 + this.rng() * 0.5));
     if (!this.arrive(this.pickKind())) this.spawnTimer = 20;
   }
 
-  /** The rare ones: run groups and rats, each on its own long timer once the score is high enough. */
+  /** The rare ones: run groups and rats, each on its own long timer once there have been enough laps. */
   private spawnSpecials(): void {
     const between = ([lo, hi]: readonly [number, number]) =>
       Math.round(lo + this.rng() * (hi - lo));
-    // A group comes GROUP_INTERVAL after the score reaches GROUP_FROM_SCORE, and again that long after each one
-    // has gone, so there is never more than one.
-    if (this.score >= GROUP_FROM_SCORE) {
+    // A group comes a while after the laps reach GROUP_FROM_SCORE, and again a while after each one has gone, so
+    // there is never more than one.
+    if (this.laps >= GROUP_FROM_SCORE) {
       if (this.movers.some((m) => m.kind === 'group')) this.groupTimer = 0;
-      else if (this.groupTimer <= 0) this.groupTimer = between(GROUP_INTERVAL);
+      else if (this.groupTimer <= 0)
+        this.groupTimer = between(
+          this.laps < GROUP_EARLY_UNTIL ? GROUP_INTERVAL_EARLY : GROUP_INTERVAL,
+        );
       // Every gate busy: try again in a moment.
       else if (--this.groupTimer <= 0 && !this.arrive('group')) this.groupTimer = 10;
     }
-    if (this.score >= RAT_FROM_SCORE) {
+    if (this.laps >= RAT_FROM_SCORE) {
       if (this.ratTimer <= 0) this.ratTimer = between(RAT_INTERVAL) / 2;
-      else if (--this.ratTimer <= 0) this.ratTimer = this.sendRat() ? between(RAT_INTERVAL) : 120;
+      else if (--this.ratTimer <= 0)
+        this.ratTimer = this.sendRat('bite') ? between(RAT_INTERVAL) : 120;
+    }
+    // A course's predator, like a run group: one at a time, a while after the last.
+    if (this.course.predator && this.laps >= PREDATOR_FROM_SCORE) {
+      if (this.movers.some((m) => m.kind === 'predator')) this.predatorTimer = 0;
+      else if (this.predatorTimer <= 0) this.predatorTimer = between(PREDATOR_INTERVAL);
+      else if (--this.predatorTimer <= 0 && !this.arrive('predator')) this.predatorTimer = 10;
+    }
+    const { event } = this.course;
+    if (event !== 'none' && this.laps >= EVENT_FROM_SCORE) {
+      if (this.eventTimer <= 0) this.eventTimer = between(EVENT_INTERVAL) / 2;
+      else if (--this.eventTimer <= 0)
+        this.eventTimer = this.startEvent() ? between(EVENT_INTERVAL) : 120;
+    }
+    // Waves, one at a time, on their own timer.
+    if (this.course.waves && this.laps >= WAVE_FROM_SCORE && !this.waves.length) {
+      if (this.waveTimer <= 0) this.waveTimer = between(WAVE_INTERVAL);
+      else if (--this.waveTimer <= 0 && !this.sendWave()) this.waveTimer = 30;
     }
     // One pick-up at a time: the next is timed from when the last one went.
-    if (this.score >= PICKUP_FROM_SCORE && !this.pickups.length) {
+    if (this.laps >= PICKUP_FROM_SCORE && !this.pickups.length) {
       if (this.pickupTimer <= 0) this.pickupTimer = between(PICKUP_FIRST);
       else if (--this.pickupTimer <= 0)
         this.pickupTimer = this.placePickup() ? between(PICKUP_INTERVAL) : 30;
@@ -867,13 +1259,17 @@ export class ChaosParkSim {
       }
     }
     const s = this.rng() * track.length;
-    const lane = Math.floor(this.rng() * LANES);
+    const lane = Math.floor(this.rng() * this.park.lanes);
+    if (onBridge(this.park.bridge, s, track.length)) return false;
     for (const m of this.movers) {
       if (m.state !== 'track') continue;
-      if (Math.abs(loopDelta(s, m.s, track.length)) < PICKUP_CLEAR && laneOverlap(m.p, m.width, lane, 1) > 0)
+      if (
+        Math.abs(loopDelta(s, m.s, track.length)) < PICKUP_CLEAR &&
+        laneOverlap(m.p, m.width, lane, 1) > 0
+      )
         return false;
     }
-    const at = pose(track, s, laneOffset(lane, 1));
+    const at = pose(track, s, laneOffset(lane, 1, this.park));
     this.pickups.push({ id: this.nextId++, kind, s, lane, x: at.x, y: at.y, ticks: 0 });
     return true;
   }
@@ -886,8 +1282,10 @@ export class ChaosParkSim {
       const taker = this.movers.find(
         (m) =>
           m.state === 'track' &&
-          m.kind !== 'carriage' &&
           m.kind !== 'group' &&
+          m.kind !== 'predator' &&
+          !(m.kind === 'carriage' && (p.kind === 'double' || p.kind === 'strength')) &&
+          !this.isTrain(m) &&
           Math.abs(loopDelta(p.s, m.s, length)) < (PICKUP_LEN + m.len) / 2 &&
           laneOverlap(m.p, m.width, p.lane, 1) > LATERAL_OVERLAP,
       );
@@ -924,7 +1322,14 @@ export class ChaosParkSim {
           if (taker.star > 0) break;
           if (this.loseLife({ x: taker.x, y: taker.y }, [taker.id])) {
             this.events.push('skull');
-            this.pops.push({ id: this.nextId++, value: 0, pickup: p.kind, x: taker.x, y: taker.y, ticks: 0 });
+            this.pops.push({
+              id: this.nextId++,
+              value: 0,
+              pickup: p.kind,
+              x: taker.x,
+              y: taker.y,
+              ticks: 0,
+            });
             this.pickups = this.pickups.filter((o) => o.ticks < PICKUP_TICKS);
             return;
           }
@@ -933,11 +1338,119 @@ export class ChaosParkSim {
         case 'spiral':
           this.warp = WARP_SLOW_TICKS + WARP_EASE_TICKS;
           break;
+        case 'autopilot':
+          taker.autopilot = 1;
+          break;
+      }
+      // A carriage never leaves, so what it took lasts it a couple of laps rather than for good.
+      if (taker.kind === 'carriage' && LASTING.has(p.kind)) {
+        if (!Number.isFinite(taker.wearOff))
+          taker.plainSpeed = taker.baseSpeed / speedFactor(p.kind);
+        taker.wearOff = taker.lapsDone + CARRIAGE_EFFECT_LAPS;
       }
       this.events.push(p.kind === 'heart' ? 'life' : p.kind);
-      this.pops.push({ id: this.nextId++, value: 0, pickup: p.kind, x: taker.x, y: taker.y, ticks: 0 });
+      this.pops.push({
+        id: this.nextId++,
+        value: 0,
+        pickup: p.kind,
+        x: taker.x,
+        y: taker.y,
+        ticks: 0,
+      });
     }
     this.pickups = this.pickups.filter((p) => p.ticks < PICKUP_TICKS);
+  }
+
+  /** A carriage's pick-ups wear off: it shows again, stops knocking people off, and goes back to its usual speed. */
+  private wearOff(m: Mover): void {
+    m.wearOff = Infinity;
+    m.ghost = 0;
+    m.star = 0;
+    m.autopilot = 0;
+    m.autoSlow = false;
+    m.baseSpeed = m.plainSpeed;
+    m.speed = m.baseSpeed * (m.boosted ? BOOST : 1);
+  }
+
+  // -------------------------------------------------------------------------------------------------------------
+  // Autopilot.
+
+  /**
+   * The soonest, in ticks, anything on the loop would touch `m` were it in lanes [lo, lo + w): 0 for anything
+   * alongside or nearly so, `Infinity` for nothing on the way. Ignores anyone invisible, and anyone it is already
+   * passing through.
+   */
+  private contactIn(m: Mover, lo: number, w: number): number {
+    const length = this.park.track.length;
+    let soonest = Infinity;
+    for (const o of this.movers) {
+      if (o === m || o.state !== 'track' || o.ghost > 0) continue;
+      if (this.passing.has(`${m.id}:${o.id}`) || this.passing.has(`${o.id}:${m.id}`)) continue;
+      const oLo = Math.min(o.p, o.target);
+      const oW = Math.max(o.p, o.target) + o.width - oLo;
+      if (laneOverlap(lo, w, oLo, oW) <= 0.1) continue;
+      const delta = loopDelta(m.s, o.s, length);
+      const gap = Math.abs(delta) - (m.len + o.len) / 2;
+      if (gap > WARN_MAX_GAP * 2) continue;
+      if (gap < 6 * ART) return 0;
+      const closing = -Math.sign(delta) * (pace(o) * o.dir - pace(m) * m.dir);
+      if (closing > 0) soonest = Math.min(soonest, gap / closing);
+    }
+    return soonest;
+  }
+
+  /**
+   * Someone on autopilot about to touch someone moves to whichever lane beside it is clear for longest, or failing
+   * that slows to keep behind whoever is ahead; once clear it goes back to its usual speed.
+   */
+  private steer(m: Mover): void {
+    const length = this.park.track.length;
+    const soon = this.contactIn(m, m.target, m.width);
+    if (soon >= WARN_TICKS) {
+      if (m.autoSlow) {
+        m.autoSlow = false;
+        m.speed = m.baseSpeed * (m.boosted ? BOOST : 1);
+      }
+      return;
+    }
+    let lane = m.target;
+    let clear = soon;
+    for (const next of [m.target - 1, m.target + 1]) {
+      if (next < 0 || next > this.park.lanes - m.width || !this.canChange(m, next)) continue;
+      const t = this.contactIn(m, next, m.width);
+      if (t > clear) {
+        lane = next;
+        clear = t;
+      }
+    }
+    if (lane !== m.target && clear >= AUTO_SAFE_TICKS) {
+      m.target = lane;
+      return;
+    }
+    // Nowhere to go: keep behind the nearest one ahead in its lane going the same way, if slower.
+    let ahead: Mover | null = null;
+    let nearest = Infinity;
+    for (const o of this.movers) {
+      if (o === m || o.state !== 'track' || o.dir !== m.dir || o.ghost > 0) continue;
+      if (
+        laneOverlap(
+          m.target,
+          m.width,
+          Math.min(o.p, o.target),
+          Math.abs(o.p - o.target) + o.width,
+        ) <= 0.1
+      )
+        continue;
+      const d = wrap((o.s - m.s) * m.dir, length);
+      if (d < nearest && d < length / 2) {
+        nearest = d;
+        ahead = o;
+      }
+    }
+    if (ahead && pace(ahead) < m.speed) {
+      m.speed = pace(ahead) * AUTO_SLOW;
+      m.autoSlow = true;
+    }
   }
 
   /**
@@ -980,15 +1493,19 @@ export class ChaosParkSim {
   }
 
   private pickKind(): Kind {
-    const kinds: Kind[] = ['walker', 'dog', 'runner', 'biker', 'car'];
+    const kinds: Kind[] = ['walker', 'dog', 'runner', 'biker', 'car', 'slow', 'pair'];
     // One car in the park at a time, from the moment it turns in at the gate until it has driven out.
     const carIn = this.movers.some((m) => m.kind === 'car');
     const weight = (k: Kind): number =>
-      k !== 'car'
-        ? KIND_SPECS[k].weight
-        : this.score < CARS_FROM_SCORE || carIn
-          ? 0
-          : KIND_SPECS.car.weight + Math.min(0.05, (this.score - CARS_FROM_SCORE) * 0.002);
+      k === 'slow'
+        ? this.course.slow
+        : k === 'pair'
+          ? this.course.slowPair
+          : k !== 'car'
+            ? KIND_SPECS[k].weight
+            : this.laps < CARS_FROM_SCORE || carIn
+              ? 0
+              : KIND_SPECS.car.weight + Math.min(0.05, (this.level - CARS_FROM_SCORE) * 0.002);
     const total = kinds.reduce((sum, k) => sum + weight(k), 0);
     let r = this.rng() * total;
     for (const k of kinds) {
@@ -1000,6 +1517,7 @@ export class ChaosParkSim {
 
   /** Sends a mover in through a free entrance; returns false when every entrance is busy. */
   private arrive(kind: Kind): boolean {
+    if (this.course.wild) return this.arriveWild(kind);
     const { entrances, track } = this.park;
     const free = entrances.filter(
       (e) => !this.movers.some((m) => m.state === 'arriving' && m.entrance === e.id),
@@ -1013,23 +1531,82 @@ export class ChaosParkSim {
     const m = this.create(kind, crowd);
     const wrongWayChance = Math.min(
       WRONG_WAY_MAX_CHANCE,
-      WRONG_WAY_CHANCE + (this.score - WRONG_WAY_FROM_SCORE) * 0.003,
+      WRONG_WAY_CHANCE + (this.level - WRONG_WAY_FROM_SCORE) * 0.003,
     );
     if (
       (kind === 'walker' || kind === 'runner') &&
-      this.score >= WRONG_WAY_FROM_SCORE &&
+      this.laps >= WRONG_WAY_FROM_SCORE &&
       this.rng() < wrongWayChance
     )
       m.dir = -1;
     m.entrance = e.id;
     m.state = 'arriving';
     m.alpha = 0;
-    const p = LANES - m.width;
-    const merge = pose(track, e.s, laneOffset(p, m.width));
+    const p = this.isTrain(m) ? TRAIN_LANE : e.side > 0 ? this.park.lanes - m.width : 0;
+    const merge = pose(track, e.s, laneOffset(p, m.width, this.park));
     this.setRoute(m, [e.street, e.gate, e.throat, { x: merge.x, y: merge.y }], { s: e.s, p });
     m.x = m.prevX = e.street.x;
     m.y = m.prevY = e.street.y;
     m.heading = m.prevHeading = Math.atan2(e.gate.y - e.street.y, e.gate.x - e.street.x);
+    this.movers.push(m);
+    return true;
+  }
+
+  /**
+   * On a wild course, sends a mover out of the trees at a random spot along the road, on the inside or the outside;
+   * returns false when another is already arriving near there.
+   */
+  private arriveWild(kind: Kind): boolean {
+    const { track, half, lanes } = this.park;
+    const s = this.rng() * track.length;
+    const inside = this.rng() < 0.5;
+    // Not where a figure of eight's other road (or its bridge) is right there.
+    if (onBridge(this.park.bridge, s, track.length) || !this.clearOfRoad(s, inside ? -1 : 1))
+      return false;
+    if (
+      this.movers.some(
+        (o) =>
+          o.state === 'arriving' &&
+          !!o.join &&
+          Math.abs(loopDelta(o.join.s, s, track.length)) < WILD_GAP,
+      )
+    )
+      return false;
+    const crowd =
+      kind === 'group'
+        ? GROUP_SIZE[0] + Math.floor(this.rng() * (GROUP_SIZE[1] - GROUP_SIZE[0] + 1))
+        : 1;
+    const m = this.create(kind, crowd);
+    const wrongWayChance = Math.min(
+      WRONG_WAY_MAX_CHANCE,
+      WRONG_WAY_CHANCE + (this.level - WRONG_WAY_FROM_SCORE) * 0.003,
+    );
+    if (
+      (kind === 'walker' || kind === 'runner') &&
+      this.laps >= WRONG_WAY_FROM_SCORE &&
+      this.rng() < wrongWayChance
+    )
+      m.dir = -1;
+    m.entrance = -1;
+    m.state = 'arriving';
+    m.alpha = 0;
+    const side = inside ? -1 : 1;
+    const p = inside ? 0 : lanes - m.width;
+    const from = pose(track, s, side * (half + WILD_DEPTH));
+    const edge = pose(track, s, side * (half + 4));
+    const merge = pose(track, s, laneOffset(p, m.width, this.park));
+    this.setRoute(
+      m,
+      [
+        { x: from.x, y: from.y },
+        { x: edge.x, y: edge.y },
+        { x: merge.x, y: merge.y },
+      ],
+      { s, p },
+    );
+    m.x = m.prevX = from.x;
+    m.y = m.prevY = from.y;
+    m.heading = m.prevHeading = Math.atan2(edge.y - from.y, edge.x - from.x);
     this.movers.push(m);
     return true;
   }
@@ -1039,7 +1616,8 @@ export class ChaosParkSim {
     const m = this.create('carriage');
     m.state = 'track';
     m.s = this.rng() * this.park.track.length;
-    m.p = m.target = this.rng() < 0.5 ? 0 : LANES - 2;
+    m.p = m.target = this.rng() < 0.5 ? 0 : this.park.lanes - 2;
+    if (this.isTrain(m)) m.p = m.target = TRAIN_LANE;
     this.place(m);
     m.heading = m.prevHeading = pose(this.park.track, m.s).angle;
     m.prevX = m.x;
@@ -1056,7 +1634,7 @@ export class ChaosParkSim {
       ? lo + Math.floor(this.rng() ** 1.6 * (hi - lo + 1))
       : Infinity;
     const speed = spec.speed * (1 + (this.rng() * 2 - 1) * SPEED_SPREAD);
-    return {
+    const m: Mover = {
       id: this.nextId++,
       kind,
       width: spec.width,
@@ -1099,15 +1677,35 @@ export class ChaosParkSim {
       shoutAt: -Infinity,
       ghost: 0,
       star: 0,
+      autopilot: 0,
+      autoSlow: false,
+      wearOff: Infinity,
+      plainSpeed: speed,
+      swerve: 0,
+      haunted: false,
+      slime: 0,
+      turnedAt: -Infinity,
     };
+    if (kind === 'carriage' && this.course.train) {
+      m.width = 1;
+      m.len = TRAIN_LEN * ART;
+    }
+    if (kind === 'car' && this.course.slowCars && m.look[0] < SLOW_CAR_SHARE) {
+      m.speed = m.baseSpeed = m.plainSpeed = speed * SLOW_CAR_SPEED;
+      m.len = KIND_SPECS.carriage.len;
+    }
+    return m;
   }
 
   // -------------------------------------------------------------------------------------------------------------
   // Rats.
 
-  /** Sets a rat waiting at the kerb ahead of someone to bite; returns false if nobody suitable is about. */
-  private sendRat(): boolean {
-    if (this.rats.length) return false;
+  /**
+   * Sets a rat (or a bee or a ghost) waiting at the kerb ahead of someone to go for; returns false if nobody suitable
+   * is about. One of each kind at a time.
+   */
+  private sendRat(kind: Rat['kind']): boolean {
+    if (this.rats.some((r) => r.kind === kind)) return false;
     const { track } = this.park;
     const lead = RAT_LURK + 30;
     const people = this.movers.filter(
@@ -1116,11 +1714,12 @@ export class ChaosParkSim {
     if (!people.length) return false;
     const m = people[Math.floor(this.rng() * people.length)]!;
     // Waits on whichever side of the road is nearer the person, where they will be when it darts out.
-    const side = m.p + m.width / 2 <= LANES / 2 ? -1 : 1;
-    const at = pose(track, m.s + m.dir * m.speed * lead, side * (ROAD_HALF + 9 * ART));
+    const side = m.p + m.width / 2 <= this.park.lanes / 2 ? -1 : 1;
+    const at = pose(track, m.s + m.dir * m.speed * lead, side * (this.park.half + 9 * ART));
     const heading = at.angle + (side < 0 ? Math.PI / 2 : -Math.PI / 2);
     this.rats.push({
       id: this.nextId++,
+      kind,
       state: 'lurk',
       target: m.id,
       home: { x: at.x, y: at.y },
@@ -1132,7 +1731,7 @@ export class ChaosParkSim {
       prevHeading: heading,
       ticks: 0,
     });
-    this.events.push('squeak');
+    this.events.push(kind === 'bite' ? 'squeak' : kind);
     return true;
   }
 
@@ -1152,11 +1751,17 @@ export class ChaosParkSim {
           continue;
         }
         if (this.ratRun(r, target, (target.width * 5 + 3) * ART)) {
-          target.daze = DAZE_TICKS;
-          // A bitten person loses any boost.
-          target.boosted = false;
-          target.speed = target.baseSpeed;
-          this.events.push('bite');
+          if (r.kind === 'bite') {
+            target.daze = DAZE_TICKS;
+            // A bitten person loses any boost.
+            target.boosted = false;
+            target.speed = target.baseSpeed;
+            this.events.push('bite');
+          } else {
+            target.swerve = SWERVE_TICKS;
+            target.haunted = r.kind === 'haunt';
+            this.events.push('hit');
+          }
           this.ratState(r, 'flee');
         }
         continue;
@@ -1184,8 +1789,241 @@ export class ChaosParkSim {
     return d - step <= reach;
   }
 
+  /**
+   * A sting or a haunting has its victim swerve a lane at random every `SWERVE_EVERY` ticks; a haunted one also
+   * speeds up and slows down by turns. Back to its usual self when it wears off.
+   */
+  private swerveStep(m: Mover): void {
+    m.swerve--;
+    if (m.swerve === 0) {
+      m.haunted = false;
+      m.speed = m.baseSpeed * (m.boosted ? BOOST : 1);
+      return;
+    }
+    if (m.swerve % SWERVE_EVERY !== 0) return;
+    const options = [m.target - 1, m.target + 1].filter(
+      (l) => l >= 0 && l <= this.park.lanes - m.width && this.canChange(m, l),
+    );
+    if (options.length) m.target = options[Math.floor(this.rng() * options.length)]!;
+    if (m.haunted) {
+      const turn = Math.floor(m.swerve / SWERVE_EVERY) % 2;
+      m.speed = m.baseSpeed * HAUNT_SPEEDS[turn]!;
+    }
+  }
+
+  // -------------------------------------------------------------------------------------------------------------
+  // Course events.
+
+  /** Starts the course's own event; false if it can't happen just now. */
+  private startEvent(): boolean {
+    switch (this.course.event) {
+      case 'hook':
+        return this.castHook();
+      case 'tumbleweed':
+        return this.rollWeed();
+      case 'sting':
+        return this.sendRat('sting');
+      case 'haunt':
+        return this.sendRat('haunt');
+      case 'none':
+        return false;
+    }
+  }
+
+  /** The fisherman casts into a lane, somewhere nobody is just about to be. */
+  private castHook(): boolean {
+    if (this.hooks.length) return false;
+    const { track, lanes, half } = this.park;
+    const s = this.rng() * track.length;
+    const lane = Math.floor(this.rng() * lanes);
+    if (underCover(this.park.cover, s, track.length) || onBridge(this.park.bridge, s, track.length))
+      return false;
+    for (const m of this.movers) {
+      if (m.state !== 'track') continue;
+      if (
+        Math.abs(loopDelta(s, m.s, track.length)) < PICKUP_CLEAR &&
+        laneOverlap(m.p, m.width, lane, 1) > 0
+      )
+        return false;
+    }
+    const from = pose(track, s, half + 16 * ART);
+    const at = pose(track, s, laneOffset(lane, 1, this.park));
+    this.hooks.push({
+      id: this.nextId++,
+      s,
+      lane,
+      from: { x: from.x, y: from.y },
+      x: at.x,
+      y: at.y,
+      state: 'cast',
+      ticks: 0,
+    });
+    this.events.push('cast');
+    return true;
+  }
+
+  /**
+   * Once it lands, the hook catches whoever one lane wide swims into it, reeling them out with their laps lost but no
+   * life. Something wider, or someone with a star, breaks the line; someone invisible goes past.
+   */
+  private moveHooks(): void {
+    const length = this.park.track.length;
+    for (const h of this.hooks) {
+      h.ticks++;
+      if (h.state === 'cast') {
+        if (h.ticks >= HOOK_CAST) {
+          h.state = 'set';
+          h.ticks = 0;
+        }
+        continue;
+      }
+      if (h.ticks >= HOOK_TICKS) continue;
+      const m = this.movers.find(
+        (o) =>
+          o.state === 'track' &&
+          o.ghost === 0 &&
+          Math.abs(loopDelta(h.s, o.s, length)) < (HOOK_LEN + o.len) / 2 &&
+          laneOverlap(o.p, o.width, h.lane, 1) > LATERAL_OVERLAP,
+      );
+      if (!m) continue;
+      h.ticks = HOOK_TICKS;
+      if (m.width > 1 || m.star > 0 || m.kind === 'carriage' || m.kind === 'group') {
+        this.events.push('snap');
+        continue;
+      }
+      this.movers = this.movers.filter((o) => o !== m);
+      this.impacts.push({ id: this.nextId++, x: m.x, y: m.y, ticks: 0 });
+      this.events.push('reel');
+    }
+    this.hooks = this.hooks.filter((h) => h.state === 'cast' || h.ticks < HOOK_TICKS);
+  }
+
+  /** A tumbleweed blows up at the roadside, inside or out, then rolls across every lane. */
+  private rollWeed(): boolean {
+    if (this.weeds.length) return false;
+    const { track, lanes } = this.park;
+    const s = this.rng() * track.length;
+    const dir: 1 | -1 = this.rng() < 0.5 ? 1 : -1;
+    if (underCover(this.park.cover, s, track.length) || onBridge(this.park.bridge, s, track.length))
+      return false;
+    const q = dir > 0 ? -1.2 : lanes + 0.2;
+    const at = pose(track, s, laneOffset(q, 1, this.park));
+    this.weeds.push({
+      id: this.nextId++,
+      s,
+      q,
+      dir,
+      state: 'wait',
+      ticks: 0,
+      x: at.x,
+      y: at.y,
+      prevX: at.x,
+      prevY: at.y,
+    });
+    this.events.push('roll');
+    return true;
+  }
+
+  /** A wave swells up at the bank, inside or out, somewhere in the open. */
+  private sendWave(): boolean {
+    const { track, lanes } = this.park;
+    const s = this.rng() * track.length;
+    const dir: 1 | -1 = this.rng() < 0.5 ? 1 : -1;
+    if (underCover(this.park.cover, s, track.length) || onBridge(this.park.bridge, s, track.length))
+      return false;
+    this.waves.push({
+      id: this.nextId++,
+      s,
+      q: dir > 0 ? 0 : lanes,
+      dir,
+      state: 'swell',
+      ticks: 0,
+      hit: [],
+    });
+    this.events.push('wave');
+    return true;
+  }
+
+  /**
+   * A rolling wave pushes whoever its front passes one lane the way it is going, once each, unless they are invisible,
+   * dazed, the train, or already in the last lane that way.
+   */
+  private moveWaves(): void {
+    const { track, lanes } = this.park;
+    for (const w of this.waves) {
+      w.ticks++;
+      if (w.state === 'swell') {
+        if (w.ticks >= WAVE_SWELL) {
+          w.state = 'roll';
+          w.ticks = 0;
+        }
+        continue;
+      }
+      w.q += WAVE_RATE * w.dir;
+      for (const m of this.movers) {
+        if (m.state !== 'track' || w.hit.includes(m.id)) continue;
+        if (Math.abs(loopDelta(w.s, m.s, track.length)) >= (WAVE_LEN * ART + m.len) / 2) continue;
+        const middle = m.p + m.width / 2;
+        if (w.dir > 0 ? w.q < middle : w.q > middle) continue;
+        w.hit.push(m.id);
+        if (m.ghost > 0 || m.daze > 0 || this.isTrain(m)) continue;
+        const next = m.target + w.dir;
+        if (next < 0 || next > lanes - m.width || !this.canChange(m, next)) continue;
+        m.target = next;
+        this.events.push('shift');
+      }
+      if (w.q < 0 || w.q > lanes) w.ticks = -1;
+    }
+    this.waves = this.waves.filter((w) => w.ticks >= 0);
+  }
+
+  /** Whoever a rolling tumbleweed touches has collided with it, unless invisible; a star breaks it up. */
+  private moveWeeds(): void {
+    const { track, lanes } = this.park;
+    for (const w of this.weeds) {
+      w.prevX = w.x;
+      w.prevY = w.y;
+      w.ticks++;
+      if (w.state === 'wait') {
+        if (w.ticks >= RAT_LURK) {
+          w.state = 'roll';
+          w.ticks = 0;
+        }
+        continue;
+      }
+      w.q += TUMBLE_RATE * w.dir;
+      const at = pose(track, w.s, laneOffset(w.q, 1, this.park));
+      w.x = at.x;
+      w.y = at.y;
+      const m = this.movers.find(
+        (o) =>
+          o.state === 'track' &&
+          o.ghost === 0 &&
+          Math.abs(loopDelta(w.s, o.s, track.length)) <
+            ((TUMBLE_LEN + o.len) / 2) * COLLIDE_FACTOR &&
+          laneOverlap(o.p, o.width, w.q, 1) > LATERAL_OVERLAP,
+      );
+      if (m) {
+        w.ticks = -1;
+        this.impacts.push({ id: this.nextId++, x: w.x, y: w.y, ticks: 0 });
+        // A star breaks it up, and so does the train.
+        if (m.star > 0 || this.isTrain(m)) {
+          this.events.push('knock');
+          continue;
+        }
+        if (this.loseLife({ x: w.x, y: w.y }, [m.id])) return;
+        this.stun(m, { x: w.x, y: w.y });
+        continue;
+      }
+      if (w.q < -1.5 || w.q > lanes + 0.5) w.ticks = -1;
+    }
+    this.weeds = this.weeds.filter((w) => w.ticks >= 0);
+  }
+
   private reset(): void {
     this.score = 0;
+    this.laps = 0;
+    this.cleanLaps = 0;
     this.movers = [];
     this.rats = [];
     this.pops = [];
@@ -1202,6 +2040,12 @@ export class ChaosParkSim {
     this.groupTimer = 0;
     this.ratTimer = 0;
     this.pickupTimer = 0;
+    this.predatorTimer = 0;
+    this.eventTimer = 0;
+    this.waveTimer = 0;
+    this.hooks = [];
+    this.weeds = [];
+    this.waves = [];
     this.playTicks = 0;
     this.warnedPairs.clear();
   }

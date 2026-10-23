@@ -20,18 +20,41 @@ import {
   DAZE_TICKS,
   GAME_OVER_LOCKOUT,
   GROUP_FROM_SCORE,
-  GROUP_INTERVAL,
+  GROUP_INTERVAL_EARLY,
+  level,
   GROUP_SIZE,
   KIND_SPECS,
   LANES,
   RAT_LURK,
+  HOOK_CAST,
+  SLIME_TICKS,
+  SWERVE_TICKS,
   groupLength,
+  soundButton,
   type Kind,
   type PickupKind,
 } from './constants';
-import { ChaosParkGame, frameFor, placePark, screenToPark } from './game';
-import { generatePark, laneOffset, pose, seededRng, wrap } from './park';
-import { ChaosParkSim, laneOverlap, lapsLeft, maxMovers, patchesShown, type Mover } from './sim';
+import {
+  COURSES,
+  COURSE_IDS,
+  RAPIDS_LANES,
+  WAVE_SWELL,
+  medalFor,
+  unlocked,
+  type CourseId,
+} from './courses';
+import { ChaosParkGame, DEMO_LAPS, frameFor, placePark, screenToPark } from './game';
+import { generatePark, laneOffset, loopDelta, pose, seededRng, wrap } from './park';
+import {
+  ChaosParkSim,
+  duskAt,
+  laneOverlap,
+  lapsLeft,
+  maxMovers,
+  patchesShown,
+  streakValue,
+  type Mover,
+} from './sim';
 
 const ticks = (sim: ChaosParkSim, n: number): void => {
   for (let i = 0; i < n; i++) sim.step();
@@ -64,7 +87,7 @@ const put = (
   options: Partial<Pick<Mover, 'dir' | 'laps' | 'speed'>> = {},
 ): Mover => {
   const spec = KIND_SPECS[kind];
-  const at = pose(sim.park.track, s, laneOffset(p, spec.width));
+  const at = pose(sim.park.track, s, laneOffset(p, spec.width, sim.park));
   const m: Mover = {
     id: nextId++,
     kind,
@@ -108,6 +131,14 @@ const put = (
     shoutAt: -Infinity,
     ghost: 0,
     star: 0,
+    autopilot: 0,
+    autoSlow: false,
+    wearOff: Infinity,
+    plainSpeed: spec.speed,
+    swerve: 0,
+    haunted: false,
+    slime: 0,
+    turnedAt: -Infinity,
     ...options,
   };
   m.baseSpeed = m.speed;
@@ -258,7 +289,7 @@ describe('ChaosParkSim', () => {
     sim.start();
     sim.movers = [];
     noArrivals(sim);
-    sim.score = PATCH_SCORES[0]!;
+    sim.laps = PATCH_SCORES[0]!;
     const patch = sim.park.patches[0]!;
     const m = put(sim, 'runner', wrap(patch.s - 40, sim.park.track.length), patch.lane);
     ticks(sim, 60);
@@ -293,12 +324,19 @@ describe('ChaosParkSim', () => {
       peak = Math.max(peak, sim.movers.filter((m) => m.state === 'track').length);
     }
     expect(peak).toBeGreaterThanOrEqual(3);
-    expect(sim.movers.length).toBeLessThanOrEqual(maxMovers(sim.score) + 3);
+    expect(sim.movers.length).toBeLessThanOrEqual(maxMovers(sim.laps) + 3);
   });
 
   it('allows more movers as the score rises', () => {
     expect(maxMovers(0)).toBeLessThan(maxMovers(40));
-    expect(maxMovers(10_000)).toBe(22);
+    expect(maxMovers(10_000)).toBe(26);
+  });
+
+  it('let a fourth and fifth in over the first laps, then ramp up at 0.4 of the pace after ten', () => {
+    expect([0, 3, 6, 10, 20, 30, 50, 100, 150, 190].map((l) => maxMovers(l))).toEqual([
+      3, 3, 4, 5, 5, 6, 8, 12, 16, 23,
+    ]);
+    expect([0, 10, 30, 50].map((l) => level(l))).toEqual([0, 10, 18, 26]);
   });
 
   it('moves to game over after the crash and locks out a hasty retry', () => {
@@ -378,7 +416,7 @@ describe('run groups', () => {
     expect(g.state).toBe('leaving');
   });
 
-  it('come 10 to 45 seconds after the score reaches 10, and that long after the last one left, one at a time', () => {
+  it('come 20 to 50 seconds after the laps reach 12, and that long after the last one left, one at a time', () => {
     for (const seed of [6, 7, 8]) {
       const sim = new ChaosParkSim(seededRng(seed));
       sim.start();
@@ -386,31 +424,31 @@ describe('run groups', () => {
       internals(sim).checkTraffic = () => undefined;
       (sim as unknown as { placePickup: () => boolean }).placePickup = () => false;
       for (let t = 0; t < 600; t++) {
-        sim.score = GROUP_FROM_SCORE - 1;
+        sim.laps = GROUP_FROM_SCORE - 1;
         sim.step();
       }
       expect(sim.movers.some((m) => m.kind === 'group')).toBe(false);
-      sim.score = GROUP_FROM_SCORE;
+      sim.laps = GROUP_FROM_SCORE;
       // Each wait: from reaching the score, or from the last group leaving, to the next arriving.
       const waits: number[] = [];
       let since = 0;
       let present = false;
       for (let t = 0; t < 8 * 3600; t++) {
         sim.step();
-        sim.score = GROUP_FROM_SCORE;
+        sim.laps = GROUP_FROM_SCORE;
         const now = sim.movers.filter((m) => m.kind === 'group');
         expect(now.length).toBeLessThanOrEqual(1);
         if (now.length && !present) waits.push(t - since);
         if (!now.length && present) since = t;
         present = now.length > 0;
       }
-      expect(GROUP_INTERVAL).toEqual([10 * 60, 45 * 60]);
+      expect(GROUP_INTERVAL_EARLY).toEqual([20 * 60, 50 * 60]);
       // Give or take a moment if every gate is busy.
       for (const w of waits) {
-        expect(w).toBeGreaterThanOrEqual(GROUP_INTERVAL[0]);
-        expect(w).toBeLessThanOrEqual(GROUP_INTERVAL[1] + 30);
+        expect(w).toBeGreaterThanOrEqual(GROUP_INTERVAL_EARLY[0]);
+        expect(w).toBeLessThanOrEqual(GROUP_INTERVAL_EARLY[1] + 30);
       }
-      expect(waits.length).toBeGreaterThanOrEqual(8);
+      expect(waits.length).toBeGreaterThanOrEqual(6);
     }
   });
 });
@@ -420,7 +458,7 @@ describe('rare visitors', () => {
     const sim = new ChaosParkSim(seededRng(6));
     sim.start();
     (sim as unknown as { checkTraffic: () => void }).checkTraffic = () => undefined;
-    sim.score = 20;
+    sim.laps = 20;
     let rats = 0;
     let lastRat = -1;
     const minutes = 10;
@@ -439,7 +477,7 @@ describe('rare visitors', () => {
 
 describe('rats', () => {
   const sendRat = (sim: ChaosParkSim): boolean =>
-    (sim as unknown as { sendRat: () => boolean }).sendRat();
+    (sim as unknown as { sendRat: (kind: string) => boolean }).sendRat('bite');
 
   it('wait at the kerb, dart out and bite, leaving the person dazed in place', () => {
     const sim = playing();
@@ -749,12 +787,12 @@ describe('pick-ups', () => {
     expect(sim.lives).toBe(MAX_LIVES);
   });
 
-  it('only visitors in its lane take one, and carriages and run groups go over it', () => {
+  it('only visitors in its lane take one, and carriages go over duplicates and extra laps', () => {
     const sim = playing();
     put(sim, 'walker', 100, 0);
     put(sim, 'carriage', 300, 2);
     lay(sim, 'heart', 130, 2);
-    lay(sim, 'ghost', 330, 3);
+    lay(sim, 'double', 330, 3);
     sim.lives = 1;
     ticks(sim, 120);
     expect(sim.lives).toBe(1);
@@ -845,7 +883,7 @@ describe('pick-ups', () => {
     expect(sim.movers.some((m) => m.kind === 'carriage')).toBe(true);
   });
 
-  it('fire and turtle tokens change the taker\'s speed, boosted or not', () => {
+  it("fire and turtle tokens change the taker's speed, boosted or not", () => {
     const sim = playing();
     const bike = put(sim, 'biker', 100, 1);
     const base = bike.baseSpeed;
@@ -916,12 +954,12 @@ describe('pick-ups', () => {
   it('come from five laps, one at a time, and never a heart while lives are full', () => {
     const sim = new ChaosParkSim(seededRng(8));
     sim.start();
-    sim.score = PICKUP_FROM_SCORE - 1;
+    sim.laps = PICKUP_FROM_SCORE - 1;
     ticks(sim, 600);
     expect(sim.pickups).toHaveLength(0);
     const kinds = new Set<string>();
     for (let i = 0; i < 4000; i++) {
-      sim.score = Math.max(sim.score, PICKUP_FROM_SCORE);
+      sim.laps = Math.max(sim.laps, PICKUP_FROM_SCORE);
       sim.lives = MAX_LIVES;
       sim.step();
       expect(sim.pickups.length).toBeLessThanOrEqual(1);
@@ -930,6 +968,108 @@ describe('pick-ups', () => {
     }
     expect(kinds.size).toBeGreaterThan(0);
     expect(kinds.has('heart')).toBe(false);
+  });
+});
+
+describe('carriage pick-ups', () => {
+  it('a carriage takes a token, and it wears off after two of its laps', () => {
+    const sim = playing();
+    const carriage = put(sim, 'carriage', 300, 2, { laps: Infinity });
+    lay(sim, 'ghost', 330, 2);
+    lay(sim, 'strength', 330, 3);
+    while (carriage.ghost === 0 && sim.playTicks < 200) sim.step();
+    expect(carriage.ghost).toBe(1);
+    expect(carriage.wearOff).toBe(carriage.lapsDone + 2);
+    // Extra laps mean nothing to a carriage, so it leaves that one.
+    expect(sim.pickups.map((p) => p.kind)).toEqual(['strength']);
+    const done = carriage.lapsDone;
+    while (carriage.lapsDone < done + 2 && sim.playTicks < 20_000) sim.step();
+    expect(carriage.ghost).toBe(0);
+    expect(carriage.wearOff).toBe(Infinity);
+  });
+
+  it('a carriage that took super speed goes back to its own speed', () => {
+    const sim = playing();
+    const carriage = put(sim, 'carriage', 300, 2, { laps: Infinity });
+    const speed = carriage.baseSpeed;
+    lay(sim, 'fire', 330, 2);
+    while (sim.pickups.length && sim.playTicks < 200) sim.step();
+    expect(carriage.baseSpeed).toBeCloseTo(speed * FIRE_SPEED);
+    const done = carriage.lapsDone;
+    while (carriage.lapsDone < done + 2 && sim.playTicks < 20_000) sim.step();
+    expect(carriage.baseSpeed).toBeCloseTo(speed);
+    expect(carriage.speed).toBeCloseTo(speed);
+  });
+});
+
+describe('autopilot', () => {
+  it('steers out of the way of someone coming the wrong way', () => {
+    const sim = playing();
+    const runner = put(sim, 'runner', 100, 1, { laps: 5 });
+    runner.autopilot = 1;
+    put(sim, 'walker', 260, 1, { dir: -1, laps: 5 });
+    sim.lives = 1;
+    ticks(sim, 200);
+    expect(sim.phase).toBe('playing');
+    expect(runner.target).not.toBe(1);
+  });
+
+  it('slows behind someone slower when both lanes beside it are taken', () => {
+    const sim = playing();
+    const biker = put(sim, 'biker', 100, 1, { laps: 5 });
+    biker.autopilot = 1;
+    const walker = put(sim, 'walker', 170, 1, { laps: 5 });
+    put(sim, 'dog', 120, 2, { laps: 5 });
+    put(sim, 'walker', 110, 0, { laps: 5 });
+    sim.lives = 1;
+    // It eases off and on as it closes in, so look over the whole stretch.
+    let slowed = false;
+    for (let i = 0; i < 120; i++) {
+      ticks(sim, 1);
+      if (biker.autoSlow && biker.speed <= walker.speed) slowed = true;
+    }
+    expect(sim.phase).toBe('playing');
+    expect(slowed).toBe(true);
+    expect(loopDelta(biker.s, walker.s, sim.park.track.length)).toBeGreaterThan(0);
+  });
+
+  it('is taken from the road like any token', () => {
+    const sim = playing();
+    const walker = put(sim, 'walker', 100, 0);
+    lay(sim, 'autopilot', 130, 0);
+    ticks(sim, 60);
+    expect(walker.autopilot).toBe(1);
+    expect(sim.drainEvents()).toContain('autopilot');
+  });
+});
+
+describe('streaks', () => {
+  it('make every lap worth one more after each ten in a row without losing a life', () => {
+    expect([0, 9, 10, 19, 20, 35].map(streakValue)).toEqual([1, 1, 2, 2, 3, 4]);
+    const sim = playing();
+    sim.cleanLaps = 9;
+    const m = put(sim, 'runner', 0, 0, { laps: 3 });
+    while (m.lapsDone < 2 && sim.playTicks < 5000) sim.step();
+    // The 10th clean lap is still worth 1; the 11th is worth 2.
+    expect(sim.laps).toBe(2);
+    expect(sim.score).toBe(3);
+    expect(sim.drainEvents()).toContain('streak');
+  });
+
+  it('start again when a life is lost', () => {
+    const sim = playing();
+    sim.cleanLaps = 25;
+    put(sim, 'walker', 100, 1, { speed: 0 });
+    put(sim, 'runner', 60, 1);
+    while (sim.lives === LIVES && sim.playTicks < 300) sim.step();
+    expect(sim.lives).toBe(LIVES - 1);
+    expect(sim.cleanLaps).toBe(0);
+  });
+});
+
+describe('dusk', () => {
+  it('falls from lap 120 over thirty laps', () => {
+    expect([0, 120, 135, 150, 500].map(duskAt)).toEqual([0, 0, 0.5, 1, 1]);
   });
 });
 
@@ -942,7 +1082,7 @@ describe('arrivals', () => {
       (sim as unknown as { checkTraffic: () => void }).checkTraffic = () => undefined;
       // Nor pick-ups: a duplicate token can copy a car, which is not an arrival.
       (sim as unknown as { placePickup: () => boolean }).placePickup = () => false;
-      sim.score = 60;
+      sim.laps = 60;
       let cars = 0;
       for (let t = 0; t < 4 * 3600; t++) {
         sim.step();
@@ -961,9 +1101,9 @@ describe('arrivals', () => {
 });
 
 describe('patches', () => {
-  it('appear at 25, 50 and 100 points', () => {
-    expect([0, 24, 25, 49, 50, 99, 100, 500].map(patchesShown)).toEqual([0, 0, 1, 1, 2, 2, 3, 3]);
-    expect(PATCH_SCORES).toEqual([25, 50, 100]);
+  it('appear at 50 and 100 laps', () => {
+    expect([0, 49, 50, 99, 100, 500].map(patchesShown)).toEqual([0, 0, 1, 1, 2, 2]);
+    expect(PATCH_SCORES).toEqual([50, 100]);
   });
 
   it('do nothing until they appear', () => {
@@ -1070,5 +1210,443 @@ describe('fitting the screen', () => {
       sim.step();
     }
     expect(sim.park).toBe(playing);
+  });
+});
+
+/** A run on a course, cleared like `playing`. */
+const onCourse = (id: CourseId, seed = 3): ChaosParkSim => {
+  const sim = new ChaosParkSim(seededRng(seed), COURSES[id]);
+  sim.start();
+  sim.movers = [];
+  sim.park = { ...sim.park, shortcuts: [], patches: [] };
+  noArrivals(sim);
+  return sim;
+};
+
+describe('courses', () => {
+  it('unlock one after another with a bronze (25) on the course before', () => {
+    const best: Record<CourseId, number> = {
+      park: 25,
+      waters: 24,
+      canyon: 0,
+      jungle: 0,
+      mansion: 0,
+    };
+    expect(COURSE_IDS.map((id) => unlocked(id, (c) => best[c]))).toEqual([
+      true,
+      true,
+      false,
+      false,
+      false,
+    ]);
+    expect(COURSE_IDS.map((id) => COURSES[id].unlock)).toEqual([25, 25, 25, 25, 25]);
+  });
+
+  it('give bronze at 25, silver at 50 and gold at 100 on every course', () => {
+    for (const id of COURSE_IDS)
+      expect([0, 24, 25, 49, 50, 99, 100].map((b) => medalFor(COURSES[id], b))).toEqual([
+        'none',
+        'none',
+        'bronze',
+        'bronze',
+        'silver',
+        'silver',
+        'gold',
+      ]);
+  });
+
+  it('make Chaos Park as before, Jungle Jam a five-lane figure of eight and the mansion five lanes round a hall', () => {
+    const park = generatePark(seededRng(4));
+    expect(park.lanes).toBe(LANES);
+    expect(park.cover).toBeNull();
+    expect(park.bridge).toBeNull();
+    const jungle = generatePark(seededRng(4), undefined, undefined, COURSES.jungle);
+    expect(jungle.lanes).toBe(5);
+    expect(jungle.bridge).not.toBeNull();
+    const mansion = generatePark(seededRng(4), undefined, undefined, COURSES.mansion);
+    expect(mansion.lanes).toBe(5);
+    expect(mansion.cover).toBeNull();
+    expect(mansion.shortcuts).toHaveLength(1);
+  });
+
+  it('start later courses further up the difficulty ramp', () => {
+    expect(maxMovers(0, COURSES.mansion.levelOffset)).toBeGreaterThan(maxMovers(0));
+    const sim = new ChaosParkSim(seededRng(1), COURSES.jungle);
+    expect(sim.level).toBe(5);
+  });
+
+  it('climb more slowly on later courses, so the Haunted Mansion at 80 laps is where it was at 50', () => {
+    const at = (id: CourseId, laps: number) =>
+      level(laps, COURSES[id].levelRate) + COURSES[id].levelOffset;
+    expect(at('mansion', 80)).toBeCloseTo(level(50) + COURSES.mansion.levelOffset, 0);
+    for (let i = 1; i < COURSE_IDS.length; i++) {
+      expect(COURSES[COURSE_IDS[i]].levelOffset).toBeGreaterThan(
+        COURSES[COURSE_IDS[i - 1]].levelOffset,
+      );
+      expect(COURSES[COURSE_IDS[i]].levelRate).toBeLessThan(COURSES[COURSE_IDS[i - 1]].levelRate);
+    }
+  });
+
+  it('can be changed on the title card, with a new park', () => {
+    const sim = new ChaosParkSim(seededRng(1));
+    sim.setCourse('mansion');
+    expect(sim.course.id).toBe('mansion');
+    expect(sim.park.lanes).toBe(5);
+    sim.start();
+    sim.setCourse('park');
+    expect(sim.course.id).toBe('mansion');
+  });
+
+  it('play for a long while on every course without trouble', () => {
+    for (const id of COURSE_IDS) {
+      const sim = new ChaosParkSim(seededRng(11), COURSES[id]);
+      sim.start();
+      sim.laps = 40;
+      const seen = new Set<string>();
+      for (let t = 0; t < 60 * 240 && sim.phase === 'playing'; t++) {
+        sim.step();
+        for (const e of sim.drainEvents()) seen.add(e);
+        for (const m of sim.movers) seen.add(m.kind);
+        // Keep it going: nobody collides.
+        sim.lives = 5;
+      }
+      expect(sim.phase).toBe('playing');
+      if (COURSES[id].predator) expect(seen.has('predator')).toBe(true);
+    }
+  });
+});
+
+describe('predators', () => {
+  it('eat whoever on foot they catch, costing a life and the laps they had', () => {
+    const sim = onCourse('waters');
+    const walker = put(sim, 'walker', 120, 1);
+    put(sim, 'predator', 80, 1);
+    let eaten = false;
+    for (let t = 0; t < 400 && !eaten; t++) {
+      sim.step();
+      eaten = sim.drainEvents().includes('eat');
+    }
+    expect(eaten).toBe(true);
+    expect(sim.movers).not.toContain(walker);
+    expect(sim.lives).toBe(LIVES - 1);
+    expect(sim.score).toBe(0);
+  });
+
+  it('collide with anything bigger as usual', () => {
+    const sim = onCourse('waters');
+    const car = put(sim, 'car', 120, 0, { speed: 0.01 });
+    put(sim, 'predator', 70, 0);
+    let hit = false;
+    for (let t = 0; t < 300 && !hit; t++) {
+      sim.step();
+      hit = sim.drainEvents().includes('hit');
+    }
+    expect(hit).toBe(true);
+    expect(sim.movers).toContain(car);
+    expect(sim.lives).toBe(LIVES - 1);
+  });
+
+  it('move a lane at a time toward the nearest person ahead', () => {
+    const sim = onCourse('canyon');
+    put(sim, 'slow', 200, 3);
+    const predator = put(sim, 'predator', 100, 0);
+    sim.step();
+    expect(predator.target).toBe(1);
+    ticks(sim, 20);
+    expect(predator.target).toBe(1);
+    ticks(sim, 40);
+    expect(predator.target).toBe(2);
+  });
+
+  it('wander a lane now and then with nobody in sight', () => {
+    const sim = onCourse('canyon');
+    const predator = put(sim, 'predator', 100, 1);
+    const lanes = new Set<number>();
+    for (let t = 0; t < 60 * 20; t++) {
+      sim.step();
+      // Nobody else about, and it stays on the loop.
+      predator.lapsDone = 0;
+      predator.progress = 0;
+      lanes.add(predator.target);
+    }
+    expect(lanes.size).toBeGreaterThan(1);
+  });
+
+  it('score nothing for their lap', () => {
+    const sim = onCourse('jungle');
+    const predator = put(sim, 'predator', 0, 0, { laps: 1 });
+    predator.progress = sim.park.track.length - 1;
+    ticks(sim, 4);
+    expect(predator.done).toBe(true);
+    expect(sim.score).toBe(0);
+  });
+});
+
+describe('course events', () => {
+  const start = (sim: ChaosParkSim): boolean =>
+    (sim as unknown as { startEvent: () => boolean }).startEvent();
+
+  it("the fisherman's hook reels out whoever swims into it, without a life", () => {
+    const sim = onCourse('waters');
+    expect(start(sim)).toBe(true);
+    const hook = sim.hooks[0]!;
+    ticks(sim, HOOK_CAST);
+    expect(hook.state).toBe('set');
+    const swimmer = put(sim, 'walker', wrap(hook.s - 20 * ART, sim.park.track.length), hook.lane);
+    let reeled = false;
+    for (let t = 0; t < 120 && !reeled; t++) {
+      sim.step();
+      reeled = sim.drainEvents().includes('reel');
+    }
+    expect(reeled).toBe(true);
+    expect(sim.movers).not.toContain(swimmer);
+    expect(sim.lives).toBe(LIVES);
+    expect(sim.hooks).toHaveLength(0);
+  });
+
+  it('the hook snaps on anything two lanes wide', () => {
+    const sim = onCourse('waters');
+    start(sim);
+    const hook = sim.hooks[0]!;
+    ticks(sim, HOOK_CAST);
+    const lane = Math.min(hook.lane, sim.park.lanes - 2);
+    const pair = put(sim, 'dog', wrap(hook.s - 30 * ART, sim.park.track.length), lane);
+    let snapped = false;
+    for (let t = 0; t < 120 && !snapped; t++) {
+      sim.step();
+      snapped = sim.drainEvents().includes('snap');
+    }
+    expect(snapped).toBe(true);
+    expect(sim.movers).toContain(pair);
+  });
+
+  it('a tumbleweed rolls across every lane, and whoever it touches has collided', () => {
+    const sim = onCourse('canyon');
+    expect(start(sim)).toBe(true);
+    const weed = sim.weeds[0]!;
+    const length = sim.park.track.length;
+    const lane = weed.dir > 0 ? 2 : 1;
+    const m = put(sim, 'walker', wrap(weed.s, length), lane, { speed: 0.001 });
+    let hit = false;
+    for (let t = 0; t < 400 && !hit; t++) {
+      sim.step();
+      hit = sim.drainEvents().includes('hit');
+    }
+    expect(hit).toBe(true);
+    expect(m.daze).toBeGreaterThan(0);
+    expect(sim.lives).toBe(LIVES - 1);
+    expect(sim.weeds).toHaveLength(0);
+  });
+
+  it('a bee sting sets its victim swerving, and a haunting changes their speed too', () => {
+    for (const id of ['jungle', 'mansion'] as const) {
+      const sim = onCourse(id);
+      const m = put(sim, 'walker', 100, 1);
+      expect(start(sim)).toBe(true);
+      expect(sim.rats[0]!.kind).toBe(id === 'jungle' ? 'sting' : 'haunt');
+      for (let t = 0; t < 300 && m.swerve === 0; t++) sim.step();
+      expect(m.swerve).toBeGreaterThan(SWERVE_TICKS - 5);
+      const lanes = new Set<number>();
+      const speeds = new Set<number>();
+      for (let t = 0; t < SWERVE_TICKS; t++) {
+        sim.step();
+        lanes.add(m.target);
+        speeds.add(Math.round(m.speed * 100));
+      }
+      expect(lanes.size).toBeGreaterThan(1);
+      expect(m.swerve).toBe(0);
+      expect(speeds.size > 2).toBe(id === 'mansion');
+      expect(m.speed).toBeCloseTo(m.baseSpeed);
+    }
+  });
+});
+
+describe('wild arrivals', () => {
+  it('on Jungle Jam, visitors step out of the trees anywhere and back in when done, not by the gates', () => {
+    const sim = new ChaosParkSim(seededRng(5), COURSES.jungle);
+    sim.start();
+    // Enough lives to keep going through the collisions nobody steers round.
+    sim.lives = 1000;
+    const { track, half } = sim.park;
+    const starts: number[] = [];
+    let left = 0;
+    const seen = new Set<number>();
+    for (let t = 0; t < 6000 && sim.phase !== 'gameOver'; t++) {
+      for (const m of sim.movers) {
+        if (m.state === 'arriving' && !seen.has(m.id)) {
+          seen.add(m.id);
+          expect(m.entrance).toBe(-1);
+          // It starts in the trees, off the road's edge, beside the spot where it joins.
+          const near = track.points.reduce(
+            (d, p) => Math.min(d, Math.hypot(p.x - m.route[0]!.x, p.y - m.route[0]!.y)),
+            Infinity,
+          );
+          expect(near).toBeGreaterThan(half + 20);
+          starts.push(m.join!.s);
+        }
+        if (m.state === 'leaving' && m.route.length === 3) left++;
+      }
+      sim.step();
+    }
+    // Spread round the loop, not bunched at a few gates.
+    const quarters = new Set(
+      starts.map((s) => Math.floor((wrap(s, track.length) / track.length) * 4)),
+    );
+    expect(starts.length).toBeGreaterThan(5);
+    expect(quarters.size).toBeGreaterThanOrEqual(3);
+    expect(left).toBeGreaterThan(0);
+  });
+});
+
+describe('rapids', () => {
+  it('speed up only those in the two lanes that have them, side by side', () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const park = generatePark(seededRng(seed), undefined, undefined, COURSES.waters);
+      expect(park.rapids.length).toBe(RAPIDS_LANES);
+      const [a, b] = park.rapids;
+      expect(b!.lane - a!.lane).toBe(1);
+      expect([b!.s, b!.len]).toEqual([a!.s, a!.len]);
+      expect(b!.lane).toBeLessThan(park.lanes);
+    }
+    const sim = onCourse('waters');
+    const r = sim.park.rapids[0]!;
+    const other = (r.lane + 2) % sim.park.lanes;
+    sim.park = { ...sim.park, rapids: [r] };
+    const fast = put(sim, 'walker', wrap(r.s + 2, sim.park.track.length), r.lane);
+    const plain = put(sim, 'walker', wrap(r.s + 2, sim.park.track.length), other);
+    const [a, b] = [fast.s, plain.s];
+    sim.step();
+    expect(wrap(fast.s - a, sim.park.track.length)).toBeGreaterThan(
+      wrap(plain.s - b, sim.park.track.length) * 1.2,
+    );
+  });
+});
+
+describe('waves', () => {
+  it('push whoever they roll past one lane on, once, and nobody away from them', () => {
+    const sim = onCourse('waters');
+    const near = put(sim, 'walker', 200, 1, { speed: 0.01 });
+    const edge = put(sim, 'walker', 220, 3, { speed: 0.01 });
+    const far = put(sim, 'walker', 600, 1, { speed: 0.01 });
+    sim.waves = [{ id: 1, s: 200, q: 0, dir: 1, state: 'swell', ticks: 0, hit: [] }];
+    ticks(sim, WAVE_SWELL + 10);
+    expect(near.target).toBe(1);
+    ticks(sim, 60);
+    expect(near.target).toBe(2);
+    expect(edge.target).toBe(3);
+    expect(far.target).toBe(1);
+    expect(sim.waves).toEqual([]);
+  });
+
+  it('only come on Wild Waters', () => {
+    expect(COURSE_IDS.filter((id) => COURSES[id].waves)).toEqual(['waters']);
+  });
+});
+
+describe('figure of eight', () => {
+  it('has gates on whichever side faces the wall, and newcomers join on that side', () => {
+    const course = { ...COURSES.jungle, wild: false };
+    const sim = new ChaosParkSim(seededRng(2), course);
+    sim.start();
+    const { track, half, entrances } = sim.park;
+    for (const e of entrances) {
+      // The mouth of each gate road is off the road, and the gate on the wall.
+      const near = track.points.reduce(
+        (d, p) => Math.min(d, Math.hypot(p.x - e.throat.x, p.y - e.throat.y)),
+        Infinity,
+      );
+      expect(near).toBeGreaterThan(half);
+    }
+    expect(entrances.some((e) => e.side < 0)).toBe(true);
+  });
+});
+
+describe('course obstacles', () => {
+  it('are steered round, a lane either way, without slipping', () => {
+    const sim = onCourse('waters');
+    const rock = { id: 0, s: 300, lane: 1, width: 1, len: 20 * ART };
+    sim.park = { ...sim.park, patches: [rock] };
+    sim.laps = 60;
+    const m = put(sim, 'runner', 200, 1);
+    let steered = false;
+    for (let t = 0; t < 200; t++) {
+      sim.step();
+      expect(sim.drainEvents()).not.toContain('slip');
+      if (m.target !== 1) steered = true;
+      if (Math.abs(m.s - rock.s) < (rock.len + m.len) / 2)
+        expect(laneOverlap(m.p, 1, 1, 1)).toBeLessThan(0.5);
+    }
+    expect(steered).toBe(true);
+  });
+
+  it('slime holds whoever steps in it for five seconds', () => {
+    const sim = onCourse('mansion');
+    const slime = { id: 0, s: 300, lane: 1, width: 1, len: 20 * ART };
+    sim.park = { ...sim.park, patches: [slime], cover: null };
+    sim.laps = 60;
+    const m = put(sim, 'runner', 260, 1);
+    for (let t = 0; t < 100 && m.slime === 0; t++) sim.step();
+    expect(m.slime).toBe(SLIME_TICKS);
+    const at = m.s;
+    ticks(sim, SLIME_TICKS - 2);
+    expect(m.s).toBe(at);
+    ticks(sim, 4);
+    expect(m.s).not.toBe(at);
+  });
+
+  it("the mansion's hall is walked through now and then from the inner lane", () => {
+    const sim = new ChaosParkSim(seededRng(3), COURSES.mansion);
+    sim.start();
+    sim.movers = [];
+    noArrivals(sim);
+    const hall = sim.park.shortcuts[0]!;
+    // Always take it.
+    (sim as unknown as { rng: () => number }).rng = () => 0;
+    const m = put(sim, 'walker', wrap(hall.a - 5, sim.park.track.length), 0, { laps: 2 });
+    let inside = false;
+    for (let t = 0; t < 600 && !inside; t++) {
+      sim.step();
+      inside = m.state === 'shortcut';
+    }
+    expect(inside).toBe(true);
+  });
+});
+
+describe('title', () => {
+  const titleGame = () => {
+    const scores = { getBest: async () => 0, submit: async () => ({ best: 0, isNewBest: false }) };
+    const played: string[] = [];
+    const sfx = { play: (name: string) => played.push(name), unlock() {}, dispose() {} };
+    const game = new ChaosParkGame(scores as never, sfx as never, seededRng(3));
+    return { game, played };
+  };
+
+  it('has a crowd going round behind it on autopilot, kept to its first few laps', () => {
+    const { game } = titleGame();
+    for (let i = 0; i < 60 * 60; i++) game.frame(1000 / 60);
+    const demo = game.demo!;
+    expect(demo.park).toBe(game.sim.park);
+    expect(demo.movers.length).toBeGreaterThan(0);
+    expect(demo.movers.every((m) => m.autopilot > 0)).toBe(true);
+    expect(demo.laps).toBeLessThanOrEqual(DEMO_LAPS);
+    expect(demo.phase).toBe('playing');
+    expect(game.sim.phase).toBe('title');
+    expect(game.sim.score).toBe(0);
+    game.sim.start();
+    game.frame(1000 / 60);
+    expect(game.demo).toBeNull();
+  });
+
+  it('switches sound on and off with its sound button', () => {
+    const { game, played } = titleGame();
+    let muted = false;
+    game.sound = { muted: () => muted, toggle: () => (muted = !muted) };
+    const b = soundButton(game.bounds);
+    game.pointerDown(1, b.x + b.w / 2, b.y + b.h / 2);
+    expect(muted).toBe(true);
+    expect(game.sim.phase).toBe('title');
+    game.pointerDown(1, b.x + b.w / 2, b.y + b.h / 2);
+    expect(muted).toBe(false);
+    expect(played).toContain('click');
   });
 });

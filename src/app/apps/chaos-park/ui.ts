@@ -96,6 +96,35 @@ export const roundPauseButton = (): Container => {
   return b;
 };
 
+/**
+ * The title's sound switch, like the pause button: a speaker on blue, with sound waves while sound is on and a cross
+ * while it is off. Its top-left corner at the origin (48 by 48, as `soundButton` lays out).
+ */
+export const roundSoundButton = (on: boolean): Container => {
+  const b = new Container();
+  const g = new Graphics()
+    .circle(25, 26, 23)
+    .fill({ color: 0x000000, alpha: 0.2 })
+    .circle(24, 24, 23)
+    .fill({ color: 0x3f6fb2, alpha: 0.95 })
+    .stroke({ width: 2.5, color: 0xffffff, alpha: 0.9 })
+    .roundRect(11, 19, 6, 10, 1.5)
+    .poly([16, 19, 24, 12, 24, 36, 16, 29])
+    .fill(0xffffff);
+  if (on) {
+    for (const r of [6, 11])
+      g.arc(25, 24, r, -0.85, 0.85).stroke({ width: 2.6, color: 0xffffff, cap: 'round' });
+  } else {
+    g.moveTo(29, 19)
+      .lineTo(37, 29)
+      .moveTo(29, 29)
+      .lineTo(37, 19)
+      .stroke({ width: 3, color: 0xffffff, cap: 'round' });
+  }
+  b.addChild(g);
+  return b;
+};
+
 /** A small gold cup, for the best score. */
 export const trophy = (): Graphics =>
   new Graphics()

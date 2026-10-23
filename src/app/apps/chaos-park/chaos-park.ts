@@ -83,6 +83,7 @@ export class ChaosPark {
     if (this.destroyed) return;
     const { app, root } = surface;
     const game = new ChaosParkGame(this.scores, new Sfx(this.sound));
+    game.sound = this.sound;
     const view = new ChaosParkView(root, game);
     this.game = game;
     // The canvas updates both in place on resize, so the game and view always see the current screen.

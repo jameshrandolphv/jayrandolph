@@ -18,6 +18,11 @@ import {
   RAINBOW,
   starGlow,
   drawRat,
+  drawBee,
+  drawCover,
+  drawHook,
+  drawSpook,
+  drawTumbleweed,
   ratAlert,
   badgeNumber,
   drawLimbs,
@@ -36,11 +41,13 @@ import {
 } from './art';
 import {
   BACK_BUTTON,
+  STREAK_LAPS,
   BUTTON_TEXT,
   CARD,
   HELP_CARD,
   ART,
   HELP_BUTTON,
+  HOOK_CAST,
   LANE_W,
   MENU_BUTTON,
   PLAY_BUTTON,
@@ -51,16 +58,19 @@ import {
   IMPACT_TICKS,
   MAX_LIVES,
   PICKUP_TICKS,
+  SCENERY_EXTENT,
   SHOUT_TICKS,
   SLIP_TICKS,
   pauseButton,
+  soundButton,
   type Bounds,
   type PickupKind,
 } from './constants';
 import { placePark, type ChaosParkGame } from './game';
-import { noticeBoard, plaqueButton, roundPauseButton, trophy } from './ui';
-import type { Park } from './park';
-import { lapsLeft, patchesShown, type Mover } from './sim';
+import { noticeBoard, plaqueButton, roundPauseButton, roundSoundButton, trophy } from './ui';
+import { laneOffset, pose, type Park } from './park';
+import { WAVE_LEN, WAVE_RATE, WAVE_SWELL } from './courses';
+import { duskAt, lapsLeft, patchesShown, streakValue, type ChaosParkSim, type Mover } from './sim';
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
@@ -76,7 +86,16 @@ const PICKUP_WORDS: Readonly<Record<PickupKind, string>> = {
   coin: '+1 POINT',
   skull: 'WRECK!',
   spiral: 'TIME WARP!',
+  autopilot: 'AUTOPILOT!',
 };
+
+/** The night sky's colour, laid over the park as dusk falls, and how much of it shows at the darkest. */
+const DUSK_COLOR = 0x0b1638;
+const DUSK_ALPHA = 0.5;
+/** The glow round someone on autopilot. */
+const AUTOPILOT_GLOW = 0x7fd3ff;
+/** The slime someone is stuck in. */
+const SLIME_GLOW = 0x7ed957;
 
 /** How see-through someone invisible is. */
 export const ghostAlpha = (ghost: number): number => (ghost > 0 ? 0.35 : 1);
@@ -99,6 +118,8 @@ interface MoverView {
   root: Container;
   /** The flashing rainbow under someone who has taken a star. */
   glow: Graphics;
+  /** The pulsing blue under someone on autopilot. */
+  auto: Graphics;
   shadow: Graphics;
   limbs: Graphics;
   /** Speed lines behind it while boosted. */
@@ -130,6 +151,20 @@ interface Counter {
 }
 
 const COUNTER = { w: 108, h: 36, digits: 5 };
+/** The streak's glow round the edges of the screen: how far in it reaches, in how many bands. */
+const STREAK_GLOW_WIDTH = 44;
+const STREAK_GLOW_BANDS = 10;
+/** Ticks the streak's words stay up (popping in, then fading), and when the glow starts to come up. */
+const STREAK_TEXT_TICKS = 100;
+const STREAK_GLOW_FROM = 60;
+const STREAK_GLOW_IN = 30;
+
+/** The streak's words and glow `t` ticks after it was reached: their opacity, and the words' scale. */
+export const streakLook = (t: number): { text: number; scale: number; glow: number } => ({
+  text: t < 0 || t >= STREAK_TEXT_TICKS ? 0 : Math.min(1, (STREAK_TEXT_TICKS - t) / 25),
+  scale: 0.6 + 0.4 * easeOut(Math.min(1, Math.max(0, t) / 12)),
+  glow: Math.min(1, Math.max(0, (t - STREAK_GLOW_FROM) / STREAK_GLOW_IN)),
+});
 /** Bangers' line box sits its digits low; this centres the ink rather than the box. */
 const DIGIT_DROP = -3;
 
@@ -156,10 +191,29 @@ export class ChaosParkView {
   private readonly badges = new Container();
   private readonly popLayer = new Container();
   private readonly ratLayer = new Container();
+  /** A course's fisherman and hook, and tumbleweeds; and its covered stretch, over the movers. */
+  private readonly courseLayer = new Graphics();
+  private readonly coverLayer = new Container();
+  /** Dusk, over the park, and the headlights that shine through it. */
+  private readonly duskShade = new Graphics();
+  private readonly lights = new Graphics();
+  /**
+   * "10 STREAK" in the middle of the screen for a moment as each streak is reached, then a glow round the edges of the
+   * screen for as long as it lasts.
+   */
+  private readonly streakText: Text;
+  private readonly streakGlow = new Graphics();
+  private shownStreak = -1;
+  private streakAt = -Infinity;
+  private glowKey = '';
   private readonly hud = new Container();
   private readonly hudLeft = new Container();
   private readonly hudRight = new Container();
   private readonly pauseButton: Container;
+  /** The title's sound switch, drawn on and off. */
+  private readonly soundButton = new Container();
+  private readonly soundOn = roundSoundButton(true);
+  private readonly soundOff = roundSoundButton(false);
   private readonly dim = new Graphics()
     .rect(-3000, -3000, 6000, 6000)
     .fill({ color: 0x000000, alpha: 0.3 });
@@ -207,6 +261,13 @@ export class ChaosParkView {
       this.hearts.push(h);
       this.hudLeft.addChild(h);
     }
+    this.streakText = label('', 64, 0xffffff, {
+      stroke: { color: COLORS.red, width: 10, join: 'round' },
+      letterSpacing: 2,
+      padding: 16,
+    });
+    this.streakText.anchor.set(0.5);
+    this.streakText.visible = false;
     const best = label('BEST:', 28, COLORS.ink, {
       stroke: { color: 0xffffff, width: 5, join: 'round' },
       letterSpacing: 1,
@@ -216,7 +277,13 @@ export class ChaosParkView {
     this.bestText.box.position.set(-78, 32);
     this.hudRight.addChild(best, this.bestText.box);
     this.pauseButton = roundPauseButton();
-    this.hud.addChild(this.hudLeft, this.hudRight, this.pauseButton);
+    this.hud.addChild(
+      this.streakGlow,
+      this.streakText,
+      this.hudLeft,
+      this.hudRight,
+      this.pauseButton,
+    );
 
     this.titleBest = label('0', 54, COLORS.ink, {});
     // Padding keeps the slanted digits and their outline from being clipped at the edge of the text texture.
@@ -233,14 +300,19 @@ export class ChaosParkView {
       this.pickupLayer,
       this.shadows,
       this.movers,
+      this.courseLayer,
       this.ratLayer,
+      this.coverLayer,
+      this.duskShade,
+      this.lights,
       this.crashRing,
       this.impactLayer,
       this.badges,
       this.popLayer,
     );
     this.cards.addChild(this.title, this.help, this.gameOver, this.paused);
-    root.addChild(this.world, this.hud, this.dim, this.cards);
+    this.soundButton.addChild(this.soundOn, this.soundOff);
+    root.addChild(this.world, this.hud, this.dim, this.soundButton, this.cards);
   }
 
   update(alpha: number, deltaMs: number, bounds: Bounds, size: LogicalSize): void {
@@ -250,17 +322,32 @@ export class ChaosParkView {
     const phase = sim.phase;
     const inPlay = phase === 'playing' || phase === 'crashed';
 
-    this.syncMovers(sim.movers, alpha, deltaMs);
+    // Behind the title, its crowd; their ids are their own, so a change of crowd starts afresh.
+    const crowd = this.game.demo ?? sim;
+    if (crowd !== this.moversFrom) {
+      this.moversFrom = crowd;
+      for (const id of [...this.views.keys()]) this.dropMover(id);
+    }
+    this.syncMovers(crowd.movers, alpha, deltaMs, crowd !== sim);
     this.syncRats(alpha);
+    this.syncCourse(alpha);
     this.syncPops();
     this.syncCrash();
     this.syncPatches();
     this.syncPickups();
     this.syncImpacts();
     this.syncHearts();
+    this.syncStreak(bounds);
+    this.syncDusk(alpha);
 
     this.hud.visible = inPlay || phase === 'gameOver';
     this.pauseButton.visible = phase === 'playing';
+    const sound = this.game.sound;
+    this.soundButton.visible = phase === 'title' && sound !== null;
+    if (sound) {
+      this.soundOn.visible = !sound.muted();
+      this.soundOff.visible = sound.muted();
+    }
     this.setCount(this.lapsText, sim.score, 'shownLaps');
     this.setCount(this.bestText, Math.max(this.game.best, sim.score), 'shownBest');
 
@@ -305,6 +392,8 @@ export class ChaosParkView {
     this.hudRight.position.set(b.right, b.top);
     const pause = pauseButton(b);
     this.pauseButton.position.set(pause.x, pause.y);
+    const sound = soundButton(b);
+    this.soundButton.position.set(sound.x, sound.y);
     this.cards.position.set(size.width / 2, size.height / 2);
     // Badges and pops stay upright on screen.
     for (const v of this.views.values()) v.badge.rotation = -this.world.rotation;
@@ -314,8 +403,15 @@ export class ChaosParkView {
     this.park = park;
     this.scenery.removeChildren().forEach((c) => c.destroy({ children: true }));
     this.scenery.addChild(drawPark(park));
+    const out = SCENERY_EXTENT;
+    this.duskShade
+      .clear()
+      .rect(-out, -out, park.frame.w + out * 2, park.frame.h + out * 2)
+      .fill(DUSK_COLOR);
     this.patchLayer.removeChildren().forEach((c) => c.destroy());
     this.patchSprites = patchSprites(park);
+    this.coverLayer.removeChildren().forEach((c) => c.destroy());
+    this.coverLayer.addChild(drawCover(park));
     this.patchAge = this.patchSprites.map(() => -1);
     for (const g of this.patchSprites) {
       g.visible = false;
@@ -330,7 +426,10 @@ export class ChaosParkView {
   // -------------------------------------------------------------------------------------------------------------
   // Movers.
 
-  private syncMovers(movers: readonly Mover[], alpha: number, deltaMs: number): void {
+  /** Whose movers the views are of: the game's, or the crowd behind the title. */
+  private moversFrom: ChaosParkSim | null = null;
+
+  private syncMovers(movers: readonly Mover[], alpha: number, deltaMs: number, demo = false): void {
     const { sim } = this.game;
     const live = new Set<number>();
     const ease = 1 - 0.7 ** (deltaMs / (1000 / 60));
@@ -362,6 +461,11 @@ export class ChaosParkView {
       v.root.alpha = m.alpha * ghostAlpha(m.ghost);
       v.streaks.visible = m.boosted;
       // A star flashes through the rainbow.
+      // A soft glow under someone on autopilot, or a green one under someone stuck in slime. (The title's crowd is
+      // all on autopilot, so that doesn't show there.)
+      v.auto.visible = ((m.autopilot > 0 && !demo) || m.slime > 0) && m.star === 0;
+      v.auto.tint = m.slime > 0 ? SLIME_GLOW : AUTOPILOT_GLOW;
+      if (v.auto.visible) v.auto.alpha = 0.45 + 0.2 * Math.sin((sim.clock + alpha) * 0.15);
       v.glow.visible = m.star > 0;
       if (v.glow.visible) {
         v.glow.tint = RAINBOW[Math.floor(sim.clock / 4) % RAINBOW.length]!;
@@ -381,7 +485,8 @@ export class ChaosParkView {
       const ux = Math.cos(v.angle);
       const uy = Math.sin(v.angle);
       const along = Math.abs(ux * up.x + uy * up.y) * (m.len / 2);
-      const across = Math.abs(-uy * up.x + ux * up.y) * ((m.width * LANE_W) / 2 - 3);
+      const across =
+        Math.abs(-uy * up.x + ux * up.y) * ((m.width * this.game.sim.park.laneW) / 2 - 3);
       const lift = along + across + (BADGE_R + 3) * ART;
       v.badge.position.set(x + up.x * lift, y + up.y * lift);
       v.badge.alpha = m.alpha;
@@ -425,7 +530,10 @@ export class ChaosParkView {
     streaks.visible = false;
     const glow = starGlow(m.kind, m.width, m.len / ART);
     glow.visible = false;
-    root.addChild(glow, streaks, limbs, moverBody(look));
+    const auto = starGlow(m.kind, m.width, m.len / ART);
+    auto.tint = AUTOPILOT_GLOW;
+    auto.visible = false;
+    root.addChild(auto, glow, streaks, limbs, moverBody(look));
     const shadow = moverShadow(m.kind, m.width, m.len);
     const warn = warnBubble();
     warn.visible = false;
@@ -440,6 +548,7 @@ export class ChaosParkView {
     return {
       root,
       glow,
+      auto,
       shadow,
       limbs,
       streaks,
@@ -510,7 +619,9 @@ export class ChaosParkView {
       v.lastX = x;
       v.lastY = y;
       v.angle += angleDiff(v.angle, lerpAngle(r.prevHeading, r.heading, alpha)) * 0.5;
-      drawRat(v.body, v.phase, r.state !== 'lurk');
+      if (r.kind === 'sting') drawBee(v.body, v.phase);
+      else if (r.kind === 'haunt') drawSpook(v.body, v.phase);
+      else drawRat(v.body, v.phase, r.state !== 'lurk');
       v.body.position.set(x, y);
       v.body.rotation = v.angle;
       const lurking = r.state === 'lurk';
@@ -521,6 +632,33 @@ export class ChaosParkView {
       v.alert.rotation = -this.world.rotation;
     }
     for (const id of [...this.ratViews.keys()]) if (!live.has(id)) this.dropRat(id);
+  }
+
+  /** The fisherman and his hook, and any tumbleweed. */
+  private syncCourse(alpha: number): void {
+    const { hooks, weeds, waves, clock, park } = this.game.sim;
+    const g = this.courseLayer.clear();
+    // A wave: a white crest bowed the way it rolls, rising at the bank, then sweeping across.
+    for (const w of waves) {
+      const rolling = w.state === 'roll';
+      const q = rolling ? w.q + w.dir * WAVE_RATE * alpha : w.q;
+      const rise = rolling ? 1 : Math.min(1, (w.ticks + alpha) / WAVE_SWELL);
+      const len = WAVE_LEN * ART;
+      const crest = Array.from({ length: 13 }, (_, i) => {
+        const bow = Math.sin((i / 12) * Math.PI) * 8 * rise * w.dir;
+        const p = pose(park.track, w.s - len / 2 + (len * i) / 12, laneOffset(q, 0, park) + bow);
+        return { x: p.x, y: p.y };
+      });
+      g.poly(crest, false).stroke({ width: 9 * rise, color: 0x2f7fa8, alpha: 0.35, cap: 'round' });
+      g.poly(crest, false).stroke({ width: 4 * rise, color: 0xffffff, alpha: 0.85, cap: 'round' });
+    }
+    for (const h of hooks)
+      drawHook(g, h.from, h.x, h.y, h.state === 'cast' ? h.ticks / HOOK_CAST : 1, clock);
+    for (const w of weeds) {
+      const x = lerp(w.prevX, w.x, alpha);
+      const y = lerp(w.prevY, w.y, alpha);
+      drawTumbleweed(g, x, y, w.state === 'roll' ? (w.ticks + alpha) * 0.2 * w.dir : 0);
+    }
   }
 
   private dropRat(id: number): void {
@@ -589,7 +727,7 @@ export class ChaosParkView {
 
   /** Patches pop onto the road as the score unlocks them. */
   private syncPatches(): void {
-    const shown = patchesShown(this.game.sim.score);
+    const shown = patchesShown(this.game.sim.laps);
     this.patchSprites.forEach((g, i) => {
       if (i >= shown) {
         g.visible = false;
@@ -653,6 +791,91 @@ export class ChaosParkView {
   }
 
   /** A heart for each life left; a lost one simply goes, and one just gained grows in. */
+  private syncStreak(b: Bounds): void {
+    const { sim } = this.game;
+    const value = streakValue(sim.cleanLaps);
+    if (value !== this.shownStreak) {
+      if (value > this.shownStreak && this.shownStreak >= 1) {
+        this.streakAt = sim.clock;
+        this.streakText.text = `${(value - 1) * STREAK_LAPS} STREAK`;
+      }
+      this.shownStreak = value;
+    }
+    const t = sim.clock - this.streakAt;
+    const look = streakLook(t);
+    this.streakText.visible = look.text > 0;
+    this.streakText.alpha = look.text;
+    this.streakText.scale.set(look.scale);
+    this.streakText.position.set((b.left + b.right) / 2, (b.top + b.bottom) / 2);
+    const on = value > 1 && (sim.phase === 'playing' || sim.phase === 'crashed');
+    this.streakGlow.visible = on && look.glow > 0;
+    if (!this.streakGlow.visible) return;
+    const key = `${b.left},${b.top},${b.right},${b.bottom}`;
+    if (key !== this.glowKey) {
+      this.glowKey = key;
+      const g = this.streakGlow.clear();
+      // Bands from the edge inwards, each fainter than the last.
+      for (let i = 0; i < STREAK_GLOW_BANDS; i++) {
+        const w = STREAK_GLOW_WIDTH / STREAK_GLOW_BANDS;
+        const inset = i * w + w / 2;
+        g.rect(
+          b.left + inset,
+          b.top + inset,
+          b.right - b.left - inset * 2,
+          b.bottom - b.top - inset * 2,
+        ).stroke({
+          width: w,
+          color: COLORS.gold,
+          alpha: 0.9 * (1 - i / STREAK_GLOW_BANDS) ** 2,
+        });
+      }
+    }
+    this.streakGlow.alpha = look.glow * (0.8 + 0.2 * Math.sin(sim.clock * 0.08));
+  }
+
+  /** Darkens the park as dusk falls late in a run, with cars' headlights shining ahead of them. */
+  private syncDusk(alpha: number): void {
+    const { sim } = this.game;
+    const dusk = sim.phase === 'title' || sim.phase === 'help' ? 0 : duskAt(sim.laps);
+    this.duskShade.visible = dusk > 0;
+    this.duskShade.alpha = dusk * DUSK_ALPHA;
+    const g = this.lights.clear();
+    if (dusk <= 0) return;
+    for (const m of sim.movers) {
+      if (m.kind !== 'car' && m.kind !== 'carriage') continue;
+      const x = lerp(m.prevX, m.x, alpha);
+      const y = lerp(m.prevY, m.y, alpha);
+      const a = lerpAngle(m.prevHeading, m.heading, alpha);
+      const ux = Math.cos(a);
+      const uy = Math.sin(a);
+      const fx = x + (ux * m.len) / 2;
+      const fy = y + (uy * m.len) / 2;
+      if (m.kind === 'carriage') {
+        // A lantern on the coach.
+        g.circle(x, y, 9 * ART).fill({ color: 0xffd36b, alpha: 0.35 * dusk * m.alpha });
+        continue;
+      }
+      // Two beams fanning out ahead.
+      const reach = 70 * ART;
+      const spread = 22 * ART;
+      for (const side of [-1, 1]) {
+        const sx = fx - uy * side * 7 * ART;
+        const sy = fy + ux * side * 7 * ART;
+        const ex = sx + ux * reach;
+        const ey = sy + uy * reach;
+        g.poly([
+          sx,
+          sy,
+          ex - uy * spread * 0.5,
+          ey + ux * spread * 0.5,
+          ex + uy * spread * 0.5,
+          ey - ux * spread * 0.5,
+        ]);
+        g.fill({ color: 0xfff1b8, alpha: 0.28 * dusk * m.alpha });
+      }
+    }
+  }
+
   private syncHearts(): void {
     const { lives } = this.game.sim;
     if (lives !== this.shownLives) {
@@ -805,7 +1028,7 @@ export class ChaosParkView {
           [sample('biker', season), 8, 0, 0.75],
           [sample('car', season), 44, 0, 0.6],
         ),
-        'PARK VISITORS VARY IN SPEED',
+        'EVERYTHING VARIES IN SPEED',
       ],
       [
         group([sample('runner', season), 0, 5, 0.8], [badge(KIND_COLORS.runner, 2), 0, -9, 0.8]),
@@ -816,7 +1039,7 @@ export class ChaosParkView {
           [sample('dog', season, [0.4, 0.1, 0.7]), -22, 0, 0.7],
           [sample('carriage', season), 26, 0, 0.6],
         ),
-        'SOME VISITORS OCCUPY TWO LANES',
+        'SOME THINGS OCCUPY MULTIPLE LANES',
       ],
       [
         group([reversed(), 0, 5, 0.8], [badge(WRONG_WAY_COLOR, 1), 0, -9, 0.8]),
@@ -828,7 +1051,7 @@ export class ChaosParkView {
             (sea, i): [Container, number, number] => [patchGraphic(sea, 20, i), -36 + i * 24, 0],
           ),
         ),
-        'PATCHES OF ICE, WATER, MUD, AND LEAVES\nWILL CAUSE UNEXPECTED LANE CHANGES',
+        'WATCH OUT FOR OBSTACLES',
       ],
       [
         group([sample('runner', season), -6, 0, 0.85], [arrows(true), 16, 0]),
@@ -842,7 +1065,11 @@ export class ChaosParkView {
       [group([heart(true), 0, 0, 0.8]), 'TOO MANY COLLISIONS AND THE GAME IS OVER!'],
     ];
 
-    let y = -175;
+    // Centred between the title and GOT IT!.
+    const total = rows.reduce((sum, [, text]) => sum + text.split('\n').length * 21 + 10, 0);
+    const top = -234 + 24;
+    const bottom = BACK_BUTTON.y - BACK_BUTTON.ry;
+    let y = (top + bottom) / 2 - total / 2;
     for (const [icon, text] of rows) {
       const lines = text.split('\n').length;
       const h = lines * 21 + 10;
