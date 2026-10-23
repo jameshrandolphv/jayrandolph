@@ -16,7 +16,7 @@ import {
 import {
   COURSES,
   RAPIDS_LEN,
-  RAPIDS_SECOND,
+  RAPIDS_LANES,
   TRAIN_LANE,
   type CourseId,
   type CourseSpec,
@@ -780,6 +780,60 @@ const makeTrack = (
   half: number,
   course: CourseSpec,
 ): Track => {
+  const track = loopTrack(rng, frame, half, course);
+  return course.river ? squiggled(track, rng, frame, half) : track;
+};
+
+/**
+ * A river's S-bends: along its straighter stretches its centre line swings in and back out by up to twice `RIVER_SWING`,
+ * once every `RIVER_WAVE` or so, fading out where it already bends.
+ */
+const RIVER_SWING = 12;
+const RIVER_WAVE = 260;
+
+/** `track` winding in S-bends (see `RIVER_SWING`), less where they would not fit, or as it was if even small ones won't. */
+const squiggled = (track: Track, rng: () => number, frame: ParkFrame, half: number): Track => {
+  const { points, normals, tangents, step } = track;
+  const n = points.length;
+  const waves = Math.max(3, Math.round(track.length / RIVER_WAVE));
+  const phase = rng() * Math.PI * 2;
+  const radius = minRadius(half);
+  const bend = tangents.map((a, i) => {
+    const b = tangents[(i + 1) % n]!;
+    return Math.abs(a.x * b.y - a.y * b.x) / step;
+  });
+  // How much room each point has to swing: none within half a wave of a bend as tight as a loop's may go, all where
+  // it is straight; then eased in and out.
+  const reach = Math.max(1, Math.round(RIVER_WAVE / 2 / step));
+  const room = bend.map((_, i) => {
+    let most = 0;
+    for (let j = -reach; j <= reach; j++) most = Math.max(most, bend[(i + j + n) % n]!);
+    return Math.min(1, Math.max(0, 1 - most * radius * 1.5));
+  });
+  const eased = room.map((_, i) => {
+    let sum = 0;
+    for (let j = -reach; j <= reach; j++) sum += room[(i + j + n) % n]!;
+    return sum / (reach * 2 + 1);
+  });
+  for (let swing = RIVER_SWING; swing >= 4; swing *= 0.6) {
+    const raw = points.map((p, i) => {
+      // Only ever inward, so the river never swings off the screen.
+      const d = swing * eased[i]! * (Math.sin((i / n) * waves * Math.PI * 2 + phase) - 1);
+      return { x: p.x + normals[i]!.x * d, y: p.y + normals[i]!.y * d };
+    });
+    const out = buildTrack(raw);
+    if (fits(out, frame, half)) return out;
+  }
+  return track;
+};
+
+/** The loop for `course`'s layout, or a plain rounded rectangle where none fits. */
+const loopTrack = (
+  rng: () => number,
+  frame: ParkFrame,
+  half: number,
+  course: CourseSpec,
+): Track => {
   const { bend, river, layout } = course;
   for (let tries = 0; tries < 80; tries++) {
     // A river winds as much as it can: when its bends don't fit, they ease off a little each try rather than giving up.
@@ -1326,7 +1380,7 @@ const makeCover = (
   return { s, len };
 };
 
-/** One lane of rapids, or two side by side, each its own length, where a covered stretch could go. */
+/** Rapids across `RAPIDS_LANES` lanes side by side (a `Rapid` for each), where a covered stretch could go. */
 const makeRapids = (
   track: Track,
   lanes: number,
@@ -1336,16 +1390,8 @@ const makeRapids = (
   rng: () => number,
 ): Rapid[] => {
   const first = makeCover(track, entrances, shortcuts, patches, rng, RAPIDS_LEN);
-  const lane = Math.floor(rng() * lanes);
-  const out: Rapid[] = [{ ...first, lane }];
-  if (rng() < RAPIDS_SECOND) {
-    const next = lane === 0 ? 1 : lane === lanes - 1 ? lane - 1 : lane + (rng() < 0.5 ? -1 : 1);
-    const len = RAPIDS_LEN[0] + rng() * (RAPIDS_LEN[1] - RAPIDS_LEN[0]);
-    // Starting a little before or after the first, so the two don't line up.
-    const s = wrap(first.s + first.len / 2 - len / 2 + (rng() - 0.5) * 50, track.length);
-    out.push({ s, len, lane: next });
-  }
-  return out;
+  const lane = Math.floor(rng() * (lanes - RAPIDS_LANES + 1));
+  return Array.from({ length: RAPIDS_LANES }, (_, i) => ({ ...first, lane: lane + i }));
 };
 
 /** Whether a mover spanning lanes `p` to `p + width - 1` is in rapids at `s`. */

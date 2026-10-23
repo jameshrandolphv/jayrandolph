@@ -34,7 +34,15 @@ import {
   type Kind,
   type PickupKind,
 } from './constants';
-import { COURSES, COURSE_IDS, WAVE_SWELL, medalFor, unlocked, type CourseId } from './courses';
+import {
+  COURSES,
+  COURSE_IDS,
+  RAPIDS_LANES,
+  WAVE_SWELL,
+  medalFor,
+  unlocked,
+  type CourseId,
+} from './courses';
 import { ChaosParkGame, DEMO_LAPS, frameFor, placePark, screenToPark } from './game';
 import { generatePark, laneOffset, loopDelta, pose, seededRng, wrap } from './park';
 import {
@@ -1477,18 +1485,15 @@ describe('wild arrivals', () => {
 });
 
 describe('rapids', () => {
-  it('speed up only those in a lane that has them, in one or two lanes of different lengths', () => {
-    let two = 0;
+  it('speed up only those in the two lanes that have them, side by side', () => {
     for (let seed = 1; seed <= 20; seed++) {
       const park = generatePark(seededRng(seed), undefined, undefined, COURSES.waters);
-      expect(park.rapids.length).toBeGreaterThanOrEqual(1);
-      expect(park.rapids.length).toBeLessThanOrEqual(2);
-      if (park.rapids.length === 2) {
-        two++;
-        expect(Math.abs(park.rapids[0]!.lane - park.rapids[1]!.lane)).toBe(1);
-      }
+      expect(park.rapids.length).toBe(RAPIDS_LANES);
+      const [a, b] = park.rapids;
+      expect(b!.lane - a!.lane).toBe(1);
+      expect([b!.s, b!.len]).toEqual([a!.s, a!.len]);
+      expect(b!.lane).toBeLessThan(park.lanes);
     }
-    expect(two).toBeGreaterThan(0);
     const sim = onCourse('waters');
     const r = sim.park.rapids[0]!;
     const other = (r.lane + 2) % sim.park.lanes;
