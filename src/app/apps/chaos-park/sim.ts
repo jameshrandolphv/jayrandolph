@@ -1998,7 +1998,7 @@ export class ChaosParkSim {
     this.waves = this.waves.filter((w) => w.ticks >= 0);
   }
 
-  /** Whoever a rolling tumbleweed touches has collided with it, unless invisible; a star breaks it up. */
+  /** Whoever a rolling tumbleweed touches is stunned by it (no life lost), unless invisible; a star breaks it up. */
   private moveWeeds(): void {
     const { track, lanes } = this.park;
     for (const w of this.weeds) {
@@ -2026,13 +2026,12 @@ export class ChaosParkSim {
       );
       if (m) {
         w.ticks = -1;
-        this.impacts.push({ id: this.nextId++, x: w.x, y: w.y, ticks: 0 });
         // A star breaks it up, and so does the train.
         if (m.star > 0 || this.isTrain(m)) {
+          this.impacts.push({ id: this.nextId++, x: w.x, y: w.y, ticks: 0 });
           this.events.push('knock');
           continue;
         }
-        if (this.loseLife({ x: w.x, y: w.y }, [m.id])) return;
         this.stun(m, { x: w.x, y: w.y });
         continue;
       }

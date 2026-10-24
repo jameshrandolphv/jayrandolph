@@ -18,7 +18,7 @@ export type Obstacle = 'slip' | 'steer' | 'slime';
  * A course's own event, on its own timer from `EVENT_FROM_SCORE` laps:
  * - hook: a fisherman on the bank casts into one lane, and whoever swims into the hook is reeled out, their laps lost
  *   but no life;
- * - tumbleweed: rolls across every lane at one spot, and whoever it touches has collided;
+ * - tumbleweed: rolls across every lane at one spot, and whoever it touches is stunned (no life lost);
  * - sting / haunt: like the rat, a bee or a ghost goes for someone, who then swerves from lane to lane for
  *   `SWERVE_TICKS` (and a ghost speeds them up and slows them down too).
  */

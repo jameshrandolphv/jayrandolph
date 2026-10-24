@@ -3,6 +3,7 @@
 ## 1.10.1
 - Chaos Park: streaks say "STREAK", then "2X STREAK", "3X STREAK" and so on (the scoring is the same)
 - Chaos Park (rules shared with the iOS and Android apps, whose courses have predators): a predator stops changing lanes once it's about to catch someone, so moving them out of its lane in time gets them away
+- Chaos Park (rules shared with the apps' Dusty Canyon): a tumbleweed stuns whoever it rolls into but no longer costs a life
 - Chaos Park: visitors waiting to come in stand far enough back that they don't poke into the road
 - Chaos Park: the carriage's horse trots, its legs, head and tail moving as it goes
 - Chaos Park: now and then a visitor on foot remarks on the day ("Nice day out")

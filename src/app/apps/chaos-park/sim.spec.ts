@@ -1481,7 +1481,7 @@ describe('course events', () => {
     expect(sim.movers).toContain(pair);
   });
 
-  it('a tumbleweed rolls across every lane, and whoever it touches has collided', () => {
+  it('a tumbleweed rolls across every lane, and whoever it touches is stunned without losing a life', () => {
     const sim = onCourse('canyon');
     expect(start(sim)).toBe(true);
     const weed = sim.weeds[0]!;
@@ -1495,7 +1495,8 @@ describe('course events', () => {
     }
     expect(hit).toBe(true);
     expect(m.daze).toBeGreaterThan(0);
-    expect(sim.lives).toBe(LIVES - 1);
+    expect(sim.lives).toBe(LIVES);
+    expect(sim.phase).toBe('playing');
     expect(sim.weeds).toHaveLength(0);
   });
 
