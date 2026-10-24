@@ -167,6 +167,13 @@ export const PREDATOR_SIGHT = 160 * ART;
  */
 export const PREDATOR_WANDER = 90;
 export const PREDATOR_WANDER_CHANCE = 0.02;
+/**
+ * Once whoever a predator is after is less than `PREDATOR_COMMIT` ticks from being caught, it stops changing lanes and
+ * runs straight on for `PREDATOR_LUNGE` ticks, so a swipe out of its lane in that time (the "!" shows from
+ * `WARN_TICKS`) gets them away.
+ */
+export const PREDATOR_COMMIT = 90;
+export const PREDATOR_LUNGE = 150;
 
 /** A course's own event (see `CourseEvent`) comes every `EVENT_INTERVAL` ticks from `EVENT_FROM_SCORE` laps. */
 export const EVENT_FROM_SCORE = 6;
@@ -328,8 +335,11 @@ export const WARN_MAX_GAP = 120 * ART;
 
 /** A mover joining the road (from an entrance or a short cut) waits until nothing will reach it in this many ticks. */
 export const JOIN_TICKS = 100;
-/** How far before the end of its route a joining mover stops to wait. */
-export const JOIN_HOLD = 16 * ART;
+/**
+ * A joining mover waits on its route with its front this far short of the road's edge, so nothing waiting pokes into
+ * the lanes (see `joinHold`).
+ */
+export const JOIN_CLEAR = 4 * ART;
 
 /** The chance a walker or runner in the inner lane cuts across the park when it passes a short cut. */
 export const SHORTCUT_CHANCE = 0.3;

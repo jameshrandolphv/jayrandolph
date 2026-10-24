@@ -80,7 +80,8 @@ export interface CourseSpec {
   waves: boolean;
   /**
    * Whether the carriage is a train instead: one lane wide (`TRAIN_LEN` long), always in lane `TRAIN_LANE`, never
-   * moved by a swipe, an obstacle or a pick-up, and only ever one of it.
+   * moved out of it by a swipe, an obstacle or a pick-up (though a swipe along it speeds it up and slows it back
+   * down), and only ever one of it.
    */
   train: boolean;
   /**

@@ -17,6 +17,7 @@ import {
   PATCH_SCORES,
   STUN_TICKS,
   CRASH_TICKS,
+  JOIN_CLEAR,
   DAZE_TICKS,
   GAME_OVER_LOCKOUT,
   GROUP_FROM_SCORE,
@@ -38,6 +39,7 @@ import {
   COURSES,
   COURSE_IDS,
   RAPIDS_LANES,
+  TRAIN_LANE,
   WAVE_SWELL,
   medalFor,
   unlocked,
@@ -1316,6 +1318,45 @@ describe('courses', () => {
   });
 });
 
+describe('the train', () => {
+  it('speeds up on a swipe and slows back down, but keeps to its lane', () => {
+    const sim = onCourse('canyon');
+    const train = put(sim, 'carriage', 100, TRAIN_LANE);
+    expect(sim.setBoost(train.id, true)).toBe(true);
+    expect(train.speed).toBe(train.baseSpeed * BOOST);
+    expect(sim.shift(train.id, 1)).toBe(false);
+    expect(train.target).toBe(TRAIN_LANE);
+    expect(sim.setBoost(train.id, false)).toBe(true);
+    expect(train.speed).toBe(train.baseSpeed);
+  });
+});
+
+describe('arrivals', () => {
+  it('wait with their fronts clear of the road', () => {
+    for (const id of COURSE_IDS) {
+      const sim = new ChaosParkSim(seededRng(5), COURSES[id]);
+      sim.start();
+      sim.laps = 60;
+      let waited = 0;
+      for (let t = 0; t < 60 * 90; t++) {
+        sim.step();
+        if (sim.phase !== 'playing') {
+          sim.lives = LIVES;
+          continue;
+        }
+        for (const m of sim.movers) {
+          if (!m.waiting || !m.join) continue;
+          waited++;
+          const edge = sim.park.half - Math.abs(laneOffset(m.join.p, m.width, sim.park));
+          const left = m.routeLens[m.routeLens.length - 1]! - m.routeAt;
+          if (m.routeAt > 0) expect(left).toBeGreaterThanOrEqual(edge + m.len / 2 + JOIN_CLEAR - 1e-6);
+        }
+      }
+      expect(waited).toBeGreaterThan(0);
+    }
+  });
+});
+
 describe('predators', () => {
   it('eat whoever on foot they catch, costing a life and the laps they had', () => {
     const sim = onCourse('waters');
@@ -1348,7 +1389,7 @@ describe('predators', () => {
 
   it('move a lane at a time toward the nearest person ahead', () => {
     const sim = onCourse('canyon');
-    put(sim, 'slow', 200, 3);
+    put(sim, 'slow', 300, 3);
     const predator = put(sim, 'predator', 100, 0);
     sim.step();
     expect(predator.target).toBe(1);
@@ -1356,6 +1397,25 @@ describe('predators', () => {
     expect(predator.target).toBe(1);
     ticks(sim, 40);
     expect(predator.target).toBe(2);
+  });
+
+  it('run straight once close, so a late swipe gets away', () => {
+    const sim = onCourse('canyon');
+    const walker = put(sim, 'walker', 160, 1);
+    const predator = put(sim, 'predator', 100, 1);
+    sim.step();
+    // Under PREDATOR_COMMIT ticks from catching them: it won't change lanes now.
+    expect(predator.turnedAt).toBeGreaterThan(sim.playTicks);
+    expect(sim.shift(walker.id, 1)).toBe(true);
+    let eaten = false;
+    for (let t = 0; t < 200 && !eaten; t++) {
+      sim.step();
+      eaten = sim.drainEvents().includes('eat');
+    }
+    expect(eaten).toBe(false);
+    expect(predator.target).toBe(1);
+    expect(sim.movers).toContain(walker);
+    expect(sim.lives).toBe(LIVES);
   });
 
   it('wander a lane now and then with nobody in sight', () => {

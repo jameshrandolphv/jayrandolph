@@ -43,7 +43,7 @@ import {
   GROUP_FROM_SCORE,
   GROUP_INTERVAL,
   GROUP_SIZE,
-  JOIN_HOLD,
+  JOIN_CLEAR,
   JOIN_TICKS,
   KIND_SPECS,
   EVENT_FROM_SCORE,
@@ -71,6 +71,8 @@ import {
   PREDATOR_WANDER,
   PREDATOR_WANDER_CHANCE,
   PREDATOR_TURN,
+  PREDATOR_COMMIT,
+  PREDATOR_LUNGE,
   SHOUT_COOLDOWN,
   SHOUT_TICKS,
   SECOND_CARRIAGE_SCORE,
@@ -627,7 +629,7 @@ export class ChaosParkSim {
     if (this.phase !== 'playing' || this.paused) return false;
     const m = this.movers.find((o) => o.id === id && o.state === 'track');
     if (!m) return false;
-    if (m.boosted === on || m.daze > 0 || this.isTrain(m)) {
+    if (m.boosted === on || m.daze > 0) {
       this.events.push('bump');
       return false;
     }
@@ -745,7 +747,7 @@ export class ChaosParkSim {
   /** Follows the route; returns true once a leaving mover has gone. */
   private moveOnRoute(m: Mover): boolean {
     const end = m.routeLens[m.routeLens.length - 1]!;
-    const holdAt = end - JOIN_HOLD;
+    const holdAt = m.hold ? Math.max(0, end - this.joinHold(m)) : end;
     if (m.hold && m.routeAt >= holdAt - 1e-6) {
       if (!this.canJoin(m)) {
         m.waiting = true;
@@ -773,6 +775,15 @@ export class ChaosParkSim {
     m.alpha = 1;
     this.countLaps(m);
     return false;
+  }
+
+  /**
+   * How far back from the end of its route a joining mover waits: with its front `JOIN_CLEAR` short of the road's
+   * edge, however long it is and whichever lane it joins.
+   */
+  private joinHold(m: Mover): number {
+    const edge = this.park.half - Math.abs(laneOffset(m.join!.p, m.width, this.park));
+    return edge + m.len / 2 + JOIN_CLEAR;
   }
 
   private routePoint(m: Mover): Point {
@@ -1129,6 +1140,15 @@ export class ChaosParkSim {
       if (d < nearest) {
         nearest = d;
         prey = o;
+      }
+    }
+    // Close enough to catch them, it runs straight on for a while, so a late swipe still gets them away.
+    if (prey) {
+      const gap = nearest - (m.len + prey.len) / 2;
+      const closing = pace(m) - pace(prey) * prey.dir * m.dir;
+      if (closing > 0 && gap / closing < PREDATOR_COMMIT) {
+        m.turnedAt = this.playTicks + PREDATOR_LUNGE - PREDATOR_TURN;
+        return;
       }
     }
     let lane = !prey
@@ -1592,7 +1612,8 @@ export class ChaosParkSim {
     m.alpha = 0;
     const side = inside ? -1 : 1;
     const p = inside ? 0 : lanes - m.width;
-    const from = pose(track, s, side * (half + WILD_DEPTH));
+    // Deep enough in the trees that even a long one waits out of the road and fully in view.
+    const from = pose(track, s, side * (half + WILD_DEPTH + m.len / 2));
     const edge = pose(track, s, side * (half + 4));
     const merge = pose(track, s, laneOffset(p, m.width, this.park));
     this.setRoute(
