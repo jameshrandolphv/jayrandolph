@@ -167,6 +167,13 @@ export const PREDATOR_SIGHT = 160 * ART;
  */
 export const PREDATOR_WANDER = 90;
 export const PREDATOR_WANDER_CHANCE = 0.02;
+/**
+ * Once whoever a predator is after is less than `PREDATOR_COMMIT` ticks from being caught, it stops changing lanes and
+ * runs straight on for `PREDATOR_LUNGE` ticks, so a swipe out of its lane in that time (the "!" shows from
+ * `WARN_TICKS`) gets them away.
+ */
+export const PREDATOR_COMMIT = 90;
+export const PREDATOR_LUNGE = 150;
 
 /** A course's own event (see `CourseEvent`) comes every `EVENT_INTERVAL` ticks from `EVENT_FROM_SCORE` laps. */
 export const EVENT_FROM_SCORE = 6;
@@ -239,8 +246,8 @@ export const IMPACT_TICKS = 40;
 /**
  * Pick-ups: from `PICKUP_FROM_SCORE`, now and then one sits on the loop in one lane until a visitor walks, runs, rides
  * or drives over it, or `PICKUP_TICKS` pass. One at a time: the first comes `PICKUP_FIRST` ticks in, the next
- * `PICKUP_INTERVAL` after the last has gone. Run groups go over them without taking them, and carriages go over a
- * duplicate or extra laps. What each does to whoever takes it, for the rest of their laps (a carriage, which never
+ * `PICKUP_INTERVAL` after the last has gone. Run groups take them too, except a duplicate (one group at a time), and
+ * carriages go over a duplicate or extra laps. What each does to whoever takes it, for the rest of their laps (a carriage, which never
  * leaves, for `CARRIAGE_EFFECT_LAPS` laps):
  * - heart: a life back (never comes while lives are full);
  * - double: a copy of them right behind;
@@ -328,8 +335,11 @@ export const WARN_MAX_GAP = 120 * ART;
 
 /** A mover joining the road (from an entrance or a short cut) waits until nothing will reach it in this many ticks. */
 export const JOIN_TICKS = 100;
-/** How far before the end of its route a joining mover stops to wait. */
-export const JOIN_HOLD = 16 * ART;
+/**
+ * A joining mover waits on its route with its front this far short of the road's edge, so nothing waiting pokes into
+ * the lanes (see `joinHold`).
+ */
+export const JOIN_CLEAR = 4 * ART;
 
 /** The chance a walker or runner in the inner lane cuts across the park when it passes a short cut. */
 export const SHORTCUT_CHANCE = 0.3;

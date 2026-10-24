@@ -43,7 +43,7 @@ import {
   GROUP_FROM_SCORE,
   GROUP_INTERVAL,
   GROUP_SIZE,
-  JOIN_HOLD,
+  JOIN_CLEAR,
   JOIN_TICKS,
   KIND_SPECS,
   EVENT_FROM_SCORE,
@@ -71,6 +71,8 @@ import {
   PREDATOR_WANDER,
   PREDATOR_WANDER_CHANCE,
   PREDATOR_TURN,
+  PREDATOR_COMMIT,
+  PREDATOR_LUNGE,
   SHOUT_COOLDOWN,
   SHOUT_TICKS,
   SECOND_CARRIAGE_SCORE,
@@ -627,7 +629,7 @@ export class ChaosParkSim {
     if (this.phase !== 'playing' || this.paused) return false;
     const m = this.movers.find((o) => o.id === id && o.state === 'track');
     if (!m) return false;
-    if (m.boosted === on || m.daze > 0 || this.isTrain(m)) {
+    if (m.boosted === on || m.daze > 0) {
       this.events.push('bump');
       return false;
     }
@@ -745,7 +747,7 @@ export class ChaosParkSim {
   /** Follows the route; returns true once a leaving mover has gone. */
   private moveOnRoute(m: Mover): boolean {
     const end = m.routeLens[m.routeLens.length - 1]!;
-    const holdAt = end - JOIN_HOLD;
+    const holdAt = m.hold ? Math.max(0, end - this.joinHold(m)) : end;
     if (m.hold && m.routeAt >= holdAt - 1e-6) {
       if (!this.canJoin(m)) {
         m.waiting = true;
@@ -773,6 +775,15 @@ export class ChaosParkSim {
     m.alpha = 1;
     this.countLaps(m);
     return false;
+  }
+
+  /**
+   * How far back from the end of its route a joining mover waits: with its front `JOIN_CLEAR` short of the road's
+   * edge, however long it is and whichever lane it joins.
+   */
+  private joinHold(m: Mover): number {
+    const edge = this.park.half - Math.abs(laneOffset(m.join!.p, m.width, this.park));
+    return edge + m.len / 2 + JOIN_CLEAR;
   }
 
   private routePoint(m: Mover): Point {
@@ -1131,6 +1142,15 @@ export class ChaosParkSim {
         prey = o;
       }
     }
+    // Close enough to catch them, it runs straight on for a while, so a late swipe still gets them away.
+    if (prey) {
+      const gap = nearest - (m.len + prey.len) / 2;
+      const closing = pace(m) - pace(prey) * prey.dir * m.dir;
+      if (closing > 0 && gap / closing < PREDATOR_COMMIT) {
+        m.turnedAt = this.playTicks + PREDATOR_LUNGE - PREDATOR_TURN;
+        return;
+      }
+    }
     let lane = !prey
       ? m.target
       : prey.target < m.target
@@ -1282,9 +1302,9 @@ export class ChaosParkSim {
       const taker = this.movers.find(
         (m) =>
           m.state === 'track' &&
-          m.kind !== 'group' &&
           m.kind !== 'predator' &&
           !(m.kind === 'carriage' && (p.kind === 'double' || p.kind === 'strength')) &&
+          !(m.kind === 'group' && p.kind === 'double') &&
           !this.isTrain(m) &&
           Math.abs(loopDelta(p.s, m.s, length)) < (PICKUP_LEN + m.len) / 2 &&
           laneOverlap(m.p, m.width, p.lane, 1) > LATERAL_OVERLAP,
@@ -1592,7 +1612,8 @@ export class ChaosParkSim {
     m.alpha = 0;
     const side = inside ? -1 : 1;
     const p = inside ? 0 : lanes - m.width;
-    const from = pose(track, s, side * (half + WILD_DEPTH));
+    // Deep enough in the trees that even a long one waits out of the road and fully in view.
+    const from = pose(track, s, side * (half + WILD_DEPTH + m.len / 2));
     const edge = pose(track, s, side * (half + 4));
     const merge = pose(track, s, laneOffset(p, m.width, this.park));
     this.setRoute(
@@ -1977,7 +1998,7 @@ export class ChaosParkSim {
     this.waves = this.waves.filter((w) => w.ticks >= 0);
   }
 
-  /** Whoever a rolling tumbleweed touches has collided with it, unless invisible; a star breaks it up. */
+  /** Whoever a rolling tumbleweed touches is stunned by it (no life lost), unless invisible; a star breaks it up. */
   private moveWeeds(): void {
     const { track, lanes } = this.park;
     for (const w of this.weeds) {
@@ -2005,13 +2026,12 @@ export class ChaosParkSim {
       );
       if (m) {
         w.ticks = -1;
-        this.impacts.push({ id: this.nextId++, x: w.x, y: w.y, ticks: 0 });
         // A star breaks it up, and so does the train.
         if (m.star > 0 || this.isTrain(m)) {
+          this.impacts.push({ id: this.nextId++, x: w.x, y: w.y, ticks: 0 });
           this.events.push('knock');
           continue;
         }
-        if (this.loseLife({ x: w.x, y: w.y }, [m.id])) return;
         this.stun(m, { x: w.x, y: w.y });
         continue;
       }

@@ -959,24 +959,8 @@ export const moverBody = ({ kind, look, season, crowd = 1 }: Look): Graphics => 
       break;
     }
     case 'carriage': {
-      const horse = pick(HORSES, a);
       const coach = pick(CARRIAGES, b);
-      // Shafts and harness, the horse, then the carriage.
-      g.moveTo(1, -7)
-        .lineTo(17, -4.5)
-        .moveTo(1, 7)
-        .lineTo(17, 4.5)
-        .stroke({ width: 1.6, color: 0x6b4a2e });
-      g.ellipse(10, 0, 2, 1.5).fill(mix(horse, 0x000000, 0.4));
-      g.ellipse(19.5, 0, 9.5, 5.4).fill(horse).stroke(OUTLINE);
-      g.ellipse(18, -1.8, 5.5, 1.8).fill({ color: 0xffffff, alpha: 0.25 });
-      g.moveTo(17, -5).lineTo(17, 5).stroke({ width: 1.8, color: COLORS.red });
-      g.ellipse(30.5, 0, 5, 2.9).fill(horse).stroke(OUTLINE);
-      g.moveTo(22, 0)
-        .lineTo(30, 0)
-        .stroke({ width: 1.8, color: mix(horse, 0x000000, 0.5), cap: 'round' });
-      g.ellipse(28, -2.8, 1.4, 1).fill(mix(horse, 0x000000, 0.3));
-      g.ellipse(28, 2.8, 1.4, 1).fill(mix(horse, 0x000000, 0.3));
+      // The horse and its shafts are drawn with the legs, so it can walk (see `drawLimbs`).
       for (const x of [-27, -6])
         for (const y of [-16, 16]) g.roundRect(x - 4.5, y - 1.6, 9, 3.2, 1.5).fill(0x2a2a2a);
       g.roundRect(-31, -14, 33, 28, 6)
@@ -1007,6 +991,87 @@ export const moverBody = ({ kind, look, season, crowd = 1 }: Look): Graphics => 
 
 /** People are drawn this much larger than their footprint so they read at phone size. */
 const K = 1.6;
+
+/**
+ * A horse from above, facing +x, its middle at (x, y) and `s` times its usual size, at `phase` of its stride (which
+ * repeats every 2 pi): its legs go in diagonal pairs, its body surges a little with each step, its head nods twice a
+ * stride and its tail swings. `collar` is a harness collar across its shoulders.
+ */
+const horseGait = (
+  g: Graphics,
+  x: number,
+  y: number,
+  coat: number,
+  s: number,
+  phase: number,
+  collar?: number,
+): void => {
+  const dark = mix(coat, 0x000000, 0.45);
+  const hoof = 0x2a2626;
+  const step = Math.sin(phase);
+  const beat = Math.sin(2 * phase);
+  // Hooves: each swings forward under the body and back, a little further out while it's lifted.
+  const pairs = [
+    [6.5, -1, 0],
+    [6.5, 1, Math.PI],
+    [-6, -1, Math.PI],
+    [-6, 1, 0],
+  ] as const;
+  for (const [hx, side, offset] of pairs) {
+    const swing = Math.sin(phase + offset);
+    const lifted = Math.cos(phase + offset) > 0;
+    const fx = x + (hx + 2.6 * swing) * s;
+    const fy = y + side * (lifted ? 6.2 : 5.6) * s;
+    g.moveTo(x + hx * s, y + side * 3 * s)
+      .lineTo(fx, fy)
+      .stroke({ width: 2 * s, color: dark, cap: 'round' });
+    g.ellipse(fx, fy, 1.5 * s, 1.1 * s).fill(lifted ? mix(hoof, coat, 0.35) : hoof);
+  }
+  // The body surges forward a little at each step, and sways side to side.
+  const bx = x + 0.45 * beat * s;
+  const by = y + 0.4 * step * s;
+  // Head and neck: a nod forward and back twice a stride, and a little turn with the body's sway.
+  const hx = bx + 12.5 * s + 1.1 * Math.sin(2 * phase + 0.8) * s;
+  const hy = by + 0.5 * step * s;
+  // The tail, swinging behind.
+  g.moveTo(bx - 8.5 * s, by)
+    .quadraticCurveTo(
+      bx - 11.5 * s,
+      by,
+      bx - 13.5 * s,
+      by + 2.6 * Math.sin(phase + Math.PI / 2) * s,
+    )
+    .stroke({ width: 2.6 * s, color: dark, cap: 'round' });
+  // Rump, barrel and shoulders, outlined together, then filled over the inner edges.
+  const shapes = () =>
+    g
+      .ellipse(bx - 4.8 * s, by, 4.6 * s, 5.2 * s)
+      .ellipse(bx, by, 8.4 * s, 4.8 * s)
+      .ellipse(bx + 5 * s, by, 4 * s, 4.6 * s);
+  const neck = () => g.moveTo(bx + 5 * s, by).lineTo(hx - 1.5 * s, hy);
+  shapes().stroke({ width: 2.8, color: INK, join: 'round' });
+  neck().stroke({ width: 4.6 * s + 2.4, color: INK, cap: 'round' });
+  shapes().fill(coat);
+  neck().stroke({ width: 4.6 * s, color: coat, cap: 'round' });
+  g.ellipse(bx - 1.5 * s, by - 1.9 * s, 5.8 * s, 1.5 * s).fill({ color: 0xffffff, alpha: 0.22 });
+  if (collar !== undefined)
+    g.moveTo(bx + 6 * s, by - 4.4 * s)
+      .lineTo(bx + 6 * s, by + 4.4 * s)
+      .stroke({ width: 1.8 * s, color: collar, cap: 'round' });
+  // The head: long, narrowing to the muzzle, with its ears back on top and the mane down the neck.
+  g.ellipse(hx, hy, 4 * s, 2.5 * s)
+    .fill(coat)
+    .stroke(OUTLINE);
+  g.ellipse(hx + 3 * s, hy, 1.9 * s, 1.9 * s)
+    .fill(mix(coat, 0x000000, 0.15))
+    .stroke({ ...OUTLINE, width: 1.2 });
+  g.moveTo(bx + 3.5 * s, by)
+    .lineTo(hx - 0.5 * s, hy)
+    .stroke({ width: 1.6 * s, color: dark, cap: 'round' });
+  g.ellipse(hx - 1.8 * s, hy - 1.7 * s, 1.2 * s, 0.75 * s)
+    .ellipse(hx - 1.8 * s, hy + 1.7 * s, 1.2 * s, 0.75 * s)
+    .fill(mix(coat, 0x000000, 0.3));
+};
 
 /** A person from above: shoulders, then a head (or a hat in winter). Arms and feet are drawn by `drawLimbs`. */
 const person = (
@@ -1144,15 +1209,13 @@ export const drawLimbs = (
       break;
     }
     case 'carriage': {
-      // The horse's legs show either side as it walks.
-      const s = Math.sin(phase);
-      for (const [x, y] of [
-        [25, -5],
-        [25, 5],
-        [14, -5],
-        [14, 5],
-      ] as const)
-        g.ellipse(x + (y > 0 === x > 20 ? s : -s) * 2, y, 1.6, 1).fill(0x2a2a2a);
+      // The shafts from the carriage, then the horse walking between them.
+      g.moveTo(1, -7)
+        .lineTo(17, -4.5)
+        .moveTo(1, 7)
+        .lineTo(17, 4.5)
+        .stroke({ width: 1.6, color: 0x6b4a2e });
+      horseGait(g, 19.5, 0, pick(HORSES, look[0]), 1, phase, COLORS.red);
       break;
     }
     case 'car':
