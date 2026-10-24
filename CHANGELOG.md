@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.10.1
+- Chaos Park: streaks say "STREAK", then "2X STREAK", "3X STREAK" and so on (the scoring is the same)
+- Chaos Park (rules shared with the iOS and Android apps, whose courses have predators): a predator stops changing lanes once it's about to catch someone, so moving them out of its lane in time gets them away
+- Chaos Park: visitors waiting to come in stand far enough back that they don't poke into the road
+- Chaos Park: the carriage's horse trots, its legs, head and tail moving as it goes
+- Chaos Park: now and then a visitor on foot remarks on the day ("Nice day out")
+
 ## 1.10.0
 - Chaos Park 1.1: the difficulty climbs much more slowly after 10 laps (at 0.4 of the rate, so laps 10 to 35 play like 10 to 20 used to), and a visitor more can come in every 5 levels instead of 4. From 150 laps one more can come in every 10 laps, up to 26
 - Chaos Park: patches arrive at 50 and 100 laps (were 25, 50 and 100), the second carriage at 110 laps (was 10), and run groups from 12 laps, every 20 to 50 seconds until 50 laps

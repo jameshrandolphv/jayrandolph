@@ -1349,7 +1349,8 @@ describe('arrivals', () => {
           waited++;
           const edge = sim.park.half - Math.abs(laneOffset(m.join.p, m.width, sim.park));
           const left = m.routeLens[m.routeLens.length - 1]! - m.routeAt;
-          if (m.routeAt > 0) expect(left).toBeGreaterThanOrEqual(edge + m.len / 2 + JOIN_CLEAR - 1e-6);
+          if (m.routeAt > 0)
+            expect(left).toBeGreaterThanOrEqual(edge + m.len / 2 + JOIN_CLEAR - 1e-6);
         }
       }
       expect(waited).toBeGreaterThan(0);
