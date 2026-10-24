@@ -7,6 +7,7 @@
 - Chaos Park: visitors waiting to come in stand far enough back that they don't poke into the road
 - Chaos Park: the carriage's horse trots, its legs, head and tail moving as it goes
 - Chaos Park: now and then a visitor on foot remarks on the day ("Nice day out")
+- Chaos Park: run groups pick up tokens too, all but a duplicate
 
 ## 1.10.0
 - Chaos Park 1.1: the difficulty climbs much more slowly after 10 laps (at 0.4 of the rate, so laps 10 to 35 play like 10 to 20 used to), and a visitor more can come in every 5 levels instead of 4. From 150 laps one more can come in every 10 laps, up to 26

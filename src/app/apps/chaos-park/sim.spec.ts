@@ -801,6 +801,22 @@ describe('pick-ups', () => {
     expect(sim.pickups).toHaveLength(2);
   });
 
+  it('a run group takes one too, but goes over a duplicate', () => {
+    const sim = playing();
+    put(sim, 'group', 100, 1, { laps: 1 });
+    lay(sim, 'double', 140, 1);
+    ticks(sim, 120);
+    expect(sim.pickups).toHaveLength(1);
+    expect(sim.movers.filter((m) => m.kind === 'group')).toHaveLength(1);
+    sim.pickups = [];
+    sim.lives = 1;
+    const g = sim.movers.find((m) => m.kind === 'group')!;
+    lay(sim, 'heart', wrap(g.s + g.dir * 40, sim.park.track.length), 1);
+    ticks(sim, 120);
+    expect(sim.lives).toBe(2);
+    expect(sim.pickups).toHaveLength(0);
+  });
+
   it('go when nobody takes them in time', () => {
     const sim = playing();
     lay(sim, 'double', 100, 0);

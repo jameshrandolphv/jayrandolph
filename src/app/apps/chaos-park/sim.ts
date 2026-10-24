@@ -1302,9 +1302,9 @@ export class ChaosParkSim {
       const taker = this.movers.find(
         (m) =>
           m.state === 'track' &&
-          m.kind !== 'group' &&
           m.kind !== 'predator' &&
           !(m.kind === 'carriage' && (p.kind === 'double' || p.kind === 'strength')) &&
+          !(m.kind === 'group' && p.kind === 'double') &&
           !this.isTrain(m) &&
           Math.abs(loopDelta(p.s, m.s, length)) < (PICKUP_LEN + m.len) / 2 &&
           laneOverlap(m.p, m.width, p.lane, 1) > LATERAL_OVERLAP,

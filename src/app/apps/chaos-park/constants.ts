@@ -246,8 +246,8 @@ export const IMPACT_TICKS = 40;
 /**
  * Pick-ups: from `PICKUP_FROM_SCORE`, now and then one sits on the loop in one lane until a visitor walks, runs, rides
  * or drives over it, or `PICKUP_TICKS` pass. One at a time: the first comes `PICKUP_FIRST` ticks in, the next
- * `PICKUP_INTERVAL` after the last has gone. Run groups go over them without taking them, and carriages go over a
- * duplicate or extra laps. What each does to whoever takes it, for the rest of their laps (a carriage, which never
+ * `PICKUP_INTERVAL` after the last has gone. Run groups take them too, except a duplicate (one group at a time), and
+ * carriages go over a duplicate or extra laps. What each does to whoever takes it, for the rest of their laps (a carriage, which never
  * leaves, for `CARRIAGE_EFFECT_LAPS` laps):
  * - heart: a life back (never comes while lives are full);
  * - double: a copy of them right behind;
