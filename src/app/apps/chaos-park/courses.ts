@@ -24,8 +24,11 @@ export type Obstacle = 'slip' | 'steer' | 'slime';
  */
 export type CourseEvent = 'none' | 'hook' | 'tumbleweed' | 'sting' | 'haunt';
 
-/** A stretch of the loop drawn under cover: an arch of rock, or a big vine across the road. */
-export type Cover = 'none' | 'arch' | 'vine';
+/**
+ * A stretch of the loop drawn under cover: an old train bridge across the canyon (where a coyote now and then drops
+ * TNT, see `TNT_FROM_SCORE`), or a big vine across the road.
+ */
+export type Cover = 'none' | 'trestle' | 'vine';
 
 /**
  * The shape of a course's road:
@@ -177,7 +180,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     predator: true,
     obstacle: 'steer',
     event: 'tumbleweed',
-    cover: 'arch',
+    cover: 'trestle',
     paths: false,
     rapids: false,
     waves: false,
@@ -305,6 +308,21 @@ export const PLANK_ZONE = 12;
 export const PLANK_FALL_SPEED = 0.7;
 export const PLANK_LOOK = 80;
 export const PLANK_WARN = 90;
+/**
+ * Dusty Canyon's old train bridge: from `TNT_FROM_SCORE` laps, every `TNT_INTERVAL` ticks, a coyote runs across it
+ * (`TNT_RUN` ticks from one rim to the other) and drops a stick of TNT onto the road beside it, `TNT_BESIDE` from its
+ * middle (at the design lane width), in the lane it was over. The TNT flashes for `TNT_FUSE` ticks (4 seconds), then
+ * goes off: whoever is in that lane within `TNT_BLAST` of it (and their own half length) is blown away, costing one
+ * life however many go. The train, anyone invisible and anyone with a star are safe. Anyone heading into it shows a
+ * warning from `TNT_WARN` ticks away.
+ */
+export const TNT_FROM_SCORE = 15;
+export const TNT_INTERVAL: readonly [number, number] = [40 * 60, 75 * 60];
+export const TNT_RUN = 80;
+export const TNT_BESIDE = 40;
+export const TNT_FUSE = 4 * 60;
+export const TNT_BLAST = 22;
+export const TNT_WARN = 90;
 /**
  * River traffic comes from `RIVER_FROM_SCORE` laps, one every `RIVER_INTERVAL` ticks, up to `riverMax` of it at once;
  * an alligator every `GATOR_INTERVAL` from `GATOR_FROM_SCORE`, one at a time.

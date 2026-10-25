@@ -40,6 +40,10 @@ import {
   COURSE_IDS,
   RAPIDS_LANES,
   RIVER_KINDS,
+  TNT_FROM_SCORE,
+  TNT_FUSE,
+  TNT_INTERVAL,
+  TNT_RUN,
   TRAIN_LANE,
   WAVE_SWELL,
   medalFor,
@@ -1856,6 +1860,45 @@ describe('course obstacles', () => {
     for (let t = 0; t < 5000 && sim.movers.includes(walker); t++) sim.step();
     expect(sim.movers).not.toContain(walker);
     expect(sim.score).toBe(score + 1);
+  });
+
+  it('a coyote drops TNT from the canyon bridge that blows away whoever is by it in that lane, for one life', () => {
+    const sim = onCourse('canyon');
+    (sim as unknown as { dropTnt: () => void }).dropTnt();
+    const t = sim.tnts[0]!;
+    const near = put(sim, 'walker', t.s, t.lane, { speed: 0 });
+    const other = put(sim, 'walker', t.s, (t.lane + 2) % sim.park.lanes, { speed: 0 });
+    const lives = sim.lives;
+    let dropped = false;
+    let boom = false;
+    let warned = false;
+    for (let k = 0; k < TNT_RUN + TNT_FUSE + 5; k++) {
+      sim.step();
+      const events = sim.drainEvents();
+      dropped ||= events.includes('drop');
+      boom ||= events.includes('boom');
+      warned ||= near.warning;
+    }
+    expect([dropped, boom, warned]).toEqual([true, true, true]);
+    expect(sim.movers).not.toContain(near);
+    expect(sim.movers).toContain(other);
+    expect(sim.lives).toBe(lives - 1);
+    expect(sim.tnts).toHaveLength(0);
+  });
+
+  it('sends the TNT coyote now and then from lap 15 on Dusty Canyon only', () => {
+    for (const id of ['canyon', 'jungle'] as const) {
+      const sim = new ChaosParkSim(seededRng(5), COURSES[id]);
+      sim.start();
+      sim.endless = true;
+      sim.laps = TNT_FROM_SCORE;
+      let seen = false;
+      for (let k = 0; k < TNT_INTERVAL[1] + 10 && !seen && sim.phase === 'playing'; k++) {
+        sim.step();
+        seen = sim.tnts.length > 0;
+      }
+      expect(seen).toBe(id === 'canyon');
+    }
   });
 
   it('a jeep steps across the plank bridge into lanes with planks', () => {

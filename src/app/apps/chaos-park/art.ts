@@ -1386,7 +1386,7 @@ export const drawCover = (park: Park): Graphics => {
   };
   const a = cover.s;
   const b = cover.s + cover.len;
-  const rock = course.cover === 'arch';
+  const rock = course.cover === 'trestle';
   const len = rock ? cover.len : 34;
   const mid = (a + b) / 2;
   g.poly(strip(mid - len / 2, mid + len / 2, -half - 12, half + 12))

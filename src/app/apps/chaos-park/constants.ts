@@ -242,6 +242,8 @@ export const MAX_LIVES = 5;
 export const STUN_TICKS = 90;
 /** Ticks the burst shows where a collision happened. */
 export const IMPACT_TICKS = 40;
+/** How long TNT's blast shows. */
+export const BOOM_TICKS = 45;
 
 /**
  * Pick-ups: from `PICKUP_FROM_SCORE`, now and then one sits on the loop in one lane until a visitor walks, runs, rides

@@ -20,6 +20,7 @@ import {
   DAZE_TICKS,
   DOUBLE_GAP,
   FIRST_SPAWN,
+  BOOM_TICKS,
   IMPACT_TICKS,
   EXTRA_LAPS,
   FIRE_SPEED,
@@ -115,6 +116,13 @@ import {
   PLANK_LOOK,
   PLANK_WARN,
   PLANK_ZONE,
+  TNT_BESIDE,
+  TNT_BLAST,
+  TNT_FROM_SCORE,
+  TNT_FUSE,
+  TNT_INTERVAL,
+  TNT_RUN,
+  TNT_WARN,
   RIVER_FROM_SCORE,
   RIVER_GATOR,
   RIVER_INTERVAL,
@@ -191,7 +199,9 @@ export type SimEvent =
   | 'sting'
   | 'haunt'
   | 'slime'
-  | 'wave';
+  | 'wave'
+  | 'drop'
+  | 'boom';
 
 /**
  * Where a mover is: walking in from the street, on the loop, cutting across the park, on one of a manor's side roads,
@@ -351,6 +361,21 @@ export interface Tumbleweed {
 }
 
 /**
+ * A stick of TNT a coyote drops from Dusty Canyon's old train bridge (see `TNT_FROM_SCORE`): `s` and `lane` where it
+ * lands on the road. The coyote runs across the bridge by `dir` (1 from the inside out), `q` the lane it is over
+ * (fractional) and `run` its ticks left; `fuse` counts the ticks since the TNT landed (-1 until then).
+ */
+export interface Tnt {
+  id: number;
+  s: number;
+  lane: number;
+  dir: 1 | -1;
+  q: number;
+  run: number;
+  fuse: number;
+}
+
+/**
  * A wave at `s`: swelling at the bank, then rolling across the lanes (`q` is how far across its front is, in lanes from
  * the inside, moving by `dir`). `hit` holds whoever it has already pushed.
  */
@@ -474,6 +499,9 @@ export class ChaosParkSim {
   hooks: Hook[] = [];
   weeds: Tumbleweed[] = [];
   waves: Wave[] = [];
+  tnts: Tnt[] = [];
+  /** TNT going off, for its blast (aged like `impacts`, for `BOOM_TICKS`). */
+  booms: Impact[] = [];
   /** Ticks left of a time warp, from taking a spiral: see `timeScale`. */
   warp = 0;
   impacts: Impact[] = [];
@@ -498,6 +526,7 @@ export class ChaosParkSim {
   /** How many of the plank bridge's gaps are open (see `River.gaps`). */
   private planksGone = 1;
   private gatorTimer = 0;
+  private tntTimer = 0;
   /** Pairs already warned about, so the alert sounds once per close call. */
   private warnedPairs = new Set<string>();
   /** Pairs that have collided and are still overlapping as one passes the other; they don't collide again. */
@@ -743,10 +772,13 @@ export class ChaosParkSim {
     this.moveRats();
     this.moveHooks();
     this.moveWeeds();
+    this.moveTnts();
     if (this.phase !== 'playing') return;
     this.moveWaves();
     for (const i of this.impacts) i.ticks++;
     this.impacts = this.impacts.filter((i) => i.ticks < IMPACT_TICKS);
+    for (const b of this.booms) b.ticks++;
+    this.booms = this.booms.filter((b) => b.ticks < BOOM_TICKS);
     for (const p of this.pops) p.ticks++;
     this.pops = this.pops.filter((p) => p.ticks < POP_TICKS);
     this.checkPickups();
@@ -1276,6 +1308,7 @@ export class ChaosParkSim {
     const knocked = new Set<Mover>();
     for (const m of this.movers) m.warning = false;
     this.warnPlanks();
+    this.warnTnts();
     const loop = this.movers.filter((m) => m.state === 'track');
     if (this.traffic(loop, this.park.track.length, pairs, knocked)) return;
     for (const r of this.park.sideRoads) {
@@ -1506,6 +1539,11 @@ export class ChaosParkSim {
       else if (--this.waveTimer <= 0 && !this.sendWave()) this.waveTimer = 30;
     }
     if (this.park.river) this.spawnRiver(between);
+    // Now and then on Dusty Canyon, a coyote drops TNT from the old train bridge, one stick at a time.
+    if (this.course.cover === 'trestle' && this.park.cover && this.laps >= TNT_FROM_SCORE && !this.tnts.length) {
+      if (this.tntTimer <= 0) this.tntTimer = between(TNT_INTERVAL);
+      else if (--this.tntTimer <= 0) this.dropTnt();
+    }
     // One pick-up at a time: the next is timed from when the last one went.
     if (this.laps >= PICKUP_FROM_SCORE && !this.pickups.length) {
       if (this.pickupTimer <= 0) this.pickupTimer = between(PICKUP_FIRST);
@@ -2372,6 +2410,77 @@ export class ChaosParkSim {
     return true;
   }
 
+  /** A coyote sets off across the old train bridge with a stick of TNT, to drop over a lane at random. */
+  private dropTnt(): void {
+    const cover = this.park.cover!;
+    const { track, lanes } = this.park;
+    const lane = Math.floor(this.rng() * lanes);
+    const dir: 1 | -1 = this.rng() < 0.5 ? 1 : -1;
+    const side = this.rng() < 0.5 ? -1 : 1;
+    this.tnts.push({
+      id: this.nextId++,
+      s: wrap(cover.s + cover.len / 2 + side * TNT_BESIDE * ART, track.length),
+      lane,
+      dir,
+      q: dir > 0 ? -1.5 : lanes + 0.5,
+      run: TNT_RUN,
+      fuse: -1,
+    });
+  }
+
+  /**
+   * The coyote runs on across the bridge, dropping its TNT as it passes over the lane; the TNT flashes for
+   * `TNT_FUSE` ticks, then goes off (see `TNT_FROM_SCORE`).
+   */
+  private moveTnts(): void {
+    const { track, lanes } = this.park;
+    for (const t of this.tnts) {
+      if (t.fuse >= 0) t.fuse++;
+      if (t.run > 0) {
+        t.run--;
+        t.q += (t.dir * (lanes + 2)) / TNT_RUN;
+        if (t.fuse < 0 && (t.dir > 0 ? t.q >= t.lane + 0.5 : t.q <= t.lane + 0.5)) {
+          t.fuse = 0;
+          this.events.push('drop');
+        }
+      }
+      if (t.fuse < TNT_FUSE) continue;
+      t.run = 0;
+      t.fuse = -2;
+      const at = pose(track, t.s, laneOffset(t.lane, 1, this.park));
+      this.booms.push({ id: this.nextId++, x: at.x, y: at.y, ticks: 0 });
+      this.events.push('boom');
+      const hit = this.movers.filter(
+        (m) =>
+          m.state === 'track' &&
+          m.ghost === 0 &&
+          m.star === 0 &&
+          !this.isTrain(m) &&
+          Math.abs(loopDelta(t.s, m.s, track.length)) < TNT_BLAST * ART + m.len / 2 &&
+          laneOverlap(m.p, m.width, t.lane, 1) > 0,
+      );
+      if (!hit.length) continue;
+      this.movers = this.movers.filter((m) => !hit.includes(m));
+      for (const m of hit) this.impacts.push({ id: this.nextId++, x: m.x, y: m.y, ticks: 0 });
+      if (this.loseLife({ x: at.x, y: at.y }, hit.map((m) => m.id))) break;
+    }
+    this.tnts = this.tnts.filter((t) => t.fuse !== -2 && (t.run > 0 || t.fuse >= 0));
+  }
+
+  /** Warns of anyone in the lane of lit TNT, or heading into it. */
+  private warnTnts(): void {
+    const length = this.park.track.length;
+    for (const t of this.tnts) {
+      if (t.fuse < 0) continue;
+      for (const m of this.movers) {
+        if (m.state !== 'track' || laneOverlap(m.p, m.width, t.lane, 1) <= 0) continue;
+        const reach = TNT_BLAST * ART + m.len / 2;
+        const ahead = wrap((t.s - m.s) * m.dir, length);
+        if (Math.abs(loopDelta(t.s, m.s, length)) < reach || ahead < pace(m) * TNT_WARN + reach) m.warning = true;
+      }
+    }
+  }
+
   /** A wave swells up at the bank, inside or out, somewhere in the open. */
   private sendWave(): boolean {
     const { track, lanes } = this.park;
@@ -2493,6 +2602,9 @@ export class ChaosParkSim {
     this.riverTimer = 0;
     this.planksGone = 1;
     this.gatorTimer = 0;
+    this.tntTimer = 0;
+    this.tnts = [];
+    this.booms = [];
     this.hooks = [];
     this.weeds = [];
     this.waves = [];
