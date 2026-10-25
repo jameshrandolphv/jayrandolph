@@ -17,6 +17,7 @@ import {
   COURSES,
   RAPIDS_LEN,
   RAPIDS_LANES,
+  RIVER_LANES,
   TRAIN_LANE,
   type CourseId,
   type CourseSpec,
@@ -194,6 +195,22 @@ export interface Bridge {
   at: Point;
 }
 
+/**
+ * A river across one half of a course (see `CourseSpec.riverCrossing`), `RIVER_LANES` lanes wide, with its own
+ * traffic. Its centre line runs from beyond one edge of the frame, where its traffic comes in, to beyond the other,
+ * where it goes out; the loop crosses it on a bridge each side of that half.
+ */
+export interface River {
+  track: Track;
+  /** Where the loop crosses it, in order downstream: how far along the river, and the stretch of loop on the bridge. */
+  bridges: RiverBridge[];
+}
+
+export interface RiverBridge {
+  at: number;
+  over: Covered;
+}
+
 export interface Park {
   season: Season;
   frame: ParkFrame;
@@ -212,6 +229,8 @@ export interface Park {
   shortcuts: Shortcut[];
   /** Roads off the loop and back, on a manor (see `SideRoad`). */
   sideRoads: SideRoad[];
+  /** The river crossing the course, on a course with one. */
+  river: River | null;
   water: Water[];
   fields: Field[];
   /** Footpaths drawn for show; nobody uses them but the short cuts. */
@@ -1537,8 +1556,180 @@ const makeBridge = (track: Track, half: number, rng: () => number): Bridge => {
 };
 
 /** Whether `s` is on either stretch of a bridge. */
-export const onBridge = (bridge: Bridge | null, s: number, length: number): boolean =>
-  !!bridge && (underCover(bridge.over, s, length) || underCover(bridge.under, s, length));
+export const onBridge = (bridge: Bridge | null, s: number, length: number, by = 0): boolean =>
+  !!bridge &&
+  [bridge.over, bridge.under].some((c) =>
+    underCover({ s: c.s - by, len: c.len + 2 * by }, s, length),
+  );
+
+// ---------------------------------------------------------------------------------------------------------------
+// A river across the course.
+
+/** How far a river's centre line runs on past the frame at each end, so its traffic comes and goes out of sight. */
+export const RIVER_PAD = 70;
+/** A river's banks, either side of its lanes. */
+export const RIVER_BANK = 8;
+/** Half a river's width, banks and all. */
+export const riverHalf = (laneW: number): number => (RIVER_LANES * laneW) / 2 + RIVER_BANK;
+/** How far past the loop's edge a river runs straight on from under a bridge before it starts to wind. */
+const RIVER_STRAIGHT = 26;
+/** How far aside a river swings as it winds across the half it crosses: the first of these that fits. */
+const RIVER_BOWS = [60, 44, 30, 18, 0];
+
+/**
+ * A river straight down across the right half of the loop (the far end from the score on an upright phone): under
+ * the loop where its top and bottom run straight, winding between, and on out past the frame each way. Its traffic
+ * goes down the screen or up it, at random. None if that half has no straight top and bottom for it to cross.
+ */
+const makeRiver = (
+  track: Track,
+  half: number,
+  laneW: number,
+  frame: ParkFrame,
+  bridge: Bridge | null,
+  rng: () => number,
+): River | null => {
+  const { points, normals, step, length } = track;
+  const n = points.length;
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const midX = (Math.min(...xs) + Math.max(...xs)) / 2;
+  const midY = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const wide = riverHalf(laneW);
+  const sign = rng() < 0.5 ? -1 : 1;
+  const down = rng() < 0.5;
+  // Half the river's water, inside its banks.
+  const water = wide - RIVER_BANK;
+  // Where a river straight down through `x` runs under the loop: each stretch of loop over its water, as the first
+  // and last samples, and how far up and down the screen the road there reaches.
+  const under = (x: number): { from: number; to: number; top: number; bottom: number }[] => {
+    const over = points.map(
+      (p, i) => p.x > midX && Math.abs(p.x - x) < water + half * Math.abs(normals[i]!.x),
+    );
+    const start = over.indexOf(false);
+    if (start < 0) return [];
+    const runs: { from: number; to: number; top: number; bottom: number }[] = [];
+    for (let k = 1; k <= n; k++) {
+      const i = (start + k) % n;
+      if (!over[i]) continue;
+      const reach = half * Math.abs(normals[i]!.y);
+      const last = runs[runs.length - 1];
+      if (last && over[(i + n - 1) % n]) {
+        last.to = i;
+        last.top = Math.min(last.top, points[i]!.y - reach);
+        last.bottom = Math.max(last.bottom, points[i]!.y + reach);
+      } else runs.push({ from: i, to: i, top: points[i]!.y - reach, bottom: points[i]!.y + reach });
+    }
+    return runs;
+  };
+  // Where the loop's centre line crosses the river's.
+  const cross = (x: number, from: number, to: number): number => {
+    let best = from;
+    for (let k = 0; k <= wrap(to - from, n); k++) {
+      const i = (from + k) % n;
+      if (Math.abs(points[i]!.x - x) < Math.abs(points[best]!.x - x)) best = i;
+    }
+    return best;
+  };
+  // Where it goes: clear of the figure of eight's own bridge, under the loop just twice, top and bottom, where its
+  // bridges can be shortest.
+  let best: {
+    x: number;
+    runs: { from: number; to: number; top: number; bottom: number }[];
+  } | null = null;
+  let shortest = Infinity;
+  for (let x = midX + water; x < Math.max(...xs) - half; x += 4) {
+    const runs = under(x);
+    if (runs.length !== 2) continue;
+    // Not onto the figure of eight's bridge, or right up to it.
+    if (
+      bridge &&
+      runs.some((r) => {
+        for (let k = 0; k <= wrap(r.to - r.from, n); k++)
+          if (onBridge(bridge, wrap((r.from + k) * step, length), length, 30)) return true;
+        return false;
+      })
+    )
+      continue;
+    const span = runs.reduce((sum, r) => sum + wrap(r.to - r.from, n) + 1, 0);
+    if (span >= shortest) continue;
+    best = { x, runs: [...runs].sort((a, b) => a.top - b.top) };
+    shortest = span;
+  }
+  if (!best) return null;
+  const { x, runs } = best;
+  const [upper, lower] = runs as [(typeof runs)[0], (typeof runs)[0]];
+  // Winding between its bridges as far as it fits, from a little past each.
+  const y0 = upper.bottom + RIVER_STRAIGHT;
+  const y1 = lower.top - RIVER_STRAIGHT;
+  const bends = y1 - y0 > 220 ? 2 : y1 - y0 > 60 ? 1 : 0;
+  const clear = (line: readonly Point[]): boolean =>
+    line.every((p, i) => {
+      const a = line[Math.max(0, i - 1)]!;
+      const b = line[Math.min(line.length - 1, i + 1)]!;
+      const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      const nx = (b.y - a.y) / l;
+      const ny = -(b.x - a.x) / l;
+      return [-1, 1].every(
+        (side) =>
+          !nearPolyline(
+            points,
+            { x: p.x + nx * water * side, y: p.y + ny * water * side },
+            half + 2,
+            true,
+          ),
+      );
+    });
+  let middle: Point[] = [];
+  for (const most of bends ? RIVER_BOWS : []) {
+    const bow = Math.min(most, (y1 - y0) * 0.35);
+    const knots: Point[] = [{ x, y: y0 }];
+    for (let j = 0; j < bends; j++)
+      knots.push({
+        x: x + bow * sign * (j % 2 === 0 ? 1 : -1),
+        y: y0 + ((y1 - y0) * (j + 1)) / (bends + 1),
+      });
+    knots.push({ x, y: y1 });
+    const curve = spline(knots, { x: 0, y: 1 }, { x: 0, y: 1 });
+    if (clear(curve)) {
+      middle = curve;
+      break;
+    }
+  }
+  const raw = [{ x, y: -RIVER_PAD }, ...middle, { x, y: frame.h + RIVER_PAD }];
+  if (!down) raw.reverse();
+  const river = openTrack(raw, 1);
+  // Each bridge over the whole stretch of loop that runs over the water, and a little more.
+  const over = (r: { from: number; to: number }): Covered => {
+    const len = (wrap(r.to - r.from, n) + 1) * step + 16;
+    return { s: wrap(r.from * step - 8 - step / 2, length), len };
+  };
+  // It runs straight under both bridges, so how far along it each is comes from how far it is from either end.
+  const fromTop = points[cross(x, upper.from, upper.to)]!.y + RIVER_PAD;
+  const fromBottom = frame.h + RIVER_PAD - points[cross(x, lower.from, lower.to)]!.y;
+  const bridges = [
+    { at: down ? fromTop : river.length - fromTop, over: over(upper) },
+    { at: down ? river.length - fromBottom : fromBottom, over: over(lower) },
+  ].sort((a, b) => a.at - b.at);
+  return { track: river, bridges };
+};
+
+/** A river as short cuts for the scenery to keep clear of: lines across its width, banks and all. */
+const riverClearance = (river: River, laneW: number): Shortcut[] =>
+  [-1, -0.5, 0, 0.5, 1].map((k) => ({
+    id: -1,
+    a: 0,
+    b: 0,
+    path: river.track.points.map((p, i) => ({
+      x: p.x + river.track.normals[i]!.x * k * riverHalf(laneW),
+      y: p.y + river.track.normals[i]!.y * k * riverHalf(laneW),
+    })),
+  }));
+
+/** Whether `s` on the loop is on one of a river's bridges, or within `by` of either end of one. */
+export const onRiverBridge = (river: River | null, s: number, length: number, by = 0): boolean =>
+  !!river &&
+  river.bridges.some((b) => underCover({ s: b.over.s - by, len: b.over.len + 2 * by }, s, length));
 
 // ---------------------------------------------------------------------------------------------------------------
 // The middle of the park.
@@ -1707,6 +1898,7 @@ const makeTrees = (
       // A figure of eight's edges cross, so its road is kept clear by distance instead, and its middles are inside
       // the centre line.
       if (eight && nearPolyline(track.points, p, half + r + 3, true)) continue;
+      if (eight && shortcuts.some((c) => nearPolyline(c.path, p, r + 6))) continue;
       const middle = eight
         ? insidePolygon(track.points, tx, ty)
         : insidePolygon(inside.inner, tx, ty);
@@ -1770,12 +1962,15 @@ const makePatches = (
   shortcuts: readonly Shortcut[],
   rng: () => number,
   bridge: Bridge | null = null,
+  /** More spots to keep clear of, as a bridge is: a river's bridges. */
+  bridges: readonly number[] = [],
 ): Patch[] => {
   const out: Patch[] = [];
   const avoid = [
     ...entrances.map((e) => e.s),
     ...shortcuts.flatMap((c) => [c.a, c.b]),
     ...(bridge ? [bridge.over.s + bridge.over.len / 2, bridge.under.s + bridge.under.len / 2] : []),
+    ...bridges,
   ];
   for (let spread = track.length / 3; out.length < PATCH_COUNT && spread > 0; spread -= 40) {
     out.length = 0;
@@ -1803,6 +1998,7 @@ const makeCover = (
   rng: () => number,
   range: readonly [number, number] = COVER_LEN,
   bridge: Bridge | null = null,
+  bridges: readonly number[] = [],
 ): Covered => {
   const len = range[0] + rng() * (range[1] - range[0]);
   const avoid = [
@@ -1810,6 +2006,7 @@ const makeCover = (
     ...shortcuts.flatMap((c) => [c.a, c.b]),
     ...patches.map((p) => p.s),
     ...(bridge ? [bridge.over.s + bridge.over.len / 2, bridge.under.s + bridge.under.len / 2] : []),
+    ...bridges,
   ];
   let s = 0;
   for (let tries = 0; tries < 100; tries++) {
@@ -1959,6 +2156,11 @@ export const generatePark = (
   const inside: Interior = { inner, box };
   const entrances = makeEntrances(track, wall, half, rng, eight);
   const bridge = eight ? makeBridge(track, half, rng) : null;
+  const river = course.riverCrossing
+    ? makeRiver(track, half, course.laneW, frame, bridge, rng)
+    : null;
+  // A river's bridges, kept clear like a figure of eight's.
+  const riverBridges = river ? river.bridges.map((b) => b.over.s + b.over.len / 2) : [];
   // Footpaths and the short cuts along them, on the courses that have them; or a manor's hall.
   // A manor's side roads; where the hall doesn't fit as a road, a path through the house as before.
   const sideRoads =
@@ -1979,7 +2181,7 @@ export const generatePark = (
     half,
     inside,
     entrances,
-    clearOf,
+    river ? [...clearOf, ...riverClearance(river, course.laneW)] : clearOf,
     water,
     fields,
     paths,
@@ -1996,11 +2198,12 @@ export const generatePark = (
     clearOf,
     rng,
     bridge,
+    riverBridges,
   );
   const cover =
     course.cover === 'none'
       ? null
-      : makeCover(track, entrances, clearOf, patches, rng, COVER_LEN, bridge);
+      : makeCover(track, entrances, clearOf, patches, rng, COVER_LEN, bridge, riverBridges);
   // Rapids, like a covered stretch, clear of the entrances, short cuts and patches.
   const rapids = course.rapids
     ? makeRapids(track, course.lanes, entrances, clearOf, patches, rng)
@@ -2019,6 +2222,7 @@ export const generatePark = (
     entrances,
     shortcuts,
     sideRoads,
+    river,
     water,
     fields,
     paths,

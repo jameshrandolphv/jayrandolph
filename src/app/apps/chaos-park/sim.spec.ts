@@ -39,6 +39,7 @@ import {
   COURSES,
   COURSE_IDS,
   RAPIDS_LANES,
+  RIVER_KINDS,
   TRAIN_LANE,
   WAVE_SWELL,
   medalFor,
@@ -144,6 +145,7 @@ const put = (
     turnedAt: -Infinity,
     side: -1,
     sideSkip: -1,
+    river: false,
     ...options,
   };
   m.baseSpeed = m.speed;
@@ -1358,11 +1360,10 @@ describe('arrivals', () => {
       sim.laps = 60;
       let waited = 0;
       for (let t = 0; t < 60 * 90; t++) {
+        // Kept going, so even a course with a lot happening has arrivals to wait.
+        sim.lives = LIVES;
         sim.step();
-        if (sim.phase !== 'playing') {
-          sim.lives = LIVES;
-          continue;
-        }
+        if (sim.phase !== 'playing') continue;
         for (const m of sim.movers) {
           if (!m.waiting || !m.join) continue;
           waited++;
@@ -1768,6 +1769,77 @@ describe('course obstacles', () => {
     for (let t = 0; t < 600 && sim.lives === lives; t++) sim.step();
     expect(sim.lives).toBe(lives - 1);
     expect(fast.state === 'side' || slow.state === 'side').toBe(true);
+  });
+
+  const jungleSim = () => {
+    const sim = new ChaosParkSim(seededRng(3), COURSES.jungle);
+    sim.fitFrame({ w: 1040, h: 560, hud: 'top' });
+    sim.start();
+    sim.movers = [];
+    noArrivals(sim);
+    return sim;
+  };
+  const launch = (sim: ChaosParkSim, kind: Kind | null): Mover => {
+    const spec = RIVER_KINDS.find((k) => k.kind === kind) ?? null;
+    const ok = (sim as unknown as { launch: (s: typeof spec) => boolean }).launch(spec);
+    expect(ok).toBe(true);
+    return sim.movers[sim.movers.length - 1]!;
+  };
+
+  it("sends traffic down the jungle's river, each one across scoring like a lap", () => {
+    const sim = jungleSim();
+    expect(sim.park.river).not.toBeNull();
+    const canoe = launch(sim, 'biker');
+    expect(canoe.state).toBe('river');
+    expect(canoe.width).toBe(1);
+    const boat = launch(sim, 'car');
+    expect(boat.width).toBe(2);
+    sim.movers = [canoe];
+    const score = sim.score;
+    for (let t = 0; t < 5000 && sim.movers.includes(canoe); t++) sim.step();
+    expect(sim.movers).not.toContain(canoe);
+    expect(sim.score).toBe(score + 1);
+    expect(sim.laps).toBe(1);
+  });
+
+  it('an alligator in the river eats a swimmer it catches', () => {
+    const sim = jungleSim();
+    // Never climbing out; everything in the same lane.
+    (sim as unknown as { rng: () => number }).rng = () => 0.9;
+    const swimmer = launch(sim, 'walker');
+    ticks(sim, 120);
+    launch(sim, null);
+    const lives = sim.lives;
+    for (let t = 0; t < 3000 && sim.movers.includes(swimmer); t++) sim.step();
+    expect(sim.movers).not.toContain(swimmer);
+    expect(sim.lives).toBe(lives - 1);
+  });
+
+  it('an alligator now and then climbs out onto a bridge and walks the trail before going into the trees', () => {
+    const sim = jungleSim();
+    (sim as unknown as { rng: () => number }).rng = () => 0;
+    const gator = launch(sim, null);
+    const first = sim.park.river!.bridges[0]!;
+    for (let t = 0; t < 3000 && gator.state === 'river'; t++) sim.step();
+    expect(gator.state).toBe('track');
+    expect(gator.river).toBe(true);
+    const length = sim.park.track.length;
+    expect(Math.abs(loopDelta(first.over.s + first.over.len / 2, gator.s, length))).toBeLessThan(5);
+    for (let t = 0; t < 5000 && gator.state === 'track'; t++) sim.step();
+    expect(gator.state).toBe('leaving');
+  });
+
+  it("swipes river traffic across the river's three lanes", () => {
+    const sim = jungleSim();
+    (sim as unknown as { rng: () => number }).rng = () => 0;
+    const boat = launch(sim, 'car');
+    expect(boat.p).toBe(0);
+    expect(sim.shift(boat.id, 1)).toBe(true);
+    expect(sim.shift(boat.id, 1)).toBe(false);
+    expect(sim.setBoost(boat.id, true)).toBe(true);
+    ticks(sim, 60);
+    expect(boat.p).toBe(1);
+    expect(sim.grab(boat.x, boat.y)).toBe(boat);
   });
 });
 

@@ -96,6 +96,11 @@ export interface CourseSpec {
    */
   wild: boolean;
   /**
+   * Whether a river crosses one half of the course, under a bridge on each side, with its own traffic (see `River`
+   * and `RIVER_KINDS`).
+   */
+  riverCrossing: boolean;
+  /**
    * The score on this course that unlocks the next: a bronze medal, the same on every course. Medals go by
    * `BRONZE_SCORE`, `SILVER_SCORE` and `GOLD_SCORE`.
    */
@@ -125,6 +130,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     train: false,
     slowCars: false,
     wild: false,
+    riverCrossing: false,
     unlock: 25,
   },
   waters: {
@@ -149,6 +155,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     train: false,
     slowCars: false,
     wild: false,
+    riverCrossing: false,
     unlock: 25,
   },
   canyon: {
@@ -173,6 +180,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     train: true,
     slowCars: true,
     wild: false,
+    riverCrossing: false,
     unlock: 25,
   },
   jungle: {
@@ -197,6 +205,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     train: false,
     slowCars: false,
     wild: true,
+    riverCrossing: true,
     unlock: 25,
   },
   mansion: {
@@ -221,6 +230,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     train: false,
     slowCars: false,
     wild: false,
+    riverCrossing: false,
     unlock: 25,
   },
 };
@@ -258,6 +268,40 @@ export const WILD_DEPTH = 30;
 export const WILD_GAP = 120;
 /** A wild course's visitor doesn't leave for the trees from a bridge, or within this of either end of it. */
 export const BRIDGE_EXIT_CLEAR = 40;
+
+/**
+ * A river crossing a course (see `CourseSpec.riverCrossing`): `RIVER_LANES` lanes, its traffic all going downstream.
+ * Each one through scores like a lap. What comes down it, by kind: a swimmer (a walker), a long canoe (a biker), a
+ * fishing boat two lanes wide (a car) and an alligator (the predator), each with its own speed and length here, at
+ * the design lane width (scaled like `KIND_SPECS`).
+ */
+export const RIVER_LANES = 3;
+export const RIVER_KINDS: readonly {
+  kind: 'walker' | 'biker' | 'car';
+  speed: number;
+  len: number;
+  weight: number;
+}[] = [
+  { kind: 'walker', speed: 0.6, len: 14, weight: 0.4 },
+  { kind: 'biker', speed: 1.25, len: 52, weight: 0.35 },
+  { kind: 'car', speed: 0.55, len: 40, weight: 0.25 },
+];
+export const RIVER_GATOR = { speed: 1.1, len: 30 };
+/**
+ * River traffic comes from `RIVER_FROM_SCORE` laps, one every `RIVER_INTERVAL` ticks, up to `riverMax` of it at once;
+ * an alligator every `GATOR_INTERVAL` from `GATOR_FROM_SCORE`, one at a time.
+ */
+export const RIVER_FROM_SCORE = 2;
+export const RIVER_INTERVAL: readonly [number, number] = [150, 360];
+export const riverMax = (level: number): number => Math.min(4, 1 + Math.floor(level / 10));
+export const GATOR_FROM_SCORE = 8;
+export const GATOR_INTERVAL: readonly [number, number] = [30 * 60, 55 * 60];
+/**
+ * An alligator reaching a bridge has this chance of climbing out onto the trail, where it hunts like the course's
+ * predator for `GATOR_WALK` of a lap before going off into the trees.
+ */
+export const GATOR_CLIMB = 0.35;
+export const GATOR_WALK = 0.35;
 
 /** Medal scores, the same on every course. */
 export const BRONZE_SCORE = 25;

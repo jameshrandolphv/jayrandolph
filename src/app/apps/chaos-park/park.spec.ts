@@ -118,6 +118,44 @@ describe('generatePark', () => {
     });
   }
 
+  it("runs a river across the jungle's far half, under the loop on a bridge each side", () => {
+    const frames: ParkFrame[] = [
+      { w: 860, h: 600, hud: 'top' },
+      { w: 1040, h: 560, hud: 'top' },
+      { w: 1342, h: 1004, hud: 'top' },
+      { w: 852, h: 393, hud: 'left' },
+    ];
+    for (const frame of frames)
+      for (const seed of [1, 2, 3]) {
+        const park = generatePark(seededRng(seed), undefined, frame, COURSES.jungle);
+        const { river, track, bridge } = park;
+        expect(river).not.toBeNull();
+        const { points } = river!.track;
+        // From beyond one edge of the screen to beyond the other.
+        const ys = [points[0]!.y, points[points.length - 1]!.y].sort((a, b) => a - b);
+        expect(ys[0]).toBeLessThan(0);
+        expect(ys[1]).toBeGreaterThan(frame.h);
+        expect(river!.bridges).toHaveLength(2);
+        const [a, b] = river!.bridges;
+        expect(a!.at).toBeLessThan(b!.at);
+        for (const { at, over } of river!.bridges) {
+          // The loop over the river where the bridge is.
+          const under = openPose(river!.track, at);
+          const mid = pose(track, over.s + over.len / 2);
+          expect(Math.hypot(under.x - mid.x, under.y - mid.y)).toBeLessThan(park.half);
+          // Well clear of where the figure of eight crosses itself.
+          for (const c of [bridge!.over, bridge!.under])
+            expect(
+              Math.abs(loopDelta(c.s + c.len / 2, over.s + over.len / 2, track.length)),
+            ).toBeGreaterThan((c.len + over.len) / 2);
+        }
+        // No trees in the water.
+        for (const t of park.trees) expect(polylineDistance(points, t)).toBeGreaterThan(t.r);
+      }
+    // Other courses have none.
+    expect(generatePark(seededRng(1), undefined, undefined, COURSES.mansion).river).toBeNull();
+  });
+
   it('gives a manor a two-lane hall and a graveyard road on screens with room for them', () => {
     for (const frame of [
       FRAMES[0]!,
