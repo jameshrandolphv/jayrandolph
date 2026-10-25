@@ -161,7 +161,9 @@ const CHAT_EVERY = 900;
 const CHAT_ODDS = 7;
 const CHAT_TICKS = 150;
 const CHATTY = new Set(['walker', 'runner', 'dog', 'slow', 'pair']);
-const CHATTER = ['Nice day out', 'Love this park!', 'Ice cream later?'];
+const CHATTER = ['Nice day out', 'I need some pizza', "It's too crowded", 'These bikers are flying!', "I'm tired"];
+/** More lines said only in winter. */
+const CHATTER_WINTER = ['Brrr'];
 
 /** Someone on foot remarking on the day, now and then: the ticks of it left and what they say, if talking now. */
 export const chatter = (sim: ChaosParkSim, m: Mover): [number, string] | null => {
@@ -170,7 +172,8 @@ export const chatter = (sim: ChaosParkSim, m: Mover): [number, string] | null =>
   const stretch = Math.floor(t / CHAT_EVERY);
   if ((stretch + m.id * 3) % CHAT_ODDS !== 0) return null;
   const left = CHAT_TICKS - (t % CHAT_EVERY);
-  return left > 0 ? [left, CHATTER[(stretch + m.id) % CHATTER.length]] : null;
+  const lines = sim.park.season === 'winter' ? [...CHATTER, ...CHATTER_WINTER] : CHATTER;
+  return left > 0 ? [left, lines[(stretch + m.id) % lines.length]!] : null;
 };
 
 /**
