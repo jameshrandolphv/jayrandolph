@@ -8,6 +8,7 @@
 - Chaos Park: the carriage's horse trots, its legs, head and tail moving as it goes
 - Chaos Park: now and then a visitor on foot remarks on the day ("Nice day out")
 - Chaos Park: run groups pick up tokens too, all but a duplicate
+- Chaos Park (rules for the apps' courses, which the web sim holds): Jungle Jam gets a three-lane river across its far half under two bridges, with swimmers, canoes, fishing boats and alligators that each score a point when they get across; alligators hunt swimmers and sometimes climb out onto the trail. The Haunted Mansion gets a two-lane hall through the house and a graveyard road with their own traffic
 
 ## 1.10.0
 - Chaos Park 1.1: the difficulty climbs much more slowly after 10 laps (at 0.4 of the rate, so laps 10 to 35 play like 10 to 20 used to), and a visitor more can come in every 5 levels instead of 4. From 150 laps one more can come in every 10 laps, up to 26
