@@ -202,13 +202,24 @@ export interface Bridge {
  */
 export interface River {
   track: Track;
-  /** Where the loop crosses it, in order downstream: how far along the river, and the stretch of loop on the bridge. */
+  /**
+   * Where the loop crosses it, in order downstream: how far along the river, the stretch of loop on the bridge, and
+   * where along the loop its centre line crosses the river's. The first is a bridge of long planks, one a lane, with
+   * `gaps` missing (see `PLANK_GAP_LEVEL`).
+   */
   bridges: RiverBridge[];
+  /**
+   * The lanes of the plank bridge with no plank: the first from the start, the second once the level reaches
+   * `PLANK_GAP_LEVEL`. However many are gone, a two-lane visitor still has room to cross.
+   */
+  gaps: number[];
 }
 
 export interface RiverBridge {
   at: number;
   over: Covered;
+  cross: number;
+  planks: boolean;
 }
 
 export interface Park {
@@ -1576,11 +1587,160 @@ const RIVER_STRAIGHT = 26;
 /** How far aside a river swings as it winds across the half it crosses: the first of these that fits. */
 const RIVER_BOWS = [60, 44, 30, 18, 0];
 
+/** A stretch of the loop over a river's water, as its first and last samples. */
+interface RiverRun {
+  from: number;
+  to: number;
+}
+
 /**
- * A river down across the right half of the loop (the far end from the score on an upright phone): straight under the
- * loop's top and bottom, on a bridge each, winding between them, and on out past the frame each way. It goes where
- * those bridges can be shortest. Its traffic goes down the screen or up it, at random. None where it can't get
- * across without running into the figure of eight's own bridge, as on the smallest phones.
+ * How a river winds into the figure of eight: from the middle of the screen's top edge, level with where the figure
+ * of eight crosses itself, out in a broad curve into its right half (the far end from the score on an upright phone)
+ * and back to the middle of the bottom edge, `RIVER_DEPTHS` of the way to the right of that half and `RIVER_SPREADS`
+ * of the screen's height across. The longest that fits.
+ */
+const RIVER_DEPTHS = [0.82, 0.74, 0.66, 0.58, 0.5, 0.42, 0.34, 0.26];
+const RIVER_SPREADS = [0.3, 0.25, 0.2, 0.16];
+/**
+ * Where the figure of eight is too small for that, as on an upright phone, the river comes in that much of the way
+ * to the right of its half instead: the first of these that fits.
+ */
+const RIVER_ASIDES = [0, 0.1, 0.2, 0.3, 0.4];
+/** The most of the loop a river's bridge may cover, and the most of the river that may run under one. */
+const RIVER_BRIDGE_MOST = 220;
+
+/**
+ * A river winding into the figure of eight and back (see `RIVER_DEPTHS`), under it just twice, each on a bridge, and
+ * clear of it everywhere else; or none, where it doesn't fit.
+ */
+const curvedRiver = (
+  track: Track,
+  half: number,
+  water: number,
+  frame: ParkFrame,
+  bridge: Bridge | null,
+): { raw: Point[]; runs: RiverRun[] } | null => {
+  const { points, step, length } = track;
+  const n = points.length;
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const x0 = bridge ? bridge.at.x : (Math.min(...xs) + Math.max(...xs)) / 2;
+  const y0 = bridge ? bridge.at.y : (Math.min(...ys) + Math.max(...ys)) / 2;
+  const right = Math.max(...xs);
+  let best: { raw: Point[]; runs: RiverRun[]; length: number } | null = null;
+  for (const aside of RIVER_ASIDES) {
+    if (best) break;
+    const x1 = x0 + (right - x0) * aside;
+    for (const depth of RIVER_DEPTHS)
+      for (const spread of RIVER_SPREADS) {
+        const deep = (right - x1) * depth;
+        const wide = frame.h * spread;
+        const raw: Point[] = [];
+        for (let y = -RIVER_PAD; y <= frame.h + RIVER_PAD; y += SIDE_STEP)
+          raw.push({ x: x1 + deep * Math.exp(-(((y - y0) / wide) ** 2)), y });
+        const river = openTrack(raw, 1);
+        if (best && river.length <= best.length) continue;
+        const runs = riverRuns(track, half, water, river);
+        if (runs.length !== 2) continue;
+        if (runs.some((r) => (wrap(r.to - r.from, n) + 1) * step > RIVER_BRIDGE_MOST)) continue;
+        // Not onto the figure of eight's bridge, or right up to it.
+        if (
+          bridge &&
+          runs.some((r) => {
+            for (let k = 0; k <= wrap(r.to - r.from, n); k++)
+              if (onBridge(bridge, wrap((r.from + k) * step, length), length, 30)) return true;
+            return false;
+          })
+        )
+          continue;
+        // Clear of the road everywhere but by those two bridges.
+        const crossings = runs.map((r) => points[crossingOf(r, n, points, river)]!);
+        const by = half + water + 12;
+        const clear = river.points.every((p, j) => {
+          if (crossings.some((c) => Math.hypot(p.x - c.x, p.y - c.y) < by)) return true;
+          return [-1, 1].every(
+            (side) =>
+              !nearPolyline(
+                points,
+                {
+                  x: p.x + river.normals[j]!.x * water * side,
+                  y: p.y + river.normals[j]!.y * water * side,
+                },
+                half + 2,
+                true,
+              ),
+          );
+        });
+        if (!clear) continue;
+        best = { raw, runs, length: river.length };
+      }
+  }
+  return best && { raw: best.raw, runs: best.runs };
+};
+
+/** The sample of a run of the loop where its centre line comes nearest a river's. */
+const crossingOf = (r: RiverRun, n: number, points: readonly Point[], river: Track): number => {
+  let cross = r.from;
+  let near = Infinity;
+  for (let k = 0; k <= wrap(r.to - r.from, n); k++) {
+    const i = (r.from + k) % n;
+    const j = nearestSample(river, points[i]!);
+    const d = Math.hypot(points[i]!.x - river.points[j]!.x, points[i]!.y - river.points[j]!.y);
+    if (d < near) {
+      near = d;
+      cross = i;
+    }
+  }
+  return cross;
+};
+
+/** The sample of an open road nearest `p`. */
+const nearestSample = (road: Track, p: Point): number => {
+  let best = 0;
+  let near = Infinity;
+  road.points.forEach((q, j) => {
+    const d = (q.x - p.x) ** 2 + (q.y - p.y) ** 2;
+    if (d < near) {
+      near = d;
+      best = j;
+    }
+  });
+  return best;
+};
+
+/** Each stretch of the loop over a river's water, in order round the loop. */
+const riverRuns = (track: Track, half: number, water: number, river: Track): RiverRun[] => {
+  const { points, normals } = track;
+  const n = points.length;
+  const over = points.map((p, i) => {
+    if (!nearPolyline(river.points, p, water + half)) return false;
+    const j = nearestSample(river, p);
+    const q = river.points[j]!;
+    const rn = river.normals[j]!;
+    const across = Math.abs((p.x - q.x) * rn.x + (p.y - q.y) * rn.y);
+    return across < water + half * Math.abs(normals[i]!.x * rn.x + normals[i]!.y * rn.y);
+  });
+  const start = over.indexOf(false);
+  if (start < 0) return [];
+  const runs: RiverRun[] = [];
+  for (let k = 1; k <= n; k++) {
+    const i = (start + k) % n;
+    if (!over[i]) continue;
+    const last = runs[runs.length - 1];
+    if (last && over[(i + n - 1) % n]) last.to = i;
+    else runs.push({ from: i, to: i });
+  }
+  return runs;
+};
+
+/** The lowest level at which the plank bridge loses a second plank (see `River.gaps`). */
+export const PLANK_GAP_LEVEL = 50;
+
+/**
+ * A river across the right half of a figure of eight: winding into it from the middle of the screen and back where
+ * there's room (see `curvedRiver`), or straight down across it (see `straightRiver`), on out past the frame each way.
+ * Its traffic goes down the screen or up it, at random. The first bridge it comes to is of planks, with a plank
+ * missing.
  */
 const makeRiver = (
   track: Track,
@@ -1590,17 +1750,64 @@ const makeRiver = (
   bridge: Bridge | null,
   rng: () => number,
 ): River | null => {
-  const { points, normals, step, length } = track;
+  const { points, step, length } = track;
   const n = points.length;
-  const xs = points.map((p) => p.x);
-  const ys = points.map((p) => p.y);
-  const midX = (Math.min(...xs) + Math.max(...xs)) / 2;
-  const midY = (Math.min(...ys) + Math.max(...ys)) / 2;
-  const wide = riverHalf(laneW);
   const sign = rng() < 0.5 ? -1 : 1;
   const down = rng() < 0.5;
   // Half the river's water, inside its banks.
-  const water = wide - RIVER_BANK;
+  const water = riverHalf(laneW) - RIVER_BANK;
+  const found =
+    curvedRiver(track, half, water, frame, bridge) ??
+    straightRiver(track, half, water, frame, bridge, sign);
+  if (!found) return null;
+  const raw = down ? found.raw : [...found.raw].reverse();
+  const river = openTrack(raw, 1);
+  // Each bridge over the whole stretch of loop that runs over the water, and a little more.
+  const bridges = found.runs
+    .map((r): RiverBridge => {
+      const cross = crossingOf(r, n, points, river);
+      return {
+        at: nearestSample(river, points[cross]!) * river.step,
+        over: {
+          s: wrap(r.from * step - 8 - step / 2, length),
+          len: (wrap(r.to - r.from, n) + 1) * step + 16,
+        },
+        cross: cross * step,
+        planks: false,
+      };
+    })
+    .sort((a, b) => a.at - b.at);
+  bridges[0]!.planks = true;
+  // A plank gone from one lane, and later one more, always leaving room for a two-lane visitor.
+  const lanes = Math.round((2 * half) / laneW);
+  const first = Math.floor(rng() * lanes);
+  const room = (gaps: number[]) => {
+    for (let l = 0; l + 1 < lanes; l++) if (!gaps.includes(l) && !gaps.includes(l + 1)) return true;
+    return false;
+  };
+  const later = [...Array(lanes).keys()].filter((l) => l !== first && room([first, l]));
+  const gaps = later.length ? [first, later[Math.floor(rng() * later.length)]!] : [first];
+  return { track: river, bridges, gaps };
+};
+
+/**
+ * Where a river can't wind into the figure of eight (see `curvedRiver`), as on a phone: straight down across the
+ * right half of the loop, under its top and bottom, winding between them, where those bridges can be shortest. None
+ * where it can't get across without running into the figure of eight's own bridge, as on the smallest phones. The
+ * river's centre line from the top of the screen to the bottom, and the stretches of loop over its water.
+ */
+const straightRiver = (
+  track: Track,
+  half: number,
+  water: number,
+  frame: ParkFrame,
+  bridge: Bridge | null,
+  sign: number,
+): { raw: Point[]; runs: RiverRun[] } | null => {
+  const { points, normals, step, length } = track;
+  const n = points.length;
+  const xs = points.map((p) => p.x);
+  const midX = (Math.min(...xs) + Math.max(...xs)) / 2;
   // Where a river straight down through `x` runs under the loop: each stretch of loop over its water, as the first
   // and last samples, and how far up and down the screen the road there reaches.
   const under = (x: number): { from: number; to: number; top: number; bottom: number }[] => {
@@ -1622,15 +1829,6 @@ const makeRiver = (
       } else runs.push({ from: i, to: i, top: points[i]!.y - reach, bottom: points[i]!.y + reach });
     }
     return runs;
-  };
-  // Where the loop's centre line crosses the river's.
-  const cross = (x: number, from: number, to: number): number => {
-    let best = from;
-    for (let k = 0; k <= wrap(to - from, n); k++) {
-      const i = (from + k) % n;
-      if (Math.abs(points[i]!.x - x) < Math.abs(points[best]!.x - x)) best = i;
-    }
-    return best;
   };
   // Where it goes: clear of the figure of eight's own bridge, under the loop just twice, top and bottom, where its
   // bridges can be shortest.
@@ -1697,22 +1895,10 @@ const makeRiver = (
       break;
     }
   }
-  const raw = [{ x, y: -RIVER_PAD }, ...middle, { x, y: frame.h + RIVER_PAD }];
-  if (!down) raw.reverse();
-  const river = openTrack(raw, 1);
-  // Each bridge over the whole stretch of loop that runs over the water, and a little more.
-  const over = (r: { from: number; to: number }): Covered => {
-    const len = (wrap(r.to - r.from, n) + 1) * step + 16;
-    return { s: wrap(r.from * step - 8 - step / 2, length), len };
+  return {
+    raw: [{ x, y: -RIVER_PAD }, ...middle, { x, y: frame.h + RIVER_PAD }],
+    runs: [upper, lower],
   };
-  // It runs straight under both bridges, so how far along it each is comes from how far it is from either end.
-  const fromTop = points[cross(x, upper.from, upper.to)]!.y + RIVER_PAD;
-  const fromBottom = frame.h + RIVER_PAD - points[cross(x, lower.from, lower.to)]!.y;
-  const bridges = [
-    { at: down ? fromTop : river.length - fromTop, over: over(upper) },
-    { at: down ? river.length - fromBottom : fromBottom, over: over(lower) },
-  ].sort((a, b) => a.at - b.at);
-  return { track: river, bridges };
 };
 
 /** A river as short cuts for the scenery to keep clear of: lines across its width, banks and all. */

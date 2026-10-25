@@ -100,6 +100,8 @@ export interface CourseSpec {
    * and `RIVER_KINDS`).
    */
   riverCrossing: boolean;
+  /** How fast its bikers go, next to Chaos Park's: the jungle's gorillas are a little slower. */
+  bikerPace: number;
   /**
    * The score on this course that unlocks the next: a bronze medal, the same on every course. Medals go by
    * `BRONZE_SCORE`, `SILVER_SCORE` and `GOLD_SCORE`.
@@ -131,6 +133,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     slowCars: false,
     wild: false,
     riverCrossing: false,
+    bikerPace: 1,
     unlock: 25,
   },
   waters: {
@@ -156,6 +159,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     slowCars: false,
     wild: false,
     riverCrossing: false,
+    bikerPace: 1,
     unlock: 25,
   },
   canyon: {
@@ -181,6 +185,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     slowCars: true,
     wild: false,
     riverCrossing: false,
+    bikerPace: 1,
     unlock: 25,
   },
   jungle: {
@@ -206,6 +211,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     slowCars: false,
     wild: true,
     riverCrossing: true,
+    bikerPace: 0.8,
     unlock: 25,
   },
   mansion: {
@@ -231,6 +237,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     slowCars: false,
     wild: false,
     riverCrossing: false,
+    bikerPace: 1,
     unlock: 25,
   },
 };
@@ -287,6 +294,17 @@ export const RIVER_KINDS: readonly {
   { kind: 'car', speed: 0.55, len: 40, weight: 0.25 },
 ];
 export const RIVER_GATOR = { speed: 1.1, len: 30 };
+/**
+ * The river's plank bridge (see `River.gaps`): someone one lane wide who walks onto a missing plank, within
+ * `PLANK_ZONE` of the middle of the river, falls in and is carried down it at `PLANK_FALL_SPEED` (at the design lane
+ * width), scoring at the end like any river traffic. Anyone wider (and a carriage, a predator or anyone on
+ * autopilot) steps across into lanes with planks once within `PLANK_LOOK` of it. Someone heading for a gap shows a
+ * warning from `PLANK_WARN` ticks away.
+ */
+export const PLANK_ZONE = 12;
+export const PLANK_FALL_SPEED = 0.7;
+export const PLANK_LOOK = 80;
+export const PLANK_WARN = 90;
 /**
  * River traffic comes from `RIVER_FROM_SCORE` laps, one every `RIVER_INTERVAL` ticks, up to `riverMax` of it at once;
  * an alligator every `GATOR_INTERVAL` from `GATOR_FROM_SCORE`, one at a time.

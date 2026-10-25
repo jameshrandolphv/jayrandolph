@@ -111,6 +111,10 @@ import {
   GATOR_FROM_SCORE,
   GATOR_INTERVAL,
   GATOR_WALK,
+  PLANK_FALL_SPEED,
+  PLANK_LOOK,
+  PLANK_WARN,
+  PLANK_ZONE,
   RIVER_FROM_SCORE,
   RIVER_GATOR,
   RIVER_INTERVAL,
@@ -137,6 +141,7 @@ import {
   onBridge,
   onRiverBridge,
   openPose,
+  PLANK_GAP_LEVEL,
   RIVER_PAD,
   pose,
   underCover,
@@ -490,6 +495,8 @@ export class ChaosParkSim {
   private eventTimer = 0;
   private waveTimer = 0;
   private riverTimer = 0;
+  /** How many of the plank bridge's gaps are open (see `River.gaps`). */
+  private planksGone = 1;
   private gatorTimer = 0;
   /** Pairs already warned about, so the alert sounds once per close call. */
   private warnedPairs = new Set<string>();
@@ -732,6 +739,7 @@ export class ChaosParkSim {
       } else if (this.moveOnRoute(m)) gone.add(m);
     }
     if (gone.size) this.movers = this.movers.filter((m) => !gone.has(m));
+    this.checkPlanks();
     this.moveRats();
     this.moveHooks();
     this.moveWeeds();
@@ -1267,6 +1275,7 @@ export class ChaosParkSim {
     const pairs = new Set<string>();
     const knocked = new Set<Mover>();
     for (const m of this.movers) m.warning = false;
+    this.warnPlanks();
     const loop = this.movers.filter((m) => m.state === 'track');
     if (this.traffic(loop, this.park.track.length, pairs, knocked)) return;
     for (const r of this.park.sideRoads) {
@@ -1538,8 +1547,110 @@ export class ChaosParkSim {
    * Starts something down the river (an alligator for `null`), just out of sight upstream, in a lane at random;
    * false if something already there is in the way.
    */
+  /**
+   * The river's plank bridge, every tick: a second plank goes once the level reaches `PLANK_GAP_LEVEL` and nobody is
+   * on it; anyone one lane wide on a missing plank falls in (see `fall`), and anyone wider steps across into lanes with
+   * planks as they come up to it.
+   */
+  private checkPlanks(): void {
+    const river = this.park.river;
+    const plank = river?.bridges.find((b) => b.planks);
+    if (!river || !plank) return;
+    const { track } = this.park;
+    const length = track.length;
+    if (this.planksGone < river.gaps.length && this.level >= PLANK_GAP_LEVEL) {
+      const lane = river.gaps[this.planksGone]!;
+      const on = this.movers.some(
+        (m) =>
+          m.state === 'track' &&
+          laneOverlap(m.p, m.width, lane, 1) > 0 &&
+          underCover(
+            { s: plank.over.s - m.len / 2 - 20, len: plank.over.len + m.len + 40 },
+            m.s,
+            length,
+          ),
+      );
+      if (!on) this.planksGone++;
+    }
+    const gaps = river.gaps.slice(0, this.planksGone);
+    for (const m of [...this.movers]) {
+      if (m.state !== 'track') continue;
+      const ahead = wrap((plank.cross - m.s) * m.dir, length);
+      if (this.stepsAcross(m)) {
+        if (ahead < PLANK_LOOK && gaps.some((g) => laneOverlap(m.target, m.width, g, 1) > 0))
+          m.target = this.clearOfGaps(m, gaps);
+        continue;
+      }
+      if (
+        Math.min(ahead, length - ahead) < PLANK_ZONE &&
+        gaps.some((g) => laneOverlap(m.p, 1, g, 1) > 0.5)
+      )
+        this.fall(m, plank);
+    }
+  }
+
+  /** Whether a visitor steps round the plank bridge's gaps rather than falling through one. */
+  private stepsAcross(m: Mover): boolean {
+    return m.width > 1 || m.kind === 'carriage' || m.kind === 'predator' || m.autopilot > 0;
+  }
+
+  /** The nearest lanes for `m` with planks all the way across. */
+  private clearOfGaps(m: Mover, gaps: readonly number[]): number {
+    let best = m.target;
+    let far = Infinity;
+    for (let t = 0; t + m.width <= this.park.lanes; t++) {
+      if (gaps.some((g) => laneOverlap(t, m.width, g, 1) > 0)) continue;
+      if (Math.abs(t - m.target) < far) {
+        far = Math.abs(t - m.target);
+        best = t;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Someone falls through a gap in the plank bridge into the river below, in the river lane under the one they were
+   * in, and is carried off down it as river traffic, scoring at the end (see `moveOnRiver`).
+   */
+  private fall(m: Mover, plank: RiverBridge): void {
+    const lanes = this.park.lanes;
+    const lane = Math.round(m.p);
+    m.state = 'river';
+    m.river = true;
+    m.s = plank.at;
+    m.p = m.target = Math.round((lane * (RIVER_LANES - 1)) / Math.max(1, lanes - 1));
+    m.dir = 1;
+    m.speed = m.baseSpeed = m.plainSpeed = PLANK_FALL_SPEED * ART * PACE;
+    m.boosted = false;
+    m.laps = 1;
+    m.lapsDone = 0;
+    m.done = false;
+    m.swerve = 0;
+    m.haunted = false;
+    m.daze = 0;
+    m.slime = 0;
+    m.warning = false;
+    this.placeRiver(m);
+    this.events.push('hit');
+  }
+
+  /** Warns of anyone one lane wide heading for a gap in the plank bridge. */
+  private warnPlanks(): void {
+    const river = this.park.river;
+    const plank = river?.bridges.find((b) => b.planks);
+    if (!river || !plank) return;
+    const gaps = river.gaps.slice(0, this.planksGone);
+    const length = this.park.track.length;
+    for (const m of this.movers) {
+      if (m.state !== 'track' || this.stepsAcross(m)) continue;
+      const ahead = wrap((plank.cross - m.s) * m.dir, length);
+      if (ahead < pace(m) * PLANK_WARN && gaps.some((g) => laneOverlap(m.p, 1, g, 1) > 0))
+        m.warning = true;
+    }
+  }
+
   private launch(spec: (typeof RIVER_KINDS)[number] | null): boolean {
-    const m = this.create(spec ? spec.kind : 'predator');
+    const m = this.create(spec ? spec.kind : 'predator', 1, true);
     const { speed, len } = spec ?? RIVER_GATOR;
     m.speed =
       m.baseSpeed =
@@ -1958,14 +2069,16 @@ export class ChaosParkSim {
     this.carriagesSent = 1;
   }
 
-  private create(kind: Kind, crowd = 1): Mover {
+  /** A new visitor of `kind`, `onRiver` if it is to start down the river instead of on the loop. */
+  private create(kind: Kind, crowd = 1, onRiver = false): Mover {
     const spec = KIND_SPECS[kind];
     const [lo, hi] = spec.laps;
     // Fewer laps are more likely than many.
     const laps = Number.isFinite(lo)
       ? lo + Math.floor(this.rng() ** 1.6 * (hi - lo + 1))
       : Infinity;
-    const speed = spec.speed * (1 + (this.rng() * 2 - 1) * SPEED_SPREAD);
+    const pace = kind === 'biker' && !onRiver ? this.course.bikerPace : 1;
+    const speed = spec.speed * (1 + (this.rng() * 2 - 1) * SPEED_SPREAD) * pace;
     const m: Mover = {
       id: this.nextId++,
       kind,
@@ -2378,6 +2491,7 @@ export class ChaosParkSim {
     this.eventTimer = 0;
     this.waveTimer = 0;
     this.riverTimer = 0;
+    this.planksGone = 1;
     this.gatorTimer = 0;
     this.hooks = [];
     this.weeds = [];

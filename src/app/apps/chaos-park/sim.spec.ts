@@ -1792,6 +1792,7 @@ describe('course obstacles', () => {
     const canoe = launch(sim, 'biker');
     expect(canoe.state).toBe('river');
     expect(canoe.width).toBe(1);
+    ticks(sim, 200);
     const boat = launch(sim, 'car');
     expect(boat.width).toBe(2);
     sim.movers = [canoe];
@@ -1827,6 +1828,67 @@ describe('course obstacles', () => {
     expect(Math.abs(loopDelta(first.over.s + first.over.len / 2, gator.s, length))).toBeLessThan(5);
     for (let t = 0; t < 5000 && gator.state === 'track'; t++) sim.step();
     expect(gator.state).toBe('leaving');
+  });
+
+  it('drops someone one lane wide through the gap in the plank bridge, down the river and out for a point', () => {
+    const sim = jungleSim();
+    const river = sim.park.river!;
+    const plank = river.bridges.find((b) => b.planks)!;
+    expect(plank).toBe(river.bridges[0]);
+    const walker = put(
+      sim,
+      'walker',
+      wrap(plank.cross - 40, sim.park.track.length),
+      river.gaps[0]!,
+      {
+        laps: 10,
+      },
+    );
+    let fell = false;
+    for (let t = 0; t < 600 && walker.state === 'track'; t++) {
+      sim.step();
+      fell ||= sim.drainEvents().includes('hit');
+    }
+    expect(walker.state).toBe('river');
+    expect(walker.river).toBe(true);
+    expect(fell).toBe(true);
+    const score = sim.score;
+    for (let t = 0; t < 5000 && sim.movers.includes(walker); t++) sim.step();
+    expect(sim.movers).not.toContain(walker);
+    expect(sim.score).toBe(score + 1);
+  });
+
+  it('a jeep steps across the plank bridge into lanes with planks', () => {
+    const sim = jungleSim();
+    const river = sim.park.river!;
+    const plank = river.bridges.find((b) => b.planks)!;
+    const lane = Math.min(river.gaps[0]!, sim.park.lanes - 2);
+    const car = put(sim, 'car', wrap(plank.cross - 120, sim.park.track.length), lane, { laps: 10 });
+    for (let t = 0; t < 300; t++) sim.step();
+    expect(car.state).toBe('track');
+    expect(laneOverlap(car.target, 2, river.gaps[0]!, 1)).toBeLessThanOrEqual(0);
+  });
+
+  it('loses a second plank from level 50, once nobody is on it', () => {
+    const sim = jungleSim();
+    const river = sim.park.river!;
+    expect(river.gaps).toHaveLength(2);
+    const gone = () => (sim as unknown as { planksGone: number }).planksGone;
+    ticks(sim, 5);
+    expect(gone()).toBe(1);
+    sim.laps = 400;
+    ticks(sim, 5);
+    expect(gone()).toBe(2);
+  });
+
+  it("slows the jungle's gorillas", () => {
+    const park = new ChaosParkSim(seededRng(4));
+    const jungle = new ChaosParkSim(seededRng(4), COURSES.jungle);
+    const make = (sim: ChaosParkSim) => {
+      (sim as unknown as { rng: () => number }).rng = () => 0.5;
+      return (sim as unknown as { create: (k: Kind) => Mover }).create('biker');
+    };
+    expect(make(jungle).speed).toBeCloseTo(make(park).speed * 0.8, 10);
   });
 
   it("swipes river traffic across the river's three lanes", () => {
