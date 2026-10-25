@@ -1,6 +1,7 @@
 # Changelog
 
 ## 1.10.1
+- Chaos Park (rules for the apps' Jungle Jam): the river winds in from the middle of the screen in a broad curve through the far half and back; the first bridge it reaches is of long planks, one a lane, with one missing, and anyone one lane wide who walks onto the gap falls in, floats down the river and scores a point at the end (anyone wider steps across); from level 50 a second plank goes. The jungle's gorillas are a little slower
 - Chaos Park: streaks say "STREAK", then "2X STREAK", "3X STREAK" and so on (the scoring is the same)
 - Chaos Park (rules shared with the iOS and Android apps, whose courses have predators): a predator stops changing lanes once it's about to catch someone, so moving them out of its lane in time gets them away
 - Chaos Park (rules shared with the apps' Dusty Canyon): a tumbleweed stuns whoever it rolls into but no longer costs a life
