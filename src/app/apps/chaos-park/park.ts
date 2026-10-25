@@ -1577,9 +1577,10 @@ const RIVER_STRAIGHT = 26;
 const RIVER_BOWS = [60, 44, 30, 18, 0];
 
 /**
- * A river straight down across the right half of the loop (the far end from the score on an upright phone): under
- * the loop where its top and bottom run straight, winding between, and on out past the frame each way. Its traffic
- * goes down the screen or up it, at random. None if that half has no straight top and bottom for it to cross.
+ * A river down across the right half of the loop (the far end from the score on an upright phone): straight under the
+ * loop's top and bottom, on a bridge each, winding between them, and on out past the frame each way. It goes where
+ * those bridges can be shortest. Its traffic goes down the screen or up it, at random. None where it can't get
+ * across without running into the figure of eight's own bridge, as on the smallest phones.
  */
 const makeRiver = (
   track: Track,
