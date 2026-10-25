@@ -123,6 +123,8 @@ describe('generatePark', () => {
       FRAMES[0]!,
       { w: 1040, h: 560, hud: 'top' as const },
       { w: 1342, h: 1004, hud: 'top' as const },
+      // A phone held upright: the grounds are shallow, so the graveyard road is a flat loop under the drive.
+      { w: 852, h: 393, hud: 'left' as const },
     ])
       for (const seed of SEEDS.slice(0, 6)) {
         const park = generatePark(seededRng(seed), undefined, frame, COURSES.mansion);

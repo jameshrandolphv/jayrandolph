@@ -1069,6 +1069,8 @@ const makeHall = (track: Track, entrances: readonly Entrance[], half: number): S
 
 /** Where a side road's samples are, about this far apart. */
 const SIDE_STEP = 4;
+/** The tightest a side road bends: its inside edge turning round this far from its middle. */
+const SIDE_BEND_ROOM = 2;
 /** How far either end of a side road may run over the loop's road before it must be clear of it. */
 const SIDE_MERGE = 110;
 
@@ -1195,6 +1197,15 @@ const sideRoadFits = (
       if (nearPolyline(inner, { x, y }, 8, true)) return false;
     }
   }
+  // Never bending so tightly that its inside edge folds over.
+  const { tangents } = road;
+  const span = 2;
+  const most = (2 * span * road.step) / (laneW + SIDE_BEND_ROOM);
+  for (let i = span; i < points.length - span; i++) {
+    const a = tangents[i - span]!;
+    const b = tangents[i + span]!;
+    if (Math.abs(Math.atan2(a.x * b.y - a.y * b.x, a.x * b.x + a.y * b.y)) > most) return false;
+  }
   // Where it doubles back, its two stretches keep a road's width and a verge apart.
   const apart = 2 * edgeOut + 10;
   const gap = Math.ceil((3 * apart) / road.step);
@@ -1204,7 +1215,7 @@ const sideRoadFits = (
         return false;
   for (const o of others)
     for (let i = 0; i < points.length; i += 2)
-      if (nearPolyline(o.points, points[i]!, apart + 12)) return false;
+      if (nearPolyline(o.points, points[i]!, apart + 4)) return false;
   return true;
 };
 
@@ -1219,13 +1230,31 @@ const makeSideRoads = (
   half: number,
   laneW: number,
 ): SideRoad[] => {
+  // The hall across the middle; where that leaves no room for the graveyard road, as on a phone, off to one side.
+  const first = sideRoadsWith(track, entrances, half, laneW, 0.5);
+  if (first.length > 1) return first;
+  for (const at of HALL_ASIDE) {
+    const roads = sideRoadsWith(track, entrances, half, laneW, at);
+    if (roads.length > 1) return roads;
+  }
+  return first;
+};
+
+/** A manor's side roads with the hall `at` that share of the way along the drive. */
+const sideRoadsWith = (
+  track: Track,
+  entrances: readonly Entrance[],
+  half: number,
+  laneW: number,
+  at: number,
+): SideRoad[] => {
   const { length } = track;
   const flip = flipOf(track);
   const centre = -half + laneW;
   const out: SideRoad[] = [];
   const clear = (s: number, by: number) =>
     entrances.every((e) => Math.abs(loopDelta(e.s, s, length)) > by);
-  const ends = hallEnds(track, entrances);
+  const ends = hallEnds(track, entrances, at);
   if (ends) {
     const { a, b } = ends;
     const pa = pose(track, a, centre);
@@ -1253,7 +1282,9 @@ const makeSideRoads = (
   // middle of one end of the drive as it can be.
   const hall = out.map((r) => r.track);
   const xs = track.points.map((p) => p.x);
-  const midX = (Math.min(...xs) + Math.max(...xs)) / 2;
+  const midX = out.length
+    ? track.points[Math.round(out[0]!.a / track.step) % track.points.length]!.x
+    : (Math.min(...xs) + Math.max(...xs)) / 2;
   // The middle of each end of the drive, up and down.
   const endMid = [-1, 1].map((side) => {
     const ys = track.points.flatMap((p, i) => (track.normals[i]!.x * side >= 0.9 ? [p.y] : []));
@@ -1291,8 +1322,76 @@ const makeSideRoads = (
     }
     if (found) break;
   }
+  // Where the grounds are too shallow for that, as on a phone: a long, flat loop under one side of the drive,
+  // turning down off it, back along under it and up onto it again behind where it left.
+  for (const gap of found ? [] : FLAT_GAPS) {
+    for (const depth of FLAT_DEPTHS) {
+      for (const { s: sMid } of spots) {
+        const road = flatGraveyardRoad(track, sMid, depth, gap, centre, flip);
+        const { a, b } = road;
+        // Its ends are on the inner lanes, so they can be nearer the gates, which come in on the outer one.
+        if (!clear(a, 30) || !clear(b, 30)) continue;
+        if (
+          out.some(
+            (r) =>
+              Math.abs(loopDelta(r.a, a, length)) < 120 ||
+              Math.abs(loopDelta(r.b, b, length)) < 120,
+          )
+        )
+          continue;
+        if (!sideRoadFits(road.track, track, half, laneW, hall)) continue;
+        found = { id: out.length, kind: 'graveyard', a, b, track: road.track, back: true };
+        break;
+      }
+      if (found) break;
+    }
+    if (found) break;
+  }
   if (found) out.push(found);
   return out;
+};
+
+/**
+ * A flat graveyard road under the drive round `sMid`: off the drive ahead of it, turning back under it `depth` in,
+ * and up onto it again `gap` behind where it left.
+ */
+const flatGraveyardRoad = (
+  track: Track,
+  sMid: number,
+  depth: number,
+  gap: number,
+  centre: number,
+  flip: number,
+): { a: number; b: number; track: Track } => {
+  const { length } = track;
+  const a = wrap(sMid + gap / 2, length);
+  const b = wrap(sMid - gap / 2, length);
+  const pa = pose(track, a, centre);
+  const pb = pose(track, b, centre);
+  const u = { x: Math.cos(pa.angle), y: Math.sin(pa.angle) };
+  const na = pose(track, a, centre + 1);
+  const v = { x: pa.x - na.x, y: pa.y - na.y };
+  const vl = Math.hypot(v.x, v.y) || 1;
+  v.x /= vl;
+  v.y /= vl;
+  const at = (du: number, dv: number): Point => ({
+    x: pa.x + u.x * du + v.x * dv,
+    y: pa.y + u.y * du + v.y * dv,
+  });
+  const back = (pb.x - pa.x) * u.x + (pb.y - pa.y) * u.y;
+  // A half circle down off the drive, the straight back under it, and a half circle up onto it.
+  const turn = depth / 2;
+  const raw: Point[] = [];
+  for (let k = 0; k <= FLAT_TURN_STEPS; k++) {
+    const th = (k / FLAT_TURN_STEPS) * Math.PI;
+    raw.push(at(turn * Math.sin(th), turn - turn * Math.cos(th)));
+  }
+  for (let k = 0; k <= FLAT_TURN_STEPS; k++) {
+    const th = (k / FLAT_TURN_STEPS) * Math.PI;
+    raw.push(at(back - turn * Math.sin(th), turn + turn * Math.cos(th)));
+  }
+  raw[raw.length - 1] = { x: pb.x, y: pb.y };
+  return { a, b, track: openTrack(raw, flip) };
 };
 
 /** A graveyard road round the middle of the drive at `sMid`, `depth` into the grounds. */
@@ -1352,13 +1451,19 @@ const sideClearance = (road: SideRoad, laneW: number): Shortcut[] =>
   }));
 
 /** How far the hall's ends pull it along the drive before it turns across, as a share of the way across: the first of these that fits. */
-const HALL_PULLS = [0.32, 0.4, 0.5, 0.25];
+/** Where else along the drive the hall may go, as shares of the way along, to leave room for the graveyard road. */
+const HALL_ASIDE = [0.68, 0.32, 0.75, 0.25];
+const HALL_PULLS = [0.32, 0.4, 0.5, 0.6, 0.67, 0.25];
 /** The graveyard road: how far apart along the drive its ends are, how tight its turns, how much it winds, and how
  * deep into the grounds it goes (the deepest that fits). */
 const GRAVE_GAP = 60;
 const GRAVE_TURN = 34;
 const GRAVE_WIGGLE = 14;
 const GRAVE_DEPTHS = [190, 170, 150, 130, 115, 100, 90];
+/** A flat graveyard road: how far apart along the drive its ends are, and how far under it it runs. */
+const FLAT_GAPS = [160, 130, 100, 80, 60, 40];
+const FLAT_DEPTHS = [74, 70, 66];
+const FLAT_TURN_STEPS = 24;
 /** How far apart along the drive the graveyard road's spots to try are. */
 const GRAVE_EVERY = 24;
 
@@ -1369,11 +1474,12 @@ const GRAVE_EVERY = 24;
 const hallEnds = (
   track: Track,
   entrances: readonly Entrance[],
+  at = 0.5,
 ): { a: number; b: number } | null => {
   const { normals, step, length, points } = track;
   const xs = points.map((p) => p.x);
-  const mid = (Math.min(...xs) + Math.max(...xs)) / 2;
-  const reach = (Math.max(...xs) - Math.min(...xs)) * 0.35;
+  const mid = Math.min(...xs) + (Math.max(...xs) - Math.min(...xs)) * at;
+  const reach = (Math.max(...xs) - Math.min(...xs)) * (at === 0.5 ? 0.35 : 0.1);
   const clear = (s: number) => entrances.every((e) => Math.abs(loopDelta(e.s, s, length)) > 70);
   const bottoms = normals.flatMap((n, i) => (n.y > 0.85 ? [i] : []));
   let top = -1;
