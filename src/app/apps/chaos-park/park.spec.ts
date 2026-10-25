@@ -11,6 +11,7 @@ import {
   loopDelta,
   maxCurvature,
   polylineDistance,
+  openPose,
   pose,
   seededRng,
   wrap,
@@ -107,11 +108,42 @@ describe('generatePark', () => {
           expect(out, `${id} ${frame.w}x${frame.h}, seed ${seed}`).toEqual([]);
           expect(maxCurvature(park.track) * park.half).toBeLessThan(0.9);
           if (course.layout === 'eight') expect(park.bridge).not.toBeNull();
-          if (course.layout === 'manor' && frame.h > 500) expect(park.shortcuts).toHaveLength(1);
+          // A hall through the house: a road where it fits, otherwise a path.
+          if (course.layout === 'manor' && frame.h > 500)
+            expect(
+              park.sideRoads.filter((r) => r.kind === 'hall').length + park.shortcuts.length,
+            ).toBe(1);
         }
       }
     });
   }
+
+  it('gives a manor a two-lane hall and a graveyard road on screens with room for them', () => {
+    for (const frame of [
+      FRAMES[0]!,
+      { w: 1040, h: 560, hud: 'top' as const },
+      { w: 1342, h: 1004, hud: 'top' as const },
+    ])
+      for (const seed of SEEDS.slice(0, 6)) {
+        const park = generatePark(seededRng(seed), undefined, frame, COURSES.mansion);
+        expect(
+          park.sideRoads.map((r) => r.kind),
+          `${frame.w}x${frame.h}, seed ${seed}`,
+        ).toEqual(['hall', 'graveyard']);
+        const grave = park.sideRoads[1]!;
+        // It comes back on behind where it left.
+        expect(loopDelta(grave.a, grave.b, park.track.length)).toBeLessThan(0);
+        // Each end runs along the loop's inner two lanes.
+        for (const [s, end] of [
+          [grave.a, 0],
+          [grave.b, grave.track.length],
+        ] as const) {
+          const on = pose(park.track, s, -park.half + park.laneW);
+          const at = openPose(grave.track, end);
+          expect(Math.hypot(on.x - at.x, on.y - at.y)).toBeLessThan(1);
+        }
+      }
+  });
 
   it('runs counterclockwise on screen with the normals pointing out', () => {
     for (const seed of SEEDS.slice(0, 10)) {

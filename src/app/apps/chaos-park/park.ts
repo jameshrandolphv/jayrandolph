@@ -104,6 +104,32 @@ export interface Shortcut {
   path: Point[];
 }
 
+/**
+ * A two-lane road off the loop's inner two lanes and back onto them, with its own traffic (see `SideRoadKind`): it
+ * leaves along the loop at `a` and comes back on along it at `b`, so a lane on it lines up with the same lane of the
+ * loop at both ends.
+ */
+export interface SideRoad {
+  id: number;
+  kind: SideRoadKind;
+  a: number;
+  b: number;
+  /** Its centre line from the `a` end to the `b` end, its normals on the same side as the loop's. */
+  track: Track;
+  /** Comes back on behind where it left (`b` before `a`), so whoever takes it does that stretch again. */
+  back: boolean;
+}
+
+/**
+ * - hall: through the manor's house, straight across the middle; some on the inner two lanes take it.
+ * - graveyard: a winding detour through a manor's graveyard that comes back on behind where it left; everyone on the
+ *   inside lane takes it.
+ */
+export type SideRoadKind = 'hall' | 'graveyard';
+
+/** Lanes on a side road: the loop's inner two. */
+export const SIDE_LANES = 2;
+
 export interface Water {
   kind: 'reservoir' | 'lake';
   outline: Point[];
@@ -184,6 +210,8 @@ export interface Park {
   track: Track;
   entrances: Entrance[];
   shortcuts: Shortcut[];
+  /** Roads off the loop and back, on a manor (see `SideRoad`). */
+  sideRoads: SideRoad[];
   water: Water[];
   fields: Field[];
   /** Footpaths drawn for show; nobody uses them but the short cuts. */
@@ -1021,6 +1049,327 @@ const makeShortcuts = (
  * entrances.
  */
 const makeHall = (track: Track, entrances: readonly Entrance[], half: number): Shortcut[] => {
+  const ends = hallEnds(track, entrances);
+  if (!ends) return [];
+  const { a, b } = ends;
+  const pa = pose(track, a, -half - 2);
+  const pb = pose(track, b, -half - 2);
+  const path = cubic(
+    pa,
+    { x: pa.x + (pb.x - pa.x) / 3, y: pa.y + (pb.y - pa.y) / 3 },
+    { x: pa.x + ((pb.x - pa.x) * 2) / 3, y: pa.y + ((pb.y - pa.y) * 2) / 3 },
+    pb,
+    20,
+  );
+  return [{ id: 0, a, b, path }];
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// Side roads.
+
+/** Where a side road's samples are, about this far apart. */
+const SIDE_STEP = 4;
+/** How far either end of a side road may run over the loop's road before it must be clear of it. */
+const SIDE_MERGE = 110;
+
+/**
+ * An open road through `raw` (a polyline), resampled every `SIDE_STEP` px or so, its normals on the side `flip` picks
+ * as `buildTrack` does (so they match the loop's where it joins it).
+ */
+const openTrack = (raw: readonly Point[], flip: number): Track => {
+  const lengths = [0];
+  for (let i = 1; i < raw.length; i++)
+    lengths.push(
+      lengths[i - 1]! + Math.hypot(raw[i]!.x - raw[i - 1]!.x, raw[i]!.y - raw[i - 1]!.y),
+    );
+  const length = lengths[raw.length - 1]!;
+  const n = Math.max(2, Math.round(length / SIDE_STEP) + 1);
+  const step = length / (n - 1);
+  const points: Point[] = [];
+  let k = 0;
+  for (let i = 0; i < n; i++) {
+    const at = Math.min(i * step, length);
+    while (k < raw.length - 2 && lengths[k + 1]! < at) k++;
+    const t = (at - lengths[k]!) / (lengths[k + 1]! - lengths[k]! || 1);
+    const a = raw[k]!;
+    const b = raw[k + 1]!;
+    points.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  }
+  const tangents = points.map((_, i) => {
+    const a = points[Math.max(0, i - 1)]!;
+    const b = points[Math.min(n - 1, i + 1)]!;
+    const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    return { x: (b.x - a.x) / l, y: (b.y - a.y) / l };
+  });
+  const normals = tangents.map((t) => ({ x: t.y * flip, y: -t.x * flip }));
+  return { points, tangents, normals, length, step };
+};
+
+/** The point `d` px out from an open road's centre line at `s` (held to its ends), and the direction there. */
+export const openPose = (track: Track, s: number, d = 0): Pose => {
+  const { points, normals, tangents, step } = track;
+  const n = points.length;
+  const f = Math.max(0, Math.min(n - 1, s / step));
+  const i = Math.min(n - 2, Math.floor(f));
+  const j = i + 1;
+  const t = f - i;
+  const nx = normals[i]!.x + (normals[j]!.x - normals[i]!.x) * t;
+  const ny = normals[i]!.y + (normals[j]!.y - normals[i]!.y) * t;
+  const nl = Math.hypot(nx, ny) || 1;
+  const tx = tangents[i]!.x + (tangents[j]!.x - tangents[i]!.x) * t;
+  const ty = tangents[i]!.y + (tangents[j]!.y - tangents[i]!.y) * t;
+  return {
+    x: points[i]!.x + (points[j]!.x - points[i]!.x) * t + (nx / nl) * d,
+    y: points[i]!.y + (points[j]!.y - points[i]!.y) * t + (ny / nl) * d,
+    angle: Math.atan2(ty, tx),
+  };
+};
+
+/**
+ * A smooth curve through `knots`, leaving the first along `start` and arriving at the last along `end` (unit
+ * vectors): Catmull-Rom between the knots, as cubic pieces of `SPLINE_STEPS` points each.
+ */
+const SPLINE_STEPS = 16;
+const spline = (knots: readonly Point[], start: Point, end: Point): Point[] => {
+  const n = knots.length;
+  const tangent = (i: number): Point => {
+    if (i === 0) {
+      const l = Math.hypot(knots[1]!.x - knots[0]!.x, knots[1]!.y - knots[0]!.y);
+      return { x: start.x * l, y: start.y * l };
+    }
+    if (i === n - 1) {
+      const l = Math.hypot(knots[n - 1]!.x - knots[n - 2]!.x, knots[n - 1]!.y - knots[n - 2]!.y);
+      return { x: end.x * l, y: end.y * l };
+    }
+    return {
+      x: (knots[i + 1]!.x - knots[i - 1]!.x) / 2,
+      y: (knots[i + 1]!.y - knots[i - 1]!.y) / 2,
+    };
+  };
+  const out: Point[] = [knots[0]!];
+  for (let i = 0; i < n - 1; i++) {
+    const a = knots[i]!;
+    const b = knots[i + 1]!;
+    const ta = tangent(i);
+    const tb = tangent(i + 1);
+    const piece = cubic(
+      a,
+      { x: a.x + ta.x / 3, y: a.y + ta.y / 3 },
+      { x: b.x - tb.x / 3, y: b.y - tb.y / 3 },
+      b,
+      SPLINE_STEPS,
+    );
+    out.push(...piece.slice(1));
+  }
+  return out;
+};
+
+/** Which way the loop's normals turn from its tangents: 1 if they are the tangents turned as `buildTrack` turns them. */
+const flipOf = (track: Track): number => {
+  const t = track.tangents[0]!;
+  const n = track.normals[0]!;
+  return n.x * t.y - n.y * t.x > 0 ? 1 : -1;
+};
+
+/**
+ * Whether a side road is clear of the loop (bar its ends, where it runs onto it), of itself where it doubles back,
+ * and of the other side roads.
+ */
+const sideRoadFits = (
+  road: Track,
+  track: Track,
+  half: number,
+  laneW: number,
+  others: readonly Track[],
+): boolean => {
+  const edgeOut = laneW + 6;
+  const inner = edge(track, -half - 4);
+  const { points, normals } = road;
+  const skip = Math.ceil(SIDE_MERGE / road.step);
+  for (let i = skip; i < points.length - skip; i++) {
+    for (const k of [-1, 1]) {
+      const p = points[i]!;
+      const x = p.x + normals[i]!.x * k * edgeOut;
+      const y = p.y + normals[i]!.y * k * edgeOut;
+      if (!insidePolygon(inner, x, y)) return false;
+      if (nearPolyline(inner, { x, y }, 8, true)) return false;
+    }
+  }
+  // Where it doubles back, its two stretches keep a road's width and a verge apart.
+  const apart = 2 * edgeOut + 10;
+  const gap = Math.ceil((3 * apart) / road.step);
+  for (let i = skip; i < points.length - skip; i += 2)
+    for (let j = i + gap; j < points.length - skip; j += 2)
+      if (Math.hypot(points[i]!.x - points[j]!.x, points[i]!.y - points[j]!.y) < apart)
+        return false;
+  for (const o of others)
+    for (let i = 0; i < points.length; i += 2)
+      if (nearPolyline(o.points, points[i]!, apart + 12)) return false;
+  return true;
+};
+
+/**
+ * A manor's side roads: the hall, through the house from the top of the drive to the bottom, and the graveyard
+ * road, hanging off one end of the drive into the grounds and back, coming on again behind where it left. Either is
+ * left out where the grounds are too small for it.
+ */
+const makeSideRoads = (
+  track: Track,
+  entrances: readonly Entrance[],
+  half: number,
+  laneW: number,
+): SideRoad[] => {
+  const { length } = track;
+  const flip = flipOf(track);
+  const centre = -half + laneW;
+  const out: SideRoad[] = [];
+  const clear = (s: number, by: number) =>
+    entrances.every((e) => Math.abs(loopDelta(e.s, s, length)) > by);
+  const ends = hallEnds(track, entrances);
+  if (ends) {
+    const { a, b } = ends;
+    const pa = pose(track, a, centre);
+    const pb = pose(track, b, centre);
+    const ta = { x: Math.cos(pa.angle), y: Math.sin(pa.angle) };
+    const tb = { x: Math.cos(pb.angle), y: Math.sin(pb.angle) };
+    const span = Math.hypot(pb.x - pa.x, pb.y - pa.y);
+    // Pulled along the drive as far as it can be and still fit.
+    for (const share of HALL_PULLS) {
+      const pull = span * share;
+      const raw = cubic(
+        pa,
+        { x: pa.x + ta.x * pull, y: pa.y + ta.y * pull },
+        { x: pb.x - tb.x * pull, y: pb.y - tb.y * pull },
+        pb,
+        48,
+      );
+      const road = openTrack(raw, flip);
+      if (!sideRoadFits(road, track, half, laneW, [])) continue;
+      out.push({ id: 0, kind: 'hall', a, b, track: road, back: false });
+      break;
+    }
+  }
+  // The graveyard road: off a straight stretch of the drive, as deep into the grounds as it can go, as near the
+  // middle of one end of the drive as it can be.
+  const hall = out.map((r) => r.track);
+  const xs = track.points.map((p) => p.x);
+  const midX = (Math.min(...xs) + Math.max(...xs)) / 2;
+  // The middle of each end of the drive, up and down.
+  const endMid = [-1, 1].map((side) => {
+    const ys = track.points.flatMap((p, i) => (track.normals[i]!.x * side >= 0.9 ? [p.y] : []));
+    return ys.length ? (Math.min(...ys) + Math.max(...ys)) / 2 : 0;
+  });
+  const spots: { s: number; rank: number }[] = [];
+  const every = Math.max(1, Math.round(GRAVE_EVERY / track.step));
+  for (let i = 0; i < track.points.length; i += every) {
+    const n = track.normals[i]!;
+    const p = track.points[i]!;
+    // Nearest the middle of an end first, then along the top and bottom, furthest from the hall first.
+    if (Math.abs(n.x) >= 0.9)
+      spots.push({ s: i * track.step, rank: Math.abs(p.y - endMid[n.x < 0 ? 0 : 1]!) });
+    else if (Math.abs(n.y) >= 0.9)
+      spots.push({ s: i * track.step, rank: 1000 - Math.abs(p.x - midX) });
+  }
+  spots.sort((a, b) => a.rank - b.rank);
+  let found: SideRoad | null = null;
+  for (const depth of GRAVE_DEPTHS) {
+    for (const { s: sMid } of spots) {
+      const road = graveyardRoad(track, sMid, depth, centre, flip);
+      if (!road) continue;
+      const { a, b } = road;
+      if (!clear(a, 70) || !clear(b, 70)) continue;
+      if (
+        out.some(
+          (r) =>
+            Math.abs(loopDelta(r.a, a, length)) < 120 || Math.abs(loopDelta(r.b, b, length)) < 120,
+        )
+      )
+        continue;
+      if (!sideRoadFits(road.track, track, half, laneW, hall)) continue;
+      found = { id: out.length, kind: 'graveyard', a, b, track: road.track, back: true };
+      break;
+    }
+    if (found) break;
+  }
+  if (found) out.push(found);
+  return out;
+};
+
+/** A graveyard road round the middle of the drive at `sMid`, `depth` into the grounds. */
+const graveyardRoad = (
+  track: Track,
+  sMid: number,
+  depth: number,
+  centre: number,
+  flip: number,
+): { a: number; b: number; track: Track } => {
+  const { length } = track;
+  // Leaves ahead of the middle and comes back on behind it.
+  const a = wrap(sMid + GRAVE_GAP / 2, length);
+  const b = wrap(sMid - GRAVE_GAP / 2, length);
+  const pa = pose(track, a, centre);
+  const pb = pose(track, b, centre);
+  const u = { x: Math.cos(pa.angle), y: Math.sin(pa.angle) };
+  // Into the grounds: against the loop's outward normal there.
+  const na = pose(track, a, centre + 1);
+  const v = { x: pa.x - na.x, y: pa.y - na.y };
+  const vl = Math.hypot(v.x, v.y) || 1;
+  v.x /= vl;
+  v.y /= vl;
+  const at = (du: number, dv: number): Point => ({
+    x: pa.x + u.x * du + v.x * dv,
+    y: pa.y + u.y * du + v.y * dv,
+  });
+  // Where the far end is along the drive from the near one (behind it, so negative).
+  const back = (pb.x - pa.x) * u.x + (pb.y - pa.y) * u.y;
+  const r = GRAVE_TURN;
+  const wig = GRAVE_WIGGLE;
+  const knots = [
+    { x: pa.x, y: pa.y },
+    at(r, r),
+    at(r + wig, depth * 0.55),
+    at(r * 0.5, depth),
+    at(back / 2, depth + wig),
+    at(back - r * 0.5, depth),
+    at(back - r - wig, depth * 0.55),
+    at(back - r, r),
+    { x: pb.x, y: pb.y },
+  ];
+  const tb = { x: Math.cos(pb.angle), y: Math.sin(pb.angle) };
+  return { a, b, track: openTrack(spline(knots, u, tb), flip) };
+};
+
+/** A side road as short cuts for the scenery to keep clear of: its centre line and a lane's width either side. */
+const sideClearance = (road: SideRoad, laneW: number): Shortcut[] =>
+  [-laneW, 0, laneW].map((d) => ({
+    id: -1,
+    a: road.a,
+    b: road.b,
+    path: road.track.points.map((p, i) => ({
+      x: p.x + road.track.normals[i]!.x * d,
+      y: p.y + road.track.normals[i]!.y * d,
+    })),
+  }));
+
+/** How far the hall's ends pull it along the drive before it turns across, as a share of the way across: the first of these that fits. */
+const HALL_PULLS = [0.32, 0.4, 0.5, 0.25];
+/** The graveyard road: how far apart along the drive its ends are, how tight its turns, how much it winds, and how
+ * deep into the grounds it goes (the deepest that fits). */
+const GRAVE_GAP = 60;
+const GRAVE_TURN = 34;
+const GRAVE_WIGGLE = 14;
+const GRAVE_DEPTHS = [190, 170, 150, 130, 115, 100, 90];
+/** How far apart along the drive the graveyard road's spots to try are. */
+const GRAVE_EVERY = 24;
+
+/**
+ * Where a manor's hall leaves the loop and comes back on: straight across the middle from the top of the loop to the
+ * bottom, clear of the entrances.
+ */
+const hallEnds = (
+  track: Track,
+  entrances: readonly Entrance[],
+): { a: number; b: number } | null => {
   const { normals, step, length, points } = track;
   const xs = points.map((p) => p.x);
   const mid = (Math.min(...xs) + Math.max(...xs)) / 2;
@@ -1040,19 +1389,7 @@ const makeHall = (track: Track, entrances: readonly Entrance[], half: number): S
       bottom = j;
     }
   }
-  if (top < 0) return [];
-  const a = top * step;
-  const b = bottom * step;
-  const pa = pose(track, a, -half - 2);
-  const pb = pose(track, b, -half - 2);
-  const path = cubic(
-    pa,
-    { x: pa.x + (pb.x - pa.x) / 3, y: pa.y + (pb.y - pa.y) / 3 },
-    { x: pa.x + ((pb.x - pa.x) * 2) / 3, y: pa.y + ((pb.y - pa.y) * 2) / 3 },
-    pb,
-    20,
-  );
-  return [{ id: 0, a, b, path }];
+  return top < 0 ? null : { a: top * step, b: bottom * step };
 };
 
 /**
@@ -1517,21 +1854,26 @@ export const generatePark = (
   const entrances = makeEntrances(track, wall, half, rng, eight);
   const bridge = eight ? makeBridge(track, half, rng) : null;
   // Footpaths and the short cuts along them, on the courses that have them; or a manor's hall.
+  // A manor's side roads; where the hall doesn't fit as a road, a path through the house as before.
+  const sideRoads =
+    course.layout === 'manor' ? makeSideRoads(track, entrances, half, course.laneW) : [];
   const shortcuts = course.paths
     ? makeShortcuts(track, entrances, half, rng)
-    : course.layout === 'manor'
+    : course.layout === 'manor' && !sideRoads.some((r) => r.kind === 'hall')
       ? makeHall(track, entrances, half)
       : [];
+  // What the scenery keeps clear of: the short cuts, and the side roads with a lane's width either side.
+  const clearOf = [...shortcuts, ...sideRoads.flatMap((r) => sideClearance(r, course.laneW))];
   // A figure of eight's middles are too small for water or fields.
-  const water = eight ? [] : makeWater(inside, shortcuts, rng);
-  const fields = eight ? [] : makeFields(inside, water, shortcuts, rng);
+  const water = eight ? [] : makeWater(inside, clearOf, rng);
+  const fields = eight ? [] : makeFields(inside, water, clearOf, rng);
   const paths = course.paths ? makePaths(track, half, inside, water, fields, rng) : [];
   const trees = makeTrees(
     track,
     half,
     inside,
     entrances,
-    shortcuts,
+    clearOf,
     water,
     fields,
     paths,
@@ -1545,17 +1887,17 @@ export const generatePark = (
     course.lanes,
     course.train ? TRAIN_LANE : -1,
     entrances,
-    shortcuts,
+    clearOf,
     rng,
     bridge,
   );
   const cover =
     course.cover === 'none'
       ? null
-      : makeCover(track, entrances, shortcuts, patches, rng, COVER_LEN, bridge);
+      : makeCover(track, entrances, clearOf, patches, rng, COVER_LEN, bridge);
   // Rapids, like a covered stretch, clear of the entrances, short cuts and patches.
   const rapids = course.rapids
-    ? makeRapids(track, course.lanes, entrances, shortcuts, patches, rng)
+    ? makeRapids(track, course.lanes, entrances, clearOf, patches, rng)
     : [];
   return {
     season: chosen,
@@ -1570,6 +1912,7 @@ export const generatePark = (
     track,
     entrances,
     shortcuts,
+    sideRoads,
     water,
     fields,
     paths,

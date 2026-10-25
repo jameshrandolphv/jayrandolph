@@ -124,6 +124,7 @@ import {
   loopDelta,
   nearPolyline,
   onBridge,
+  openPose,
   pose,
   underCover,
   wrap,
@@ -132,6 +133,9 @@ import {
   type ParkFrame,
   type Point,
   type Shortcut,
+  type SideRoad,
+  type Track,
+  SIDE_LANES,
 } from './park';
 
 export type Phase = 'title' | 'help' | 'playing' | 'crashed' | 'gameOver';
@@ -171,10 +175,10 @@ export type SimEvent =
   | 'wave';
 
 /**
- * Where a mover is: walking in from the street, on the loop, cutting across the park, or heading out. Only movers on
- * the loop collide or can be swiped.
+ * Where a mover is: walking in from the street, on the loop, cutting across the park, on one of a manor's side roads,
+ * or heading out. Only movers on the loop or a side road collide or can be swiped.
  */
-export type MoverState = 'arriving' | 'track' | 'shortcut' | 'leaving';
+export type MoverState = 'arriving' | 'track' | 'shortcut' | 'side' | 'leaving';
 
 export interface Mover {
   id: number;
@@ -261,6 +265,13 @@ export interface Mover {
   slime: number;
   /** A predator's tick of its last move toward someone. */
   turnedAt: number;
+  /**
+   * The side road it is on (`s` and `p` are then along that road and across its two lanes), or -1; and the side road
+   * it has just come back from behind where it left, so it carries on past that road's start once rather than going
+   * round again.
+   */
+  side: number;
+  sideSkip: number;
 }
 
 /**
@@ -567,7 +578,7 @@ export class ChaosParkSim {
     let best: Mover | null = null;
     let bestDist = Infinity;
     for (const m of this.movers) {
-      if (m.state !== 'track') continue;
+      if (m.state !== 'track' && m.state !== 'side') continue;
       // Distance to the line along its body, so long movers can be grabbed anywhere along them.
       const ux = Math.cos(m.heading);
       const uy = Math.sin(m.heading);
@@ -584,18 +595,35 @@ export class ChaosParkSim {
 
   /** The way out of the park at a mover's spot, for telling which way a swipe went. */
   outward(m: Mover): Point {
+    const road = this.sideTrack(m);
+    if (road) return road.normals[this.sideIndex(m, road)]!;
     const i =
       Math.round(wrap(m.s, this.park.track.length) / this.park.track.step) %
       this.park.track.normals.length;
     return this.park.track.normals[i]!;
   }
 
+  /** The road a mover on a side road is on, or null on the loop. */
+  private sideTrack(m: Mover): Track | null {
+    return m.state === 'side' ? this.park.sideRoads[m.side]!.track : null;
+  }
+
+  /** The sample of a side road nearest a mover on it. */
+  private sideIndex(m: Mover, road: Track): number {
+    return Math.max(0, Math.min(road.points.length - 1, Math.round(m.s / road.step)));
+  }
+
+  /** How many lanes the road a mover is on has. */
+  private lanesOf(m: Mover): number {
+    return m.state === 'side' ? SIDE_LANES : this.park.lanes;
+  }
+
   /** Moves a mover one lane outward (1) or inward (-1). */
   shift(id: number, delta: 1 | -1): boolean {
     if (this.phase !== 'playing' || this.paused) return false;
-    const m = this.movers.find((o) => o.id === id && o.state === 'track');
+    const m = this.movers.find((o) => o.id === id && (o.state === 'track' || o.state === 'side'));
     if (!m) return false;
-    const next = Math.max(0, Math.min(this.park.lanes - m.width, m.target + delta));
+    const next = Math.max(0, Math.min(this.lanesOf(m) - m.width, m.target + delta));
     // Someone dazed by a rat can't be moved on, and nobody can go through the mansion's wall.
     if (next === m.target || m.daze > 0 || !this.canChange(m, next)) {
       this.events.push('bump');
@@ -608,6 +636,8 @@ export class ChaosParkSim {
 
   /** The direction a mover is travelling at its spot, for telling a forward swipe from a backward one. */
   forward(m: Mover): Point {
+    const road = this.sideTrack(m);
+    if (road) return road.tangents[this.sideIndex(m, road)]!;
     const { track } = this.park;
     const t =
       track.tangents[Math.round(wrap(m.s, track.length) / track.step) % track.tangents.length]!;
@@ -627,7 +657,7 @@ export class ChaosParkSim {
   /** Speeds a mover up (`true`) or returns it to its usual speed (`false`). */
   setBoost(id: number, on: boolean): boolean {
     if (this.phase !== 'playing' || this.paused) return false;
-    const m = this.movers.find((o) => o.id === id && o.state === 'track');
+    const m = this.movers.find((o) => o.id === id && (o.state === 'track' || o.state === 'side'));
     if (!m) return false;
     if (m.boosted === on || m.daze > 0) {
       this.events.push('bump');
@@ -668,6 +698,7 @@ export class ChaosParkSim {
       if (m.slip > 0) m.slip--;
       if (m.shout > 0) m.shout--;
       if (m.state === 'track') this.moveOnTrack(m);
+      else if (m.state === 'side') this.moveOnSide(m);
       else if (this.moveOnRoute(m)) gone.add(m);
     }
     if (gone.size) this.movers = this.movers.filter((m) => !gone.has(m));
@@ -723,6 +754,17 @@ export class ChaosParkSim {
       if (exit) this.leave(m, exit);
       return;
     }
+    for (const r of this.park.sideRoads) {
+      if (!this.crossed(from, delta, r.a)) continue;
+      if (m.sideSkip === r.id) {
+        m.sideSkip = -1;
+        continue;
+      }
+      if (this.takesSide(m, r)) {
+        this.enterSide(m, r);
+        return;
+      }
+    }
     if (
       m.dir === 1 &&
       (m.kind === 'walker' || m.kind === 'runner') &&
@@ -736,6 +778,71 @@ export class ChaosParkSim {
         return;
       }
     }
+  }
+
+  /**
+   * Whether a mover reaching a side road's start turns onto it: anyone going the right way round in the inside lane
+   * onto the graveyard road, always; anyone small in the inner two lanes into the hall, now and then.
+   */
+  private takesSide(m: Mover, r: SideRoad): boolean {
+    if (m.dir !== 1 || m.kind === 'predator') return false;
+    if (r.kind === 'graveyard') return m.p === 0 && m.target === 0;
+    if (m.kind === 'car' || m.kind === 'carriage') return false;
+    if (Math.max(m.p, m.target) + m.width > SIDE_LANES) return false;
+    return this.rng() < SHORTCUT_CHANCE;
+  }
+
+  /** Turns a mover onto a side road, as far along it as it has gone past the road's start. */
+  private enterSide(m: Mover, r: SideRoad): void {
+    m.state = 'side';
+    m.side = r.id;
+    m.s = wrap(m.s - r.a, this.park.track.length);
+    this.placeSide(m);
+  }
+
+  /**
+   * Moves a mover along a side road and back onto the loop at its end. It counts as having covered the stretch of
+   * loop between the road's ends: the stretch it skipped, or, coming back on behind where it left, less the stretch
+   * it has to do again.
+   */
+  private moveOnSide(m: Mover): void {
+    const r = this.park.sideRoads[m.side]!;
+    const { track } = this.park;
+    if (m.daze > 0) {
+      m.daze--;
+      if (m.slime > 0) m.slime--;
+      return;
+    }
+    if (m.swerve > 0) this.swerveStep(m);
+    m.s += m.speed;
+    if (m.p !== m.target) m.p += Math.max(-LANE_RATE, Math.min(LANE_RATE, m.target - m.p));
+    if (m.s < r.track.length) {
+      this.placeSide(m);
+      return;
+    }
+    m.state = 'track';
+    m.side = -1;
+    m.s = wrap(r.b + (m.s - r.track.length), track.length);
+    m.p = m.target;
+    if (r.back) {
+      m.progress -= wrap(r.a - r.b, track.length);
+      m.sideSkip = r.id;
+    } else m.progress += wrap(r.b - r.a, track.length);
+    this.countLaps(m);
+    this.place(m);
+  }
+
+  /** Puts a mover on a side road where `s` and `p` say. */
+  private placeSide(m: Mover): void {
+    const road = this.park.sideRoads[m.side]!.track;
+    const at = openPose(
+      road,
+      m.s,
+      laneOffset(m.p, m.width, { lanes: SIDE_LANES, laneW: this.park.laneW }),
+    );
+    this.face(m, at.x, at.y, at.angle);
+    m.x = at.x;
+    m.y = at.y;
   }
 
   /** Whether moving `delta` from `from` passes `at`. */
@@ -1040,18 +1147,38 @@ export class ChaosParkSim {
     this.events.push('hit');
   }
 
-  /** Collide any two movers on the loop that touch; otherwise flag the ones about to. */
+  /**
+   * Collide any two movers on the loop, or on the same side road, that touch; otherwise flag the ones about to.
+   */
   private checkTraffic(): void {
-    const live = this.movers.filter((m) => m.state === 'track');
-    const length = this.park.track.length;
-    for (const m of live) m.warning = false;
     const pairs = new Set<string>();
     const knocked = new Set<Mover>();
+    for (const m of this.movers) m.warning = false;
+    const loop = this.movers.filter((m) => m.state === 'track');
+    if (this.traffic(loop, this.park.track.length, pairs, knocked)) return;
+    for (const r of this.park.sideRoads) {
+      const on = this.movers.filter((m) => m.state === 'side' && m.side === r.id);
+      if (this.traffic(on, null, pairs, knocked)) return;
+    }
+    this.warnedPairs = pairs;
+    for (const m of knocked) if (this.movers.includes(m)) this.knockOff(m);
+  }
+
+  /**
+   * One road's traffic for `checkTraffic`: the loop (`length` its length, as distances wrap round it) or a side
+   * road (`null`). True if a collision ended the run.
+   */
+  private traffic(
+    live: Mover[],
+    length: number | null,
+    pairs: Set<string>,
+    knocked: Set<Mover>,
+  ): boolean {
     for (let i = 0; i < live.length; i++) {
       for (let j = i + 1; j < live.length; j++) {
         const a = live[i]!;
         const b = live[j]!;
-        const delta = loopDelta(a.s, b.s, length);
+        const delta = length === null ? b.s - a.s : loopDelta(a.s, b.s, length);
         const dist = Math.abs(delta);
         const half = (a.len + b.len) / 2;
         const pair = `${a.id}:${b.id}`;
@@ -1086,11 +1213,11 @@ export class ChaosParkSim {
           const predator = a.kind === 'predator' ? a : b.kind === 'predator' ? b : null;
           const prey = predator === a ? b : a;
           if (predator && ON_FOOT.has(prey.kind)) {
-            if (this.eat(predator, prey)) return;
+            if (this.eat(predator, prey)) return true;
             knocked.add(prey);
             continue;
           }
-          if (this.collide(a, b, delta)) return;
+          if (this.collide(a, b, delta)) return true;
           continue;
         }
         // Warn on where they are heading as well as where they are.
@@ -1112,8 +1239,7 @@ export class ChaosParkSim {
         }
       }
     }
-    this.warnedPairs = pairs;
-    for (const m of knocked) if (this.movers.includes(m)) this.knockOff(m);
+    return false;
   }
 
   /** A predator catches someone: they're gone, their laps lost, and it costs a life. True if that ended the run. */
@@ -1705,6 +1831,8 @@ export class ChaosParkSim {
       swerve: 0,
       haunted: false,
       slime: 0,
+      side: -1,
+      sideSkip: -1,
       turnedAt: -Infinity,
     };
     if (kind === 'carriage' && this.course.train) {
@@ -1823,7 +1951,7 @@ export class ChaosParkSim {
     }
     if (m.swerve % SWERVE_EVERY !== 0) return;
     const options = [m.target - 1, m.target + 1].filter(
-      (l) => l >= 0 && l <= this.park.lanes - m.width && this.canChange(m, l),
+      (l) => l >= 0 && l <= this.lanesOf(m) - m.width && this.canChange(m, l),
     );
     if (options.length) m.target = options[Math.floor(this.rng() * options.length)]!;
     if (m.haunted) {

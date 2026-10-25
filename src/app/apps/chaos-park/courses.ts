@@ -32,8 +32,9 @@ export type Cover = 'none' | 'arch' | 'vine';
  * - loop: a rounded rectangle with a few gentle bends (bent further by `bend`, and winding like a river if `river`);
  * - switchback: an uneven polygon of straights and tight corners, like a road through a canyon;
  * - eight: a figure of eight, one way over the other on a bridge where they cross;
- * - manor: a formal drive, a rectangle with its corners cut off, round a house in the middle with a hall through it
- *   from one side of the road to the other that people now and then take (see `Shortcut`).
+ * - manor: a formal drive, a rectangle with its corners cut off, round a house in the middle, with a two-lane hall
+ *   through the house that people on the inner lanes now and then take, and a winding graveyard road that everyone
+ *   on the inside lane takes, coming back on behind where they left (see `SideRoad`).
  */
 export type Layout = 'loop' | 'switchback' | 'eight' | 'manor';
 
