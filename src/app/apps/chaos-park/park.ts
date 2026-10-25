@@ -1610,6 +1610,18 @@ const RIVER_ASIDES = [0, 0.1, 0.2, 0.3, 0.4];
 const RIVER_BRIDGE_MOST = 220;
 
 /**
+ * A bell curve, 1 at 0 and 0 from ±√8 on: (1 − u²/8)⁸, near enough exp(−u²), and made of products alone so the
+ * apps work it out to the same bit.
+ */
+const bump = (u: number): number => {
+  const a = 1 - (u * u) / 8;
+  if (a <= 0) return 0;
+  const a2 = a * a;
+  const a4 = a2 * a2;
+  return a4 * a4;
+};
+
+/**
  * A river winding into the figure of eight and back (see `RIVER_DEPTHS`), under it just twice, each on a bridge, and
  * clear of it everywhere else; or none, where it doesn't fit.
  */
@@ -1637,7 +1649,7 @@ const curvedRiver = (
         const wide = frame.h * spread;
         const raw: Point[] = [];
         for (let y = -RIVER_PAD; y <= frame.h + RIVER_PAD; y += SIDE_STEP)
-          raw.push({ x: x1 + deep * Math.exp(-(((y - y0) / wide) ** 2)), y });
+          raw.push({ x: x1 + deep * bump((y - y0) / wide), y });
         const river = openTrack(raw, 1);
         if (best && river.length <= best.length) continue;
         const runs = riverRuns(track, half, water, river);
