@@ -1450,9 +1450,9 @@ const sideClearance = (road: SideRoad, laneW: number): Shortcut[] =>
     })),
   }));
 
-/** How far the hall's ends pull it along the drive before it turns across, as a share of the way across: the first of these that fits. */
 /** Where else along the drive the hall may go, as shares of the way along, to leave room for the graveyard road. */
 const HALL_ASIDE = [0.68, 0.32, 0.75, 0.25];
+/** How far the hall's ends pull it along the drive before it turns across, as a share of the way across: the first of these that fits. */
 const HALL_PULLS = [0.32, 0.4, 0.5, 0.6, 0.67, 0.25];
 /** The graveyard road: how far apart along the drive its ends are, how tight its turns, how much it winds, and how
  * deep into the grounds it goes (the deepest that fits). */
