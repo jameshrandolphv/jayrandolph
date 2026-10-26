@@ -278,6 +278,8 @@ export const WILD_DEPTH = 30;
 export const WILD_GAP = 120;
 /** A wild course's visitor doesn't leave for the trees from a bridge, or within this of either end of it. */
 export const BRIDGE_EXIT_CLEAR = 40;
+/** Nor does one come out of the trees, or go into them, within this of a river's banks. */
+export const RIVER_SPAWN_CLEAR = 14;
 
 /**
  * A river crossing a course (see `CourseSpec.riverCrossing`): `RIVER_LANES` lanes, its traffic all going downstream.

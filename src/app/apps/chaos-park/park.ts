@@ -1608,6 +1608,28 @@ const RIVER_SPREADS = [0.3, 0.25, 0.2, 0.16];
 const RIVER_ASIDES = [0, 0.1, 0.2, 0.3, 0.4];
 /** The most of the loop a river's bridge may cover, and the most of the river that may run under one. */
 const RIVER_BRIDGE_MOST = 220;
+/** A river bends no tighter than this many times its half width, so nothing on it ever swings round a sharp corner. */
+const RIVER_BEND_MOST = 2;
+
+/**
+ * Whether the bell curve `deep` · bump(u) across, with u = y / `wide`, bends nowhere tighter than radius `radius`: its
+ * curvature x'' / (1 + x'²)^1.5, squared, in products alone.
+ */
+const gentleBump = (deep: number, wide: number, radius: number): boolean => {
+  for (let k = -150; k <= 150; k++) {
+    const u = k / 50;
+    const a = 1 - (u * u) / 8;
+    if (a <= 0) continue;
+    const a2 = a * a;
+    const a6 = a2 * a2 * a2;
+    const a7 = a6 * a;
+    const slope = (deep * (-2 * u * a7)) / wide;
+    const curve = (deep * (-2 * a7 + 3.5 * u * u * a6)) / (wide * wide);
+    const q = 1 + slope * slope;
+    if (curve * curve * radius * radius > q * q * q) return false;
+  }
+  return true;
+};
 
 /**
  * A bell curve, 1 at 0 and 0 from ±√8 on: (1 − u²/8)⁸, near enough exp(−u²), and made of products alone so the
@@ -1647,6 +1669,7 @@ const curvedRiver = (
       for (const spread of RIVER_SPREADS) {
         const deep = (right - x1) * depth;
         const wide = frame.h * spread;
+        if (!gentleBump(deep, wide, RIVER_BEND_MOST * (water + RIVER_BANK))) continue;
         const raw: Point[] = [];
         for (let y = -RIVER_PAD; y <= frame.h + RIVER_PAD; y += SIDE_STEP)
           raw.push({ x: x1 + deep * bump((y - y0) / wide), y });

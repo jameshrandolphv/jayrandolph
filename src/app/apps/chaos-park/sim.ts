@@ -108,6 +108,7 @@ import {
   WILD_DEPTH,
   WILD_GAP,
   BRIDGE_EXIT_CLEAR,
+  RIVER_SPAWN_CLEAR,
   GATOR_CLIMB,
   GATOR_FROM_SCORE,
   GATOR_INTERVAL,
@@ -151,6 +152,7 @@ import {
   openPose,
   PLANK_GAP_LEVEL,
   RIVER_PAD,
+  riverHalf,
   pose,
   underCover,
   wrap,
@@ -1132,10 +1134,17 @@ export class ChaosParkSim {
   }
 
   /**
-   * Whether the trees `WILD_DEPTH` out from the road at `s`, on `side`, are clear of any other road: always on a loop,
-   * not near where a figure of eight's halves meet.
+   * Whether the trees `WILD_DEPTH` out from the road at `s`, on `side`, are clear of any other road and of a river:
+   * not near where a figure of eight's halves meet, and not with the river's water anywhere on the way.
    */
   private clearOfRoad(s: number, side: number): boolean {
+    const { river } = this.park;
+    if (river) {
+      const { track, half, laneW } = this.park;
+      const wet = riverHalf(laneW) + RIVER_SPAWN_CLEAR;
+      for (const d of [half + 4, half + WILD_DEPTH, half + WILD_DEPTH + 24])
+        if (nearPolyline(river.track.points, pose(track, s, side * d), wet)) return false;
+    }
     if (!this.park.bridge) return true;
     const { track, half } = this.park;
     const out = pose(track, s, side * (half + WILD_DEPTH));
@@ -1625,7 +1634,7 @@ export class ChaosParkSim {
         Math.min(ahead, length - ahead) < PLANK_ZONE &&
         gaps.some((g) => laneOverlap(m.p, 1, g, 1) > 0.5)
       )
-        this.fall(m, plank);
+        this.fall(m);
     }
   }
 
@@ -1649,16 +1658,32 @@ export class ChaosParkSim {
   }
 
   /**
-   * Someone falls through a gap in the plank bridge into the river below, in the river lane under the one they were
-   * in, and is carried off down it as river traffic, scoring at the end (see `moveOnRiver`).
+   * Someone falls through a gap in the plank bridge straight down into the river below, drifting into the nearest of
+   * its lanes, and is carried off down it as river traffic, scoring at the end (see `moveOnRiver`).
    */
-  private fall(m: Mover, plank: RiverBridge): void {
-    const lanes = this.park.lanes;
-    const lane = Math.round(m.p);
+  private fall(m: Mover): void {
+    const { track } = this.park.river!;
+    const { points, tangents, normals, step } = track;
+    let j = 0;
+    let near = Infinity;
+    for (let k = 0; k < points.length; k++) {
+      const dx = m.x - points[k]!.x;
+      const dy = m.y - points[k]!.y;
+      const d = dx * dx + dy * dy;
+      if (d < near) {
+        near = d;
+        j = k;
+      }
+    }
+    const dx = m.x - points[j]!.x;
+    const dy = m.y - points[j]!.y;
+    const along = dx * tangents[j]!.x + dy * tangents[j]!.y;
+    const across = dx * normals[j]!.x + dy * normals[j]!.y;
     m.state = 'river';
     m.river = true;
-    m.s = plank.at;
-    m.p = m.target = Math.round((lane * (RIVER_LANES - 1)) / Math.max(1, lanes - 1));
+    m.s = Math.max(0, Math.min(track.length, j * step + along));
+    m.p = Math.max(0, Math.min(RIVER_LANES - 1, across / this.park.laneW + RIVER_LANES / 2 - 0.5));
+    m.target = Math.round(m.p);
     m.dir = 1;
     m.speed = m.baseSpeed = m.plainSpeed = PLANK_FALL_SPEED * ART * PACE;
     m.boosted = false;
@@ -2040,7 +2065,7 @@ export class ChaosParkSim {
     const inside = this.rng() < 0.5;
     // Not where a figure of eight's other road (or its bridge) is right there.
     if (
-      onBridge(this.park.bridge, s, track.length) ||
+      onBridge(this.park.bridge, s, track.length, BRIDGE_EXIT_CLEAR) ||
       onRiverBridge(this.park.river, s, track.length, BRIDGE_EXIT_CLEAR) ||
       !this.clearOfRoad(s, inside ? -1 : 1)
     )
