@@ -4,8 +4,9 @@ import { RouterLink } from '@angular/router';
 import { WindowFrame } from '../../ui/window-frame';
 
 /*
- * The Chaos Park pages the App Store and Google Play link to: the privacy policy and the support page. Plain reading
- * windows on the desktop, at /chaos-park/privacy and /chaos-park/support.
+ * The pages the App Store and Google Play link to: Chaos Park's privacy policy and support page, and a marketing
+ * contact page for the games. Plain reading windows on the desktop, at /chaos-park/privacy, /chaos-park/support and
+ * /marketing.
  */
 
 const CONTACT = 'jayrandolphgames@gmail.com';
@@ -220,5 +221,31 @@ export class ChaosParkSupport {
 
   constructor() {
     inject(Title).setTitle('Chaos Park Support - Jay Randolph');
+  }
+}
+
+@Component({
+  selector: 'app-marketing',
+  imports: [WindowFrame],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  styles: PAGE_STYLES,
+  template: `
+    <app-window-frame title="Marketing" closeLink="/" compact>
+      <div class="info-body">
+        <h2>Marketing</h2>
+        <p>
+          For any marketing-related queries, please contact
+          <a [href]="'mailto:' + contact">{{ contact }}</a
+          >.
+        </p>
+      </div>
+    </app-window-frame>
+  `,
+})
+export class Marketing {
+  protected readonly contact = CONTACT;
+
+  constructor() {
+    inject(Title).setTitle('Marketing - Jay Randolph');
   }
 }
