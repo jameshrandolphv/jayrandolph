@@ -295,9 +295,9 @@ export interface Mover {
   /** A predator's tick of its last move toward someone. */
   turnedAt: number;
   /**
-   * The side road it is on (`s` and `p` are then along that road and across its two lanes), or -1; and the side road
-   * it has just come back from behind where it left, so it carries on past that road's start once rather than going
-   * round again.
+   * The side road it is on (`s` and `p` are then along that road, from its `a` end, and across its two lanes), or -1;
+   * and the side roads (a bit for each id) it has just come off, so it carries on past each one's turning once rather
+   * than taking it again.
    */
   side: number;
   sideSkip: number;
@@ -825,9 +825,10 @@ export class ChaosParkSim {
       return;
     }
     for (const r of this.park.sideRoads) {
-      if (!this.crossed(from, delta, r.a)) continue;
-      if (m.sideSkip === r.id) {
-        m.sideSkip = -1;
+      // The hall is taken from whichever end someone reaches going their way round; the graveyard road from its start.
+      if (!this.crossed(from, delta, m.dir < 0 ? r.b : r.a)) continue;
+      if (m.sideSkip & (1 << r.id)) {
+        m.sideSkip &= ~(1 << r.id);
         continue;
       }
       if (this.takesSide(m, r)) {
@@ -851,29 +852,31 @@ export class ChaosParkSim {
   }
 
   /**
-   * Whether a mover reaching a side road's start turns onto it: anyone going the right way round in the inside lane
-   * onto the graveyard road, always; anyone small in the inner two lanes into the hall, now and then.
+   * Whether a mover reaching a side road turns onto it: anyone in the inside lane, always, going the right way round
+   * onto the graveyard road, either way into the hall (anyone up to two lanes wide, but no car or carriage).
    */
   private takesSide(m: Mover, r: SideRoad): boolean {
-    if (m.dir !== 1 || m.kind === 'predator') return false;
-    if (r.kind === 'graveyard') return m.p === 0 && m.target === 0;
-    if (m.kind === 'car' || m.kind === 'carriage') return false;
-    if (Math.max(m.p, m.target) + m.width > SIDE_LANES) return false;
-    return this.rng() < SHORTCUT_CHANCE;
+    if (m.kind === 'predator' || m.p !== 0 || m.target !== 0) return false;
+    if (r.kind === 'graveyard') return m.dir === 1;
+    return m.kind !== 'car' && m.kind !== 'carriage' && m.width <= SIDE_LANES;
   }
 
-  /** Turns a mover onto a side road, as far along it as it has gone past the road's start. */
+  /**
+   * Turns a mover onto a side road, as far along it as it has gone past the end it came in by (`s` along the road is
+   * always from its `a` end).
+   */
   private enterSide(m: Mover, r: SideRoad): void {
+    const { length } = this.park.track;
     m.state = 'side';
     m.side = r.id;
-    m.s = wrap(m.s - r.a, this.park.track.length);
+    m.s = m.dir < 0 ? r.track.length - wrap(r.b - m.s, length) : wrap(m.s - r.a, length);
     this.placeSide(m);
   }
 
   /**
-   * Moves a mover along a side road and back onto the loop at its end. It counts as having covered the stretch of
-   * loop between the road's ends: the stretch it skipped, or, coming back on behind where it left, less the stretch
-   * it has to do again.
+   * Moves a mover along a side road and back onto the loop at its far end. Neither road is a short cut: it counts as
+   * having gone back round the lap by the stretch of loop it has to do again to get back to where it turned off, and
+   * it carries on past that turning the next time it gets there.
    */
   private moveOnSide(m: Mover): void {
     const r = this.park.sideRoads[m.side]!;
@@ -884,20 +887,19 @@ export class ChaosParkSim {
       return;
     }
     if (m.swerve > 0) this.swerveStep(m);
-    m.s += m.speed;
+    m.s += m.speed * m.dir;
     if (m.p !== m.target) m.p += Math.max(-LANE_RATE, Math.min(LANE_RATE, m.target - m.p));
-    if (m.s < r.track.length) {
+    if (m.s >= 0 && m.s < r.track.length) {
       this.placeSide(m);
       return;
     }
     m.state = 'track';
     m.side = -1;
-    m.s = wrap(r.b + (m.s - r.track.length), track.length);
+    m.s = m.dir < 0 ? wrap(r.a + m.s, track.length) : wrap(r.b + (m.s - r.track.length), track.length);
     m.p = m.target;
-    if (r.back) {
-      m.progress -= wrap(r.a - r.b, track.length);
-      m.sideSkip = r.id;
-    } else m.progress += wrap(r.b - r.a, track.length);
+    // Either way round, what it has to do again is the stretch from the end it came out at to the one it went in by.
+    m.progress -= wrap(r.a - r.b, track.length);
+    m.sideSkip |= 1 << r.id;
     this.countLaps(m);
     this.place(m);
   }
@@ -910,7 +912,7 @@ export class ChaosParkSim {
       m.s,
       laneOffset(m.p, m.width, { lanes: SIDE_LANES, laneW: this.park.laneW }),
     );
-    this.face(m, at.x, at.y, at.angle);
+    this.face(m, at.x, at.y, at.angle + (m.dir < 0 ? Math.PI : 0));
     m.x = at.x;
     m.y = at.y;
   }
@@ -2168,7 +2170,7 @@ export class ChaosParkSim {
       haunted: false,
       slime: 0,
       side: -1,
-      sideSkip: -1,
+      sideSkip: 0,
       river: false,
       turnedAt: -Infinity,
     };

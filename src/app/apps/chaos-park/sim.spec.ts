@@ -148,7 +148,7 @@ const put = (
     slime: 0,
     turnedAt: -Infinity,
     side: -1,
-    sideSkip: -1,
+    sideSkip: 0,
     river: false,
     ...options,
   };
@@ -1691,35 +1691,50 @@ describe('course obstacles', () => {
   const road = (sim: ChaosParkSim, kind: SideRoad['kind']) =>
     sim.park.sideRoads.find((r) => r.kind === kind)!;
 
-  it("the mansion's hall is driven through now and then from the inner two lanes, skipping the stretch round", () => {
-    const sim = mansionSim();
-    const hall = road(sim, 'hall');
-    const length = sim.park.track.length;
-    // Always take it.
-    (sim as unknown as { rng: () => number }).rng = () => 0;
-    const m = put(sim, 'biker', wrap(hall.a - 5, length), 1, { laps: 2 });
-    let inside = false;
-    for (let t = 0; t < 60 && !inside; t++) {
-      sim.step();
-      inside = m.state === 'side';
+  it("everyone on the inside lane, up to two wide, goes through the mansion's hall either way round, losing ground", () => {
+    for (const dir of [1, -1] as const) {
+      const sim = mansionSim();
+      const hall = road(sim, 'hall');
+      const length = sim.park.track.length;
+      const into = dir > 0 ? hall.a : hall.b;
+      const out = dir > 0 ? hall.b : hall.a;
+      const m = put(sim, 'pair', wrap(into - 5 * dir, length), 0, { laps: 4, dir });
+      expect(m.width).toBe(2);
+      for (let t = 0; t < 60 && m.state !== 'side'; t++) sim.step();
+      expect(m.state).toBe('side');
+      expect(m.side).toBe(hall.id);
+      const before = m.progress;
+      for (let t = 0; t < 3000 && m.state === 'side'; t++) sim.step();
+      expect(m.state).toBe('track');
+      expect(Math.abs(loopDelta(out, m.s, length))).toBeLessThan(m.speed + 1);
+      expect(m.p).toBe(0);
+      // Back round the lap by the stretch it has to do again to get back to the turning.
+      expect(m.progress).toBeLessThan(before);
+      // Next time it gets to the turning it carries on past; the time after, it goes through again.
+      let passed = false;
+      for (let t = 0; t < 6000 && !passed; t++) {
+        sim.step();
+        // (It may go round the graveyard on the way.)
+        expect(m.state === 'side' && m.side === hall.id).toBe(false);
+        const past = loopDelta(into, m.s, length) * dir;
+        passed = m.state === 'track' && past > 0 && past < 20;
+      }
+      expect(passed).toBe(true);
+      let again = false;
+      for (let t = 0; t < 20000 && !again; t++) {
+        sim.step();
+        again = m.state === 'side' && m.side === hall.id;
+      }
+      expect(again).toBe(true);
     }
-    expect(inside).toBe(true);
-    expect(m.side).toBe(hall.id);
-    for (let t = 0; t < 2000 && m.state === 'side'; t++) sim.step();
-    expect(m.state).toBe('track');
-    expect(Math.abs(loopDelta(hall.b, m.s, length))).toBeLessThan(m.speed + 1);
-    expect(m.p).toBe(1);
-    // It covered the stretch of loop between the ends, not the road it took.
-    expect(m.progress).toBeGreaterThan(wrap(hall.b - hall.a, length));
   });
 
   it("the mansion's hall is left to the outer lanes, cars and predators", () => {
     const sim = mansionSim();
     const hall = road(sim, 'hall');
-    (sim as unknown as { rng: () => number }).rng = () => 0;
     const length = sim.park.track.length;
     const movers = [
-      put(sim, 'walker', wrap(hall.a - 5, length), 2),
+      put(sim, 'walker', wrap(hall.a - 5, length), 1),
       put(sim, 'car', wrap(hall.a - 60, length), 0),
     ];
     for (let t = 0; t < 120; t++) {
