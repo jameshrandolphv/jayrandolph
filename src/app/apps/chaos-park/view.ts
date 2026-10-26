@@ -41,7 +41,6 @@ import {
 } from './art';
 import {
   BACK_BUTTON,
-  STREAK_LAPS,
   BUTTON_TEXT,
   CARD,
   HELP_CARD,
@@ -128,6 +127,8 @@ interface MoverView {
   daze: Graphics;
   /** A biker's "Out of my way!", made when first needed. */
   shout: Container | null;
+  /** What its shout bubble says. */
+  shoutText: string;
   warn: Container;
   badge: Container;
   /** What the badge shows now, so it is only rebuilt when that changes. */
@@ -152,6 +153,36 @@ interface Counter {
 
 const COUNTER = { w: 108, h: 36, digits: 5 };
 /** The streak's glow round the edges of the screen: how far in it reaches, in how many bands. */
+/**
+ * Visitors on foot now and then remark on the day: each in one in `CHAT_ODDS` stretches of `CHAT_EVERY` ticks, at the
+ * start of it, for `CHAT_TICKS`. Only for show.
+ */
+const CHAT_EVERY = 900;
+const CHAT_ODDS = 7;
+const CHAT_TICKS = 150;
+const CHATTY = new Set(['walker', 'runner', 'dog', 'slow', 'pair']);
+const CHATTER = ['Nice day out', 'I need some pizza', "It's too crowded", 'These bikers are flying!', "I'm tired"];
+/** More lines said only in winter. */
+const CHATTER_WINTER = ['Brrr'];
+
+/** Someone on foot remarking on the day, now and then: the ticks of it left and what they say, if talking now. */
+export const chatter = (sim: ChaosParkSim, m: Mover): [number, string] | null => {
+  if (sim.phase !== 'playing' || m.state !== 'track' || !CHATTY.has(m.kind)) return null;
+  const t = sim.clock + m.id * 311;
+  const stretch = Math.floor(t / CHAT_EVERY);
+  if ((stretch + m.id * 3) % CHAT_ODDS !== 0) return null;
+  const left = CHAT_TICKS - (t % CHAT_EVERY);
+  const lines = sim.park.season === 'winter' ? [...CHATTER, ...CHATTER_WINTER] : CHATTER;
+  return left > 0 ? [left, lines[(stretch + m.id) % lines.length]!] : null;
+};
+
+/**
+ * What the middle of the screen says as each streak is reached: "STREAK", then "2X STREAK", "3X STREAK" and so on.
+ * `value` is what a lap is worth (see `streakValue`), so the first streak is 2.
+ */
+export const streakWords = (value: number): string =>
+  value - 1 <= 1 ? 'STREAK' : `${value - 1}X STREAK`;
+
 const STREAK_GLOW_WIDTH = 44;
 const STREAK_GLOW_BANDS = 10;
 /** Ticks the streak's words stay up (popping in, then fading), and when the glow starts to come up. */
@@ -198,7 +229,7 @@ export class ChaosParkView {
   private readonly duskShade = new Graphics();
   private readonly lights = new Graphics();
   /**
-   * "10 STREAK" in the middle of the screen for a moment as each streak is reached, then a glow round the edges of the
+   * "STREAK", "2X STREAK"... in the middle of the screen for a moment as each streak is reached, then a glow round the edges of the
    * screen for as long as it lasts.
    */
   private readonly streakText: Text;
@@ -554,6 +585,7 @@ export class ChaosParkView {
       streaks,
       daze,
       shout: null,
+      shoutText: '',
       warn,
       badge,
       badgeKey: '',
@@ -578,19 +610,34 @@ export class ChaosParkView {
     this.views.delete(id);
   }
 
-  /** Pops a biker's shout up over its badge, then fades it away. */
+  /** Pops a biker's shout up over its badge, then fades it away; and now and then someone's remark on the day. */
   private syncShout(v: MoverView, m: Mover, up: { x: number; y: number }): void {
-    if (m.shout <= 0) {
+    let left = m.shout;
+    let text = 'Out of my way!';
+    let total = SHOUT_TICKS;
+    if (left <= 0) {
+      const chat = chatter(this.game.sim, m);
+      if (chat) {
+        [left, text] = chat;
+        total = CHAT_TICKS;
+      }
+    }
+    if (left <= 0) {
       if (v.shout) v.shout.visible = false;
       return;
     }
+    if (v.shout && v.shoutText !== text) {
+      v.shout.destroy({ children: true });
+      v.shout = null;
+    }
     if (!v.shout) {
-      v.shout = speechBubble('Out of my way!');
+      v.shout = speechBubble(text);
+      v.shoutText = text;
       this.badges.addChild(v.shout);
     }
-    const age = SHOUT_TICKS - m.shout;
+    const age = total - left;
     v.shout.visible = true;
-    v.shout.alpha = 0.92 * Math.min(1, age / 6, m.shout / 16) * m.alpha;
+    v.shout.alpha = 0.92 * Math.min(1, age / 6, left / 16) * m.alpha;
     v.shout.scale.set((0.7 + 0.3 * easeOut(age / 8)) * ART);
     v.shout.rotation = -this.world.rotation;
     const lift = (BADGE_R + 2) * ART;
@@ -797,7 +844,7 @@ export class ChaosParkView {
     if (value !== this.shownStreak) {
       if (value > this.shownStreak && this.shownStreak >= 1) {
         this.streakAt = sim.clock;
-        this.streakText.text = `${(value - 1) * STREAK_LAPS} STREAK`;
+        this.streakText.text = streakWords(value);
       }
       this.shownStreak = value;
     }

@@ -18,22 +18,26 @@ export type Obstacle = 'slip' | 'steer' | 'slime';
  * A course's own event, on its own timer from `EVENT_FROM_SCORE` laps:
  * - hook: a fisherman on the bank casts into one lane, and whoever swims into the hook is reeled out, their laps lost
  *   but no life;
- * - tumbleweed: rolls across every lane at one spot, and whoever it touches has collided;
+ * - tumbleweed: rolls across every lane at one spot, and whoever it touches is stunned (no life lost);
  * - sting / haunt: like the rat, a bee or a ghost goes for someone, who then swerves from lane to lane for
  *   `SWERVE_TICKS` (and a ghost speeds them up and slows them down too).
  */
 export type CourseEvent = 'none' | 'hook' | 'tumbleweed' | 'sting' | 'haunt';
 
-/** A stretch of the loop drawn under cover: an arch of rock, or a big vine across the road. */
-export type Cover = 'none' | 'arch' | 'vine';
+/**
+ * A stretch of the loop drawn under cover: an old train bridge across the canyon (where a coyote now and then drops
+ * TNT, see `TNT_FROM_SCORE`), or a big vine across the road.
+ */
+export type Cover = 'none' | 'trestle' | 'vine';
 
 /**
  * The shape of a course's road:
  * - loop: a rounded rectangle with a few gentle bends (bent further by `bend`, and winding like a river if `river`);
  * - switchback: an uneven polygon of straights and tight corners, like a road through a canyon;
  * - eight: a figure of eight, one way over the other on a bridge where they cross;
- * - manor: a formal drive, a rectangle with its corners cut off, round a house in the middle with a hall through it
- *   from one side of the road to the other that people now and then take (see `Shortcut`).
+ * - manor: a formal drive, a rectangle with its corners cut off, round a house in the middle, with a two-lane hall
+ *   through the house that people on the inner lanes now and then take, and a winding graveyard road that everyone
+ *   on the inside lane takes, coming back on behind where they left (see `SideRoad`).
  */
 export type Layout = 'loop' | 'switchback' | 'eight' | 'manor';
 
@@ -80,7 +84,8 @@ export interface CourseSpec {
   waves: boolean;
   /**
    * Whether the carriage is a train instead: one lane wide (`TRAIN_LEN` long), always in lane `TRAIN_LANE`, never
-   * moved by a swipe, an obstacle or a pick-up, and only ever one of it.
+   * moved out of it by a swipe, an obstacle or a pick-up (though a swipe along it speeds it up and slows it back
+   * down), and only ever one of it.
    */
   train: boolean;
   /**
@@ -93,6 +98,13 @@ export interface CourseSpec {
    * and step back into them as soon as their laps are done (see `WILD_DEPTH`).
    */
   wild: boolean;
+  /**
+   * Whether a river crosses one half of the course, under a bridge on each side, with its own traffic (see `River`
+   * and `RIVER_KINDS`).
+   */
+  riverCrossing: boolean;
+  /** How fast its bikers go, next to Chaos Park's: the jungle's gorillas are a little slower. */
+  bikerPace: number;
   /**
    * The score on this course that unlocks the next: a bronze medal, the same on every course. Medals go by
    * `BRONZE_SCORE`, `SILVER_SCORE` and `GOLD_SCORE`.
@@ -123,6 +135,8 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     train: false,
     slowCars: false,
     wild: false,
+    riverCrossing: false,
+    bikerPace: 1,
     unlock: 25,
   },
   waters: {
@@ -147,6 +161,8 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     train: false,
     slowCars: false,
     wild: false,
+    riverCrossing: false,
+    bikerPace: 1,
     unlock: 25,
   },
   canyon: {
@@ -164,13 +180,15 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     predator: true,
     obstacle: 'steer',
     event: 'tumbleweed',
-    cover: 'arch',
+    cover: 'trestle',
     paths: false,
     rapids: false,
     waves: false,
     train: true,
     slowCars: true,
     wild: false,
+    riverCrossing: false,
+    bikerPace: 1,
     unlock: 25,
   },
   jungle: {
@@ -195,6 +213,8 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     train: false,
     slowCars: false,
     wild: true,
+    riverCrossing: true,
+    bikerPace: 0.8,
     unlock: 25,
   },
   mansion: {
@@ -219,6 +239,8 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     train: false,
     slowCars: false,
     wild: false,
+    riverCrossing: false,
+    bikerPace: 1,
     unlock: 25,
   },
 };
@@ -256,6 +278,68 @@ export const WILD_DEPTH = 30;
 export const WILD_GAP = 120;
 /** A wild course's visitor doesn't leave for the trees from a bridge, or within this of either end of it. */
 export const BRIDGE_EXIT_CLEAR = 40;
+/** Nor does one come out of the trees, or go into them, within this of a river's banks. */
+export const RIVER_SPAWN_CLEAR = 14;
+
+/**
+ * A river crossing a course (see `CourseSpec.riverCrossing`): `RIVER_LANES` lanes, its traffic all going downstream.
+ * Each one through scores like a lap. What comes down it, by kind: a swimmer (a walker), a long canoe (a biker), a
+ * fishing boat two lanes wide (a car) and an alligator (the predator), each with its own speed and length here, at
+ * the design lane width (scaled like `KIND_SPECS`).
+ */
+export const RIVER_LANES = 3;
+export const RIVER_KINDS: readonly {
+  kind: 'walker' | 'biker' | 'car';
+  speed: number;
+  len: number;
+  weight: number;
+}[] = [
+  { kind: 'walker', speed: 0.6, len: 14, weight: 0.4 },
+  { kind: 'biker', speed: 1.25, len: 52, weight: 0.35 },
+  { kind: 'car', speed: 0.55, len: 40, weight: 0.25 },
+];
+export const RIVER_GATOR = { speed: 1.1, len: 30 };
+/**
+ * The river's plank bridge (see `River.gaps`): someone one lane wide who walks onto a missing plank, within
+ * `PLANK_ZONE` of the middle of the river, falls in and is carried down it at `PLANK_FALL_SPEED` (at the design lane
+ * width), scoring at the end like any river traffic. Anyone wider (and a carriage, a predator or anyone on
+ * autopilot) steps across into lanes with planks once within `PLANK_LOOK` of it. Someone heading for a gap shows a
+ * warning from `PLANK_WARN` ticks away.
+ */
+export const PLANK_ZONE = 12;
+export const PLANK_FALL_SPEED = 0.7;
+export const PLANK_LOOK = 80;
+export const PLANK_WARN = 90;
+/**
+ * Dusty Canyon's old train bridge: from `TNT_FROM_SCORE` laps, every `TNT_INTERVAL` ticks, a coyote runs across it
+ * (`TNT_RUN` ticks from one rim to the other) and drops a stick of TNT onto the road beside it, `TNT_BESIDE` from its
+ * middle (at the design lane width), in the lane it was over. The TNT flashes for `TNT_FUSE` ticks (4 seconds), then
+ * goes off: whoever is in that lane within `TNT_BLAST` of it (and their own half length) is blown away, costing one
+ * life however many go. The train, anyone invisible and anyone with a star are safe. Anyone heading into it shows a
+ * warning from `TNT_WARN` ticks away.
+ */
+export const TNT_FROM_SCORE = 15;
+export const TNT_INTERVAL: readonly [number, number] = [40 * 60, 75 * 60];
+export const TNT_RUN = 80;
+export const TNT_BESIDE = 40;
+export const TNT_FUSE = 4 * 60;
+export const TNT_BLAST = 22;
+export const TNT_WARN = 90;
+/**
+ * River traffic comes from `RIVER_FROM_SCORE` laps, one every `RIVER_INTERVAL` ticks, up to `riverMax` of it at once;
+ * an alligator every `GATOR_INTERVAL` from `GATOR_FROM_SCORE`, one at a time.
+ */
+export const RIVER_FROM_SCORE = 2;
+export const RIVER_INTERVAL: readonly [number, number] = [150, 360];
+export const riverMax = (level: number): number => Math.min(4, 1 + Math.floor(level / 10));
+export const GATOR_FROM_SCORE = 8;
+export const GATOR_INTERVAL: readonly [number, number] = [30 * 60, 55 * 60];
+/**
+ * An alligator reaching a bridge has this chance of climbing out onto the trail, where it hunts like the course's
+ * predator for `GATOR_WALK` of a lap before going off into the trees.
+ */
+export const GATOR_CLIMB = 0.35;
+export const GATOR_WALK = 0.35;
 
 /** Medal scores, the same on every course. */
 export const BRONZE_SCORE = 25;

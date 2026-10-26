@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.10.1
+- A marketing contact page at `/marketing`
+- Chaos Park (rules for the apps' Dusty Canyon): the arch is now an old train bridge; from 15 laps a coyote now and then runs across it and drops TNT in one lane, which flashes for 4 seconds and blows away anyone close by in that lane, costing a life
+- Chaos Park (rules for the apps' Jungle Jam): the river winds in from the middle of the screen in a broad curve through the far half and back; the first bridge it reaches is of long planks, one a lane, with one missing, and anyone one lane wide who walks onto the gap falls in, floats down the river and scores a point at the end (anyone wider steps across); from level 50 a second plank goes. The jungle's gorillas are a little slower
+- Chaos Park: streaks say "STREAK", then "2X STREAK", "3X STREAK" and so on (the scoring is the same)
+- Chaos Park (rules shared with the iOS and Android apps, whose courses have predators): a predator stops changing lanes once it's about to catch someone, so moving them out of its lane in time gets them away
+- Chaos Park (rules shared with the apps' Dusty Canyon): a tumbleweed stuns whoever it rolls into but no longer costs a life
+- Chaos Park: visitors waiting to come in stand far enough back that they don't poke into the road
+- Chaos Park: the carriage's horse trots, its legs, head and tail moving as it goes
+- Chaos Park: now and then a visitor on foot remarks on the day ("Nice day out")
+- Chaos Park: run groups pick up tokens too, all but a duplicate
+- Chaos Park (rules for the apps' courses, which the web sim holds): Jungle Jam gets a three-lane river across its far half under two bridges, with swimmers, canoes, fishing boats and alligators that each score a point when they get across; alligators hunt swimmers and sometimes climb out onto the trail. The Haunted Mansion gets a two-lane hall through the house and a graveyard road with their own traffic
+
 ## 1.10.0
 - Chaos Park 1.1: the difficulty climbs much more slowly after 10 laps (at 0.4 of the rate, so laps 10 to 35 play like 10 to 20 used to), and a visitor more can come in every 5 levels instead of 4. From 150 laps one more can come in every 10 laps, up to 26
 - Chaos Park: patches arrive at 50 and 100 laps (were 25, 50 and 100), the second carriage at 110 laps (was 10), and run groups from 12 laps, every 20 to 50 seconds until 50 laps

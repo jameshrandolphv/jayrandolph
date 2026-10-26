@@ -14,6 +14,11 @@ export const routes: Routes = [
     path: 'chaos-park/support',
     loadComponent: () => import('./apps/chaos-park/info-pages').then((m) => m.ChaosParkSupport),
   },
+  // And who to contact about marketing.
+  {
+    path: 'marketing',
+    loadComponent: () => import('./apps/chaos-park/info-pages').then((m) => m.Marketing),
+  },
   ...APPS.map((app) => ({
     path: app.id,
     loadComponent: app.load,

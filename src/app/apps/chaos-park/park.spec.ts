@@ -11,6 +11,7 @@ import {
   loopDelta,
   maxCurvature,
   polylineDistance,
+  openPose,
   pose,
   seededRng,
   wrap,
@@ -107,11 +108,82 @@ describe('generatePark', () => {
           expect(out, `${id} ${frame.w}x${frame.h}, seed ${seed}`).toEqual([]);
           expect(maxCurvature(park.track) * park.half).toBeLessThan(0.9);
           if (course.layout === 'eight') expect(park.bridge).not.toBeNull();
-          if (course.layout === 'manor' && frame.h > 500) expect(park.shortcuts).toHaveLength(1);
+          // A hall through the house: a road where it fits, otherwise a path.
+          if (course.layout === 'manor' && frame.h > 500)
+            expect(
+              park.sideRoads.filter((r) => r.kind === 'hall').length + park.shortcuts.length,
+            ).toBe(1);
         }
       }
     });
   }
+
+  it("runs a river across the jungle's far half, under the loop on a bridge each side", () => {
+    const frames: ParkFrame[] = [
+      { w: 860, h: 600, hud: 'top' },
+      { w: 1040, h: 560, hud: 'top' },
+      { w: 1342, h: 1004, hud: 'top' },
+      { w: 852, h: 393, hud: 'left' },
+    ];
+    for (const frame of frames)
+      for (const seed of [1, 2, 3]) {
+        const park = generatePark(seededRng(seed), undefined, frame, COURSES.jungle);
+        const { river, track, bridge } = park;
+        expect(river).not.toBeNull();
+        const { points } = river!.track;
+        // From beyond one edge of the screen to beyond the other.
+        const ys = [points[0]!.y, points[points.length - 1]!.y].sort((a, b) => a - b);
+        expect(ys[0]).toBeLessThan(0);
+        expect(ys[1]).toBeGreaterThan(frame.h);
+        expect(river!.bridges).toHaveLength(2);
+        const [a, b] = river!.bridges;
+        expect(a!.at).toBeLessThan(b!.at);
+        for (const { at, over } of river!.bridges) {
+          // The loop over the river where the bridge is.
+          const under = openPose(river!.track, at);
+          const mid = pose(track, over.s + over.len / 2);
+          expect(Math.hypot(under.x - mid.x, under.y - mid.y)).toBeLessThan(park.half);
+          // Well clear of where the figure of eight crosses itself.
+          for (const c of [bridge!.over, bridge!.under])
+            expect(
+              Math.abs(loopDelta(c.s + c.len / 2, over.s + over.len / 2, track.length)),
+            ).toBeGreaterThan((c.len + over.len) / 2);
+        }
+        // No trees in the water.
+        for (const t of park.trees) expect(polylineDistance(points, t)).toBeGreaterThan(t.r);
+      }
+    // Other courses have none.
+    expect(generatePark(seededRng(1), undefined, undefined, COURSES.mansion).river).toBeNull();
+  });
+
+  it('gives a manor a two-lane hall and a graveyard road on screens with room for them', () => {
+    for (const frame of [
+      FRAMES[0]!,
+      { w: 1040, h: 560, hud: 'top' as const },
+      { w: 1342, h: 1004, hud: 'top' as const },
+      // A phone held upright: the grounds are shallow, so the graveyard road is a flat loop under the drive.
+      { w: 852, h: 393, hud: 'left' as const },
+    ])
+      for (const seed of SEEDS.slice(0, 6)) {
+        const park = generatePark(seededRng(seed), undefined, frame, COURSES.mansion);
+        expect(
+          park.sideRoads.map((r) => r.kind),
+          `${frame.w}x${frame.h}, seed ${seed}`,
+        ).toEqual(['hall', 'graveyard']);
+        const grave = park.sideRoads[1]!;
+        // It comes back on behind where it left.
+        expect(loopDelta(grave.a, grave.b, park.track.length)).toBeLessThan(0);
+        // Each end runs along the loop's inner two lanes.
+        for (const [s, end] of [
+          [grave.a, 0],
+          [grave.b, grave.track.length],
+        ] as const) {
+          const on = pose(park.track, s, -park.half + park.laneW);
+          const at = openPose(grave.track, end);
+          expect(Math.hypot(on.x - at.x, on.y - at.y)).toBeLessThan(1);
+        }
+      }
+  });
 
   it('runs counterclockwise on screen with the normals pointing out', () => {
     for (const seed of SEEDS.slice(0, 10)) {

@@ -17,6 +17,7 @@ import {
   COURSES,
   RAPIDS_LEN,
   RAPIDS_LANES,
+  RIVER_LANES,
   TRAIN_LANE,
   type CourseId,
   type CourseSpec,
@@ -104,6 +105,32 @@ export interface Shortcut {
   path: Point[];
 }
 
+/**
+ * A two-lane road off the loop's inner two lanes and back onto them, with its own traffic (see `SideRoadKind`): it
+ * leaves along the loop at `a` and comes back on along it at `b`, so a lane on it lines up with the same lane of the
+ * loop at both ends.
+ */
+export interface SideRoad {
+  id: number;
+  kind: SideRoadKind;
+  a: number;
+  b: number;
+  /** Its centre line from the `a` end to the `b` end, its normals on the same side as the loop's. */
+  track: Track;
+  /** Comes back on behind where it left (`b` before `a`), so whoever takes it does that stretch again. */
+  back: boolean;
+}
+
+/**
+ * - hall: through the manor's house, straight across the middle; some on the inner two lanes take it.
+ * - graveyard: a winding detour through a manor's graveyard that comes back on behind where it left; everyone on the
+ *   inside lane takes it.
+ */
+export type SideRoadKind = 'hall' | 'graveyard';
+
+/** Lanes on a side road: the loop's inner two. */
+export const SIDE_LANES = 2;
+
 export interface Water {
   kind: 'reservoir' | 'lake';
   outline: Point[];
@@ -168,6 +195,33 @@ export interface Bridge {
   at: Point;
 }
 
+/**
+ * A river across one half of a course (see `CourseSpec.riverCrossing`), `RIVER_LANES` lanes wide, with its own
+ * traffic. Its centre line runs from beyond one edge of the frame, where its traffic comes in, to beyond the other,
+ * where it goes out; the loop crosses it on a bridge each side of that half.
+ */
+export interface River {
+  track: Track;
+  /**
+   * Where the loop crosses it, in order downstream: how far along the river, the stretch of loop on the bridge, and
+   * where along the loop its centre line crosses the river's. The first is a bridge of long planks, one a lane, with
+   * `gaps` missing (see `PLANK_GAP_LEVEL`).
+   */
+  bridges: RiverBridge[];
+  /**
+   * The lanes of the plank bridge with no plank: the first from the start, the second once the level reaches
+   * `PLANK_GAP_LEVEL`. However many are gone, a two-lane visitor still has room to cross.
+   */
+  gaps: number[];
+}
+
+export interface RiverBridge {
+  at: number;
+  over: Covered;
+  cross: number;
+  planks: boolean;
+}
+
 export interface Park {
   season: Season;
   frame: ParkFrame;
@@ -184,6 +238,10 @@ export interface Park {
   track: Track;
   entrances: Entrance[];
   shortcuts: Shortcut[];
+  /** Roads off the loop and back, on a manor (see `SideRoad`). */
+  sideRoads: SideRoad[];
+  /** The river crossing the course, on a course with one. */
+  river: River | null;
   water: Water[];
   fields: Field[];
   /** Footpaths drawn for show; nobody uses them but the short cuts. */
@@ -1021,10 +1079,437 @@ const makeShortcuts = (
  * entrances.
  */
 const makeHall = (track: Track, entrances: readonly Entrance[], half: number): Shortcut[] => {
+  const ends = hallEnds(track, entrances);
+  if (!ends) return [];
+  const { a, b } = ends;
+  const pa = pose(track, a, -half - 2);
+  const pb = pose(track, b, -half - 2);
+  const path = cubic(
+    pa,
+    { x: pa.x + (pb.x - pa.x) / 3, y: pa.y + (pb.y - pa.y) / 3 },
+    { x: pa.x + ((pb.x - pa.x) * 2) / 3, y: pa.y + ((pb.y - pa.y) * 2) / 3 },
+    pb,
+    20,
+  );
+  return [{ id: 0, a, b, path }];
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// Side roads.
+
+/** Where a side road's samples are, about this far apart. */
+const SIDE_STEP = 4;
+/** The tightest a side road bends: its inside edge turning round this far from its middle. */
+const SIDE_BEND_ROOM = 2;
+/** How far either end of a side road may run over the loop's road before it must be clear of it. */
+const SIDE_MERGE = 110;
+
+/**
+ * An open road through `raw` (a polyline), resampled every `SIDE_STEP` px or so, its normals on the side `flip` picks
+ * as `buildTrack` does (so they match the loop's where it joins it).
+ */
+const openTrack = (raw: readonly Point[], flip: number): Track => {
+  const lengths = [0];
+  for (let i = 1; i < raw.length; i++)
+    lengths.push(
+      lengths[i - 1]! + Math.hypot(raw[i]!.x - raw[i - 1]!.x, raw[i]!.y - raw[i - 1]!.y),
+    );
+  const length = lengths[raw.length - 1]!;
+  const n = Math.max(2, Math.round(length / SIDE_STEP) + 1);
+  const step = length / (n - 1);
+  const points: Point[] = [];
+  let k = 0;
+  for (let i = 0; i < n; i++) {
+    const at = Math.min(i * step, length);
+    while (k < raw.length - 2 && lengths[k + 1]! < at) k++;
+    const t = (at - lengths[k]!) / (lengths[k + 1]! - lengths[k]! || 1);
+    const a = raw[k]!;
+    const b = raw[k + 1]!;
+    points.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  }
+  const tangents = points.map((_, i) => {
+    const a = points[Math.max(0, i - 1)]!;
+    const b = points[Math.min(n - 1, i + 1)]!;
+    const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    return { x: (b.x - a.x) / l, y: (b.y - a.y) / l };
+  });
+  const normals = tangents.map((t) => ({ x: t.y * flip, y: -t.x * flip }));
+  return { points, tangents, normals, length, step };
+};
+
+/** The point `d` px out from an open road's centre line at `s` (held to its ends), and the direction there. */
+export const openPose = (track: Track, s: number, d = 0): Pose => {
+  const { points, normals, tangents, step } = track;
+  const n = points.length;
+  const f = Math.max(0, Math.min(n - 1, s / step));
+  const i = Math.min(n - 2, Math.floor(f));
+  const j = i + 1;
+  const t = f - i;
+  const nx = normals[i]!.x + (normals[j]!.x - normals[i]!.x) * t;
+  const ny = normals[i]!.y + (normals[j]!.y - normals[i]!.y) * t;
+  const nl = Math.hypot(nx, ny) || 1;
+  const tx = tangents[i]!.x + (tangents[j]!.x - tangents[i]!.x) * t;
+  const ty = tangents[i]!.y + (tangents[j]!.y - tangents[i]!.y) * t;
+  return {
+    x: points[i]!.x + (points[j]!.x - points[i]!.x) * t + (nx / nl) * d,
+    y: points[i]!.y + (points[j]!.y - points[i]!.y) * t + (ny / nl) * d,
+    angle: Math.atan2(ty, tx),
+  };
+};
+
+/**
+ * A smooth curve through `knots`, leaving the first along `start` and arriving at the last along `end` (unit
+ * vectors): Catmull-Rom between the knots, as cubic pieces of `SPLINE_STEPS` points each.
+ */
+const SPLINE_STEPS = 16;
+const spline = (knots: readonly Point[], start: Point, end: Point): Point[] => {
+  const n = knots.length;
+  const tangent = (i: number): Point => {
+    if (i === 0) {
+      const l = Math.hypot(knots[1]!.x - knots[0]!.x, knots[1]!.y - knots[0]!.y);
+      return { x: start.x * l, y: start.y * l };
+    }
+    if (i === n - 1) {
+      const l = Math.hypot(knots[n - 1]!.x - knots[n - 2]!.x, knots[n - 1]!.y - knots[n - 2]!.y);
+      return { x: end.x * l, y: end.y * l };
+    }
+    return {
+      x: (knots[i + 1]!.x - knots[i - 1]!.x) / 2,
+      y: (knots[i + 1]!.y - knots[i - 1]!.y) / 2,
+    };
+  };
+  const out: Point[] = [knots[0]!];
+  for (let i = 0; i < n - 1; i++) {
+    const a = knots[i]!;
+    const b = knots[i + 1]!;
+    const ta = tangent(i);
+    const tb = tangent(i + 1);
+    const piece = cubic(
+      a,
+      { x: a.x + ta.x / 3, y: a.y + ta.y / 3 },
+      { x: b.x - tb.x / 3, y: b.y - tb.y / 3 },
+      b,
+      SPLINE_STEPS,
+    );
+    out.push(...piece.slice(1));
+  }
+  return out;
+};
+
+/** Which way the loop's normals turn from its tangents: 1 if they are the tangents turned as `buildTrack` turns them. */
+const flipOf = (track: Track): number => {
+  const t = track.tangents[0]!;
+  const n = track.normals[0]!;
+  return n.x * t.y - n.y * t.x > 0 ? 1 : -1;
+};
+
+/**
+ * Whether a side road is clear of the loop (bar its ends, where it runs onto it), of itself where it doubles back,
+ * and of the other side roads.
+ */
+const sideRoadFits = (
+  road: Track,
+  track: Track,
+  half: number,
+  laneW: number,
+  others: readonly Track[],
+): boolean => {
+  const edgeOut = laneW + 6;
+  const inner = edge(track, -half - 4);
+  const { points, normals } = road;
+  const skip = Math.ceil(SIDE_MERGE / road.step);
+  for (let i = skip; i < points.length - skip; i++) {
+    for (const k of [-1, 1]) {
+      const p = points[i]!;
+      const x = p.x + normals[i]!.x * k * edgeOut;
+      const y = p.y + normals[i]!.y * k * edgeOut;
+      if (!insidePolygon(inner, x, y)) return false;
+      if (nearPolyline(inner, { x, y }, 8, true)) return false;
+    }
+  }
+  // Never bending so tightly that its inside edge folds over.
+  const { tangents } = road;
+  const span = 2;
+  const most = (2 * span * road.step) / (laneW + SIDE_BEND_ROOM);
+  for (let i = span; i < points.length - span; i++) {
+    const a = tangents[i - span]!;
+    const b = tangents[i + span]!;
+    if (Math.abs(Math.atan2(a.x * b.y - a.y * b.x, a.x * b.x + a.y * b.y)) > most) return false;
+  }
+  // Where it doubles back, its two stretches keep a road's width and a verge apart.
+  const apart = 2 * edgeOut + 10;
+  const gap = Math.ceil((3 * apart) / road.step);
+  for (let i = skip; i < points.length - skip; i += 2)
+    for (let j = i + gap; j < points.length - skip; j += 2)
+      if (Math.hypot(points[i]!.x - points[j]!.x, points[i]!.y - points[j]!.y) < apart)
+        return false;
+  for (const o of others)
+    for (let i = 0; i < points.length; i += 2)
+      if (nearPolyline(o.points, points[i]!, apart + 4)) return false;
+  return true;
+};
+
+/**
+ * A manor's side roads: the hall, through the house from the top of the drive to the bottom, and the graveyard
+ * road, hanging off one end of the drive into the grounds and back, coming on again behind where it left. Either is
+ * left out where the grounds are too small for it.
+ */
+const makeSideRoads = (
+  track: Track,
+  entrances: readonly Entrance[],
+  half: number,
+  laneW: number,
+): SideRoad[] => {
+  // The hall across the middle; where that leaves no room for the graveyard road, as on a phone, off to one side.
+  const first = sideRoadsWith(track, entrances, half, laneW, 0.5);
+  if (first.length > 1) return first;
+  for (const at of HALL_ASIDE) {
+    const roads = sideRoadsWith(track, entrances, half, laneW, at);
+    if (roads.length > 1) return roads;
+  }
+  return first;
+};
+
+/** A manor's side roads with the hall `at` that share of the way along the drive. */
+const sideRoadsWith = (
+  track: Track,
+  entrances: readonly Entrance[],
+  half: number,
+  laneW: number,
+  at: number,
+): SideRoad[] => {
+  const { length } = track;
+  const flip = flipOf(track);
+  const centre = -half + laneW;
+  const out: SideRoad[] = [];
+  const clear = (s: number, by: number) =>
+    entrances.every((e) => Math.abs(loopDelta(e.s, s, length)) > by);
+  const ends = hallEnds(track, entrances, at);
+  if (ends) {
+    const { a, b } = ends;
+    const pa = pose(track, a, centre);
+    const pb = pose(track, b, centre);
+    const ta = { x: Math.cos(pa.angle), y: Math.sin(pa.angle) };
+    const tb = { x: Math.cos(pb.angle), y: Math.sin(pb.angle) };
+    const span = Math.hypot(pb.x - pa.x, pb.y - pa.y);
+    // Pulled along the drive as far as it can be and still fit.
+    for (const share of HALL_PULLS) {
+      const pull = span * share;
+      const raw = cubic(
+        pa,
+        { x: pa.x + ta.x * pull, y: pa.y + ta.y * pull },
+        { x: pb.x - tb.x * pull, y: pb.y - tb.y * pull },
+        pb,
+        48,
+      );
+      const road = openTrack(raw, flip);
+      if (!sideRoadFits(road, track, half, laneW, [])) continue;
+      out.push({ id: 0, kind: 'hall', a, b, track: road, back: false });
+      break;
+    }
+  }
+  // The graveyard road: off a straight stretch of the drive, as deep into the grounds as it can go, as near the
+  // middle of one end of the drive as it can be.
+  const hall = out.map((r) => r.track);
+  const xs = track.points.map((p) => p.x);
+  const midX = out.length
+    ? track.points[Math.round(out[0]!.a / track.step) % track.points.length]!.x
+    : (Math.min(...xs) + Math.max(...xs)) / 2;
+  // The middle of each end of the drive, up and down.
+  const endMid = [-1, 1].map((side) => {
+    const ys = track.points.flatMap((p, i) => (track.normals[i]!.x * side >= 0.9 ? [p.y] : []));
+    return ys.length ? (Math.min(...ys) + Math.max(...ys)) / 2 : 0;
+  });
+  const spots: { s: number; rank: number }[] = [];
+  const every = Math.max(1, Math.round(GRAVE_EVERY / track.step));
+  for (let i = 0; i < track.points.length; i += every) {
+    const n = track.normals[i]!;
+    const p = track.points[i]!;
+    // Nearest the middle of an end first, then along the top and bottom, furthest from the hall first.
+    if (Math.abs(n.x) >= 0.9)
+      spots.push({ s: i * track.step, rank: Math.abs(p.y - endMid[n.x < 0 ? 0 : 1]!) });
+    else if (Math.abs(n.y) >= 0.9)
+      spots.push({ s: i * track.step, rank: 1000 - Math.abs(p.x - midX) });
+  }
+  spots.sort((a, b) => a.rank - b.rank);
+  let found: SideRoad | null = null;
+  for (const depth of GRAVE_DEPTHS) {
+    for (const { s: sMid } of spots) {
+      const road = graveyardRoad(track, sMid, depth, centre, flip);
+      if (!road) continue;
+      const { a, b } = road;
+      if (!clear(a, 70) || !clear(b, 70)) continue;
+      if (
+        out.some(
+          (r) =>
+            Math.abs(loopDelta(r.a, a, length)) < 120 || Math.abs(loopDelta(r.b, b, length)) < 120,
+        )
+      )
+        continue;
+      if (!sideRoadFits(road.track, track, half, laneW, hall)) continue;
+      found = { id: out.length, kind: 'graveyard', a, b, track: road.track, back: true };
+      break;
+    }
+    if (found) break;
+  }
+  // Where the grounds are too shallow for that, as on a phone: a long, flat loop under one side of the drive,
+  // turning down off it, back along under it and up onto it again behind where it left.
+  for (const gap of found ? [] : FLAT_GAPS) {
+    for (const depth of FLAT_DEPTHS) {
+      for (const { s: sMid } of spots) {
+        const road = flatGraveyardRoad(track, sMid, depth, gap, centre, flip);
+        const { a, b } = road;
+        // Its ends are on the inner lanes, so they can be nearer the gates, which come in on the outer one.
+        if (!clear(a, 30) || !clear(b, 30)) continue;
+        if (
+          out.some(
+            (r) =>
+              Math.abs(loopDelta(r.a, a, length)) < 120 ||
+              Math.abs(loopDelta(r.b, b, length)) < 120,
+          )
+        )
+          continue;
+        if (!sideRoadFits(road.track, track, half, laneW, hall)) continue;
+        found = { id: out.length, kind: 'graveyard', a, b, track: road.track, back: true };
+        break;
+      }
+      if (found) break;
+    }
+    if (found) break;
+  }
+  if (found) out.push(found);
+  return out;
+};
+
+/**
+ * A flat graveyard road under the drive round `sMid`: off the drive ahead of it, turning back under it `depth` in,
+ * and up onto it again `gap` behind where it left.
+ */
+const flatGraveyardRoad = (
+  track: Track,
+  sMid: number,
+  depth: number,
+  gap: number,
+  centre: number,
+  flip: number,
+): { a: number; b: number; track: Track } => {
+  const { length } = track;
+  const a = wrap(sMid + gap / 2, length);
+  const b = wrap(sMid - gap / 2, length);
+  const pa = pose(track, a, centre);
+  const pb = pose(track, b, centre);
+  const u = { x: Math.cos(pa.angle), y: Math.sin(pa.angle) };
+  const na = pose(track, a, centre + 1);
+  const v = { x: pa.x - na.x, y: pa.y - na.y };
+  const vl = Math.hypot(v.x, v.y) || 1;
+  v.x /= vl;
+  v.y /= vl;
+  const at = (du: number, dv: number): Point => ({
+    x: pa.x + u.x * du + v.x * dv,
+    y: pa.y + u.y * du + v.y * dv,
+  });
+  const back = (pb.x - pa.x) * u.x + (pb.y - pa.y) * u.y;
+  // A half circle down off the drive, the straight back under it, and a half circle up onto it.
+  const turn = depth / 2;
+  const raw: Point[] = [];
+  for (let k = 0; k <= FLAT_TURN_STEPS; k++) {
+    const th = (k / FLAT_TURN_STEPS) * Math.PI;
+    raw.push(at(turn * Math.sin(th), turn - turn * Math.cos(th)));
+  }
+  for (let k = 0; k <= FLAT_TURN_STEPS; k++) {
+    const th = (k / FLAT_TURN_STEPS) * Math.PI;
+    raw.push(at(back - turn * Math.sin(th), turn + turn * Math.cos(th)));
+  }
+  raw[raw.length - 1] = { x: pb.x, y: pb.y };
+  return { a, b, track: openTrack(raw, flip) };
+};
+
+/** A graveyard road round the middle of the drive at `sMid`, `depth` into the grounds. */
+const graveyardRoad = (
+  track: Track,
+  sMid: number,
+  depth: number,
+  centre: number,
+  flip: number,
+): { a: number; b: number; track: Track } => {
+  const { length } = track;
+  // Leaves ahead of the middle and comes back on behind it.
+  const a = wrap(sMid + GRAVE_GAP / 2, length);
+  const b = wrap(sMid - GRAVE_GAP / 2, length);
+  const pa = pose(track, a, centre);
+  const pb = pose(track, b, centre);
+  const u = { x: Math.cos(pa.angle), y: Math.sin(pa.angle) };
+  // Into the grounds: against the loop's outward normal there.
+  const na = pose(track, a, centre + 1);
+  const v = { x: pa.x - na.x, y: pa.y - na.y };
+  const vl = Math.hypot(v.x, v.y) || 1;
+  v.x /= vl;
+  v.y /= vl;
+  const at = (du: number, dv: number): Point => ({
+    x: pa.x + u.x * du + v.x * dv,
+    y: pa.y + u.y * du + v.y * dv,
+  });
+  // Where the far end is along the drive from the near one (behind it, so negative).
+  const back = (pb.x - pa.x) * u.x + (pb.y - pa.y) * u.y;
+  const r = GRAVE_TURN;
+  const wig = GRAVE_WIGGLE;
+  const knots = [
+    { x: pa.x, y: pa.y },
+    at(r, r),
+    at(r + wig, depth * 0.55),
+    at(r * 0.5, depth),
+    at(back / 2, depth + wig),
+    at(back - r * 0.5, depth),
+    at(back - r - wig, depth * 0.55),
+    at(back - r, r),
+    { x: pb.x, y: pb.y },
+  ];
+  const tb = { x: Math.cos(pb.angle), y: Math.sin(pb.angle) };
+  return { a, b, track: openTrack(spline(knots, u, tb), flip) };
+};
+
+/** A side road as short cuts for the scenery to keep clear of: its centre line and a lane's width either side. */
+const sideClearance = (road: SideRoad, laneW: number): Shortcut[] =>
+  [-laneW, 0, laneW].map((d) => ({
+    id: -1,
+    a: road.a,
+    b: road.b,
+    path: road.track.points.map((p, i) => ({
+      x: p.x + road.track.normals[i]!.x * d,
+      y: p.y + road.track.normals[i]!.y * d,
+    })),
+  }));
+
+/** Where else along the drive the hall may go, as shares of the way along, to leave room for the graveyard road. */
+const HALL_ASIDE = [0.68, 0.32, 0.75, 0.25];
+/** How far the hall's ends pull it along the drive before it turns across, as a share of the way across: the first of these that fits. */
+const HALL_PULLS = [0.32, 0.4, 0.5, 0.6, 0.67, 0.25];
+/** The graveyard road: how far apart along the drive its ends are, how tight its turns, how much it winds, and how
+ * deep into the grounds it goes (the deepest that fits). */
+const GRAVE_GAP = 60;
+const GRAVE_TURN = 34;
+const GRAVE_WIGGLE = 14;
+const GRAVE_DEPTHS = [190, 170, 150, 130, 115, 100, 90];
+/** A flat graveyard road: how far apart along the drive its ends are, and how far under it it runs. */
+const FLAT_GAPS = [160, 130, 100, 80, 60, 40];
+const FLAT_DEPTHS = [74, 70, 66];
+const FLAT_TURN_STEPS = 24;
+/** How far apart along the drive the graveyard road's spots to try are. */
+const GRAVE_EVERY = 24;
+
+/**
+ * Where a manor's hall leaves the loop and comes back on: straight across the middle from the top of the loop to the
+ * bottom, clear of the entrances.
+ */
+const hallEnds = (
+  track: Track,
+  entrances: readonly Entrance[],
+  at = 0.5,
+): { a: number; b: number } | null => {
   const { normals, step, length, points } = track;
   const xs = points.map((p) => p.x);
-  const mid = (Math.min(...xs) + Math.max(...xs)) / 2;
-  const reach = (Math.max(...xs) - Math.min(...xs)) * 0.35;
+  const mid = Math.min(...xs) + (Math.max(...xs) - Math.min(...xs)) * at;
+  const reach = (Math.max(...xs) - Math.min(...xs)) * (at === 0.5 ? 0.35 : 0.1);
   const clear = (s: number) => entrances.every((e) => Math.abs(loopDelta(e.s, s, length)) > 70);
   const bottoms = normals.flatMap((n, i) => (n.y > 0.85 ? [i] : []));
   let top = -1;
@@ -1040,19 +1525,7 @@ const makeHall = (track: Track, entrances: readonly Entrance[], half: number): S
       bottom = j;
     }
   }
-  if (top < 0) return [];
-  const a = top * step;
-  const b = bottom * step;
-  const pa = pose(track, a, -half - 2);
-  const pb = pose(track, b, -half - 2);
-  const path = cubic(
-    pa,
-    { x: pa.x + (pb.x - pa.x) / 3, y: pa.y + (pb.y - pa.y) / 3 },
-    { x: pa.x + ((pb.x - pa.x) * 2) / 3, y: pa.y + ((pb.y - pa.y) * 2) / 3 },
-    pb,
-    20,
-  );
-  return [{ id: 0, a, b, path }];
+  return top < 0 ? null : { a: top * step, b: bottom * step };
 };
 
 /**
@@ -1094,8 +1567,391 @@ const makeBridge = (track: Track, half: number, rng: () => number): Bridge => {
 };
 
 /** Whether `s` is on either stretch of a bridge. */
-export const onBridge = (bridge: Bridge | null, s: number, length: number): boolean =>
-  !!bridge && (underCover(bridge.over, s, length) || underCover(bridge.under, s, length));
+export const onBridge = (bridge: Bridge | null, s: number, length: number, by = 0): boolean =>
+  !!bridge &&
+  [bridge.over, bridge.under].some((c) =>
+    underCover({ s: c.s - by, len: c.len + 2 * by }, s, length),
+  );
+
+// ---------------------------------------------------------------------------------------------------------------
+// A river across the course.
+
+/** How far a river's centre line runs on past the frame at each end, so its traffic comes and goes out of sight. */
+export const RIVER_PAD = 70;
+/** A river's banks, either side of its lanes. */
+export const RIVER_BANK = 8;
+/** Half a river's width, banks and all. */
+export const riverHalf = (laneW: number): number => (RIVER_LANES * laneW) / 2 + RIVER_BANK;
+/** How far past the loop's edge a river runs straight on from under a bridge before it starts to wind. */
+const RIVER_STRAIGHT = 26;
+/** How far aside a river swings as it winds across the half it crosses: the first of these that fits. */
+const RIVER_BOWS = [60, 44, 30, 18, 0];
+
+/** A stretch of the loop over a river's water, as its first and last samples. */
+interface RiverRun {
+  from: number;
+  to: number;
+}
+
+/**
+ * How a river winds into the figure of eight: from the middle of the screen's top edge, level with where the figure
+ * of eight crosses itself, out in a broad curve into its right half (the far end from the score on an upright phone)
+ * and back to the middle of the bottom edge, `RIVER_DEPTHS` of the way to the right of that half and `RIVER_SPREADS`
+ * of the screen's height across. The longest that fits.
+ */
+const RIVER_DEPTHS = [0.82, 0.74, 0.66, 0.58, 0.5, 0.42, 0.34, 0.26];
+const RIVER_SPREADS = [0.3, 0.25, 0.2, 0.16];
+/**
+ * Where the figure of eight is too small for that, as on an upright phone, the river comes in that much of the way
+ * to the right of its half instead: the first of these that fits.
+ */
+const RIVER_ASIDES = [0, 0.1, 0.2, 0.3, 0.4];
+/** The most of the loop a river's bridge may cover, and the most of the river that may run under one. */
+const RIVER_BRIDGE_MOST = 220;
+/** A river bends no tighter than this many times its half width, so nothing on it ever swings round a sharp corner. */
+const RIVER_BEND_MOST = 2;
+
+/**
+ * Whether the bell curve `deep` · bump(u) across, with u = y / `wide`, bends nowhere tighter than radius `radius`: its
+ * curvature x'' / (1 + x'²)^1.5, squared, in products alone.
+ */
+const gentleBump = (deep: number, wide: number, radius: number): boolean => {
+  for (let k = -150; k <= 150; k++) {
+    const u = k / 50;
+    const a = 1 - (u * u) / 8;
+    if (a <= 0) continue;
+    const a2 = a * a;
+    const a6 = a2 * a2 * a2;
+    const a7 = a6 * a;
+    const slope = (deep * (-2 * u * a7)) / wide;
+    const curve = (deep * (-2 * a7 + 3.5 * u * u * a6)) / (wide * wide);
+    const q = 1 + slope * slope;
+    if (curve * curve * radius * radius > q * q * q) return false;
+  }
+  return true;
+};
+
+/**
+ * A bell curve, 1 at 0 and 0 from ±√8 on: (1 − u²/8)⁸, near enough exp(−u²), and made of products alone so the
+ * apps work it out to the same bit.
+ */
+const bump = (u: number): number => {
+  const a = 1 - (u * u) / 8;
+  if (a <= 0) return 0;
+  const a2 = a * a;
+  const a4 = a2 * a2;
+  return a4 * a4;
+};
+
+/**
+ * A river winding into the figure of eight and back (see `RIVER_DEPTHS`), under it just twice, each on a bridge, and
+ * clear of it everywhere else; or none, where it doesn't fit.
+ */
+const curvedRiver = (
+  track: Track,
+  half: number,
+  water: number,
+  frame: ParkFrame,
+  bridge: Bridge | null,
+): { raw: Point[]; runs: RiverRun[] } | null => {
+  const { points, step, length } = track;
+  const n = points.length;
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const x0 = bridge ? bridge.at.x : (Math.min(...xs) + Math.max(...xs)) / 2;
+  const y0 = bridge ? bridge.at.y : (Math.min(...ys) + Math.max(...ys)) / 2;
+  const right = Math.max(...xs);
+  let best: { raw: Point[]; runs: RiverRun[]; length: number } | null = null;
+  for (const aside of RIVER_ASIDES) {
+    if (best) break;
+    const x1 = x0 + (right - x0) * aside;
+    for (const depth of RIVER_DEPTHS)
+      for (const spread of RIVER_SPREADS) {
+        const deep = (right - x1) * depth;
+        const wide = frame.h * spread;
+        if (!gentleBump(deep, wide, RIVER_BEND_MOST * (water + RIVER_BANK))) continue;
+        const raw: Point[] = [];
+        for (let y = -RIVER_PAD; y <= frame.h + RIVER_PAD; y += SIDE_STEP)
+          raw.push({ x: x1 + deep * bump((y - y0) / wide), y });
+        const river = openTrack(raw, 1);
+        if (best && river.length <= best.length) continue;
+        const runs = riverRuns(track, half, water, river);
+        if (runs.length !== 2) continue;
+        if (runs.some((r) => (wrap(r.to - r.from, n) + 1) * step > RIVER_BRIDGE_MOST)) continue;
+        // Not onto the figure of eight's bridge, or right up to it.
+        if (
+          bridge &&
+          runs.some((r) => {
+            for (let k = 0; k <= wrap(r.to - r.from, n); k++)
+              if (onBridge(bridge, wrap((r.from + k) * step, length), length, 30)) return true;
+            return false;
+          })
+        )
+          continue;
+        // Clear of the road everywhere but by those two bridges.
+        const crossings = runs.map((r) => points[crossingOf(r, n, points, river)]!);
+        const by = half + water + 12;
+        const clear = river.points.every((p, j) => {
+          if (crossings.some((c) => Math.hypot(p.x - c.x, p.y - c.y) < by)) return true;
+          return [-1, 1].every(
+            (side) =>
+              !nearPolyline(
+                points,
+                {
+                  x: p.x + river.normals[j]!.x * water * side,
+                  y: p.y + river.normals[j]!.y * water * side,
+                },
+                half + 2,
+                true,
+              ),
+          );
+        });
+        if (!clear) continue;
+        best = { raw, runs, length: river.length };
+      }
+  }
+  return best && { raw: best.raw, runs: best.runs };
+};
+
+/** The sample of a run of the loop where its centre line comes nearest a river's. */
+const crossingOf = (r: RiverRun, n: number, points: readonly Point[], river: Track): number => {
+  let cross = r.from;
+  let near = Infinity;
+  for (let k = 0; k <= wrap(r.to - r.from, n); k++) {
+    const i = (r.from + k) % n;
+    const j = nearestSample(river, points[i]!);
+    const d = Math.hypot(points[i]!.x - river.points[j]!.x, points[i]!.y - river.points[j]!.y);
+    if (d < near) {
+      near = d;
+      cross = i;
+    }
+  }
+  return cross;
+};
+
+/** The sample of an open road nearest `p`. */
+const nearestSample = (road: Track, p: Point): number => {
+  let best = 0;
+  let near = Infinity;
+  road.points.forEach((q, j) => {
+    const d = (q.x - p.x) ** 2 + (q.y - p.y) ** 2;
+    if (d < near) {
+      near = d;
+      best = j;
+    }
+  });
+  return best;
+};
+
+/** Each stretch of the loop over a river's water, in order round the loop. */
+const riverRuns = (track: Track, half: number, water: number, river: Track): RiverRun[] => {
+  const { points, normals } = track;
+  const n = points.length;
+  const over = points.map((p, i) => {
+    if (!nearPolyline(river.points, p, water + half)) return false;
+    const j = nearestSample(river, p);
+    const q = river.points[j]!;
+    const rn = river.normals[j]!;
+    const across = Math.abs((p.x - q.x) * rn.x + (p.y - q.y) * rn.y);
+    return across < water + half * Math.abs(normals[i]!.x * rn.x + normals[i]!.y * rn.y);
+  });
+  const start = over.indexOf(false);
+  if (start < 0) return [];
+  const runs: RiverRun[] = [];
+  for (let k = 1; k <= n; k++) {
+    const i = (start + k) % n;
+    if (!over[i]) continue;
+    const last = runs[runs.length - 1];
+    if (last && over[(i + n - 1) % n]) last.to = i;
+    else runs.push({ from: i, to: i });
+  }
+  return runs;
+};
+
+/** The lowest level at which the plank bridge loses a second plank (see `River.gaps`). */
+export const PLANK_GAP_LEVEL = 50;
+
+/**
+ * A river across the right half of a figure of eight: winding into it from the middle of the screen and back where
+ * there's room (see `curvedRiver`), or straight down across it (see `straightRiver`), on out past the frame each way.
+ * Its traffic goes down the screen or up it, at random. The first bridge it comes to is of planks, with a plank
+ * missing.
+ */
+const makeRiver = (
+  track: Track,
+  half: number,
+  laneW: number,
+  frame: ParkFrame,
+  bridge: Bridge | null,
+  rng: () => number,
+): River | null => {
+  const { points, step, length } = track;
+  const n = points.length;
+  const sign = rng() < 0.5 ? -1 : 1;
+  const down = rng() < 0.5;
+  // Half the river's water, inside its banks.
+  const water = riverHalf(laneW) - RIVER_BANK;
+  const found =
+    curvedRiver(track, half, water, frame, bridge) ??
+    straightRiver(track, half, water, frame, bridge, sign);
+  if (!found) return null;
+  const raw = down ? found.raw : [...found.raw].reverse();
+  const river = openTrack(raw, 1);
+  // Each bridge over the whole stretch of loop that runs over the water, and a little more.
+  const bridges = found.runs
+    .map((r): RiverBridge => {
+      const cross = crossingOf(r, n, points, river);
+      return {
+        at: nearestSample(river, points[cross]!) * river.step,
+        over: {
+          s: wrap(r.from * step - 8 - step / 2, length),
+          len: (wrap(r.to - r.from, n) + 1) * step + 16,
+        },
+        cross: cross * step,
+        planks: false,
+      };
+    })
+    .sort((a, b) => a.at - b.at);
+  bridges[0]!.planks = true;
+  // A plank gone from one lane, and later one more, always leaving room for a two-lane visitor.
+  const lanes = Math.round((2 * half) / laneW);
+  const first = Math.floor(rng() * lanes);
+  const room = (gaps: number[]) => {
+    for (let l = 0; l + 1 < lanes; l++) if (!gaps.includes(l) && !gaps.includes(l + 1)) return true;
+    return false;
+  };
+  const later = [...Array(lanes).keys()].filter((l) => l !== first && room([first, l]));
+  const gaps = later.length ? [first, later[Math.floor(rng() * later.length)]!] : [first];
+  return { track: river, bridges, gaps };
+};
+
+/**
+ * Where a river can't wind into the figure of eight (see `curvedRiver`), as on a phone: straight down across the
+ * right half of the loop, under its top and bottom, winding between them, where those bridges can be shortest. None
+ * where it can't get across without running into the figure of eight's own bridge, as on the smallest phones. The
+ * river's centre line from the top of the screen to the bottom, and the stretches of loop over its water.
+ */
+const straightRiver = (
+  track: Track,
+  half: number,
+  water: number,
+  frame: ParkFrame,
+  bridge: Bridge | null,
+  sign: number,
+): { raw: Point[]; runs: RiverRun[] } | null => {
+  const { points, normals, step, length } = track;
+  const n = points.length;
+  const xs = points.map((p) => p.x);
+  const midX = (Math.min(...xs) + Math.max(...xs)) / 2;
+  // Where a river straight down through `x` runs under the loop: each stretch of loop over its water, as the first
+  // and last samples, and how far up and down the screen the road there reaches.
+  const under = (x: number): { from: number; to: number; top: number; bottom: number }[] => {
+    const over = points.map(
+      (p, i) => p.x > midX && Math.abs(p.x - x) < water + half * Math.abs(normals[i]!.x),
+    );
+    const start = over.indexOf(false);
+    if (start < 0) return [];
+    const runs: { from: number; to: number; top: number; bottom: number }[] = [];
+    for (let k = 1; k <= n; k++) {
+      const i = (start + k) % n;
+      if (!over[i]) continue;
+      const reach = half * Math.abs(normals[i]!.y);
+      const last = runs[runs.length - 1];
+      if (last && over[(i + n - 1) % n]) {
+        last.to = i;
+        last.top = Math.min(last.top, points[i]!.y - reach);
+        last.bottom = Math.max(last.bottom, points[i]!.y + reach);
+      } else runs.push({ from: i, to: i, top: points[i]!.y - reach, bottom: points[i]!.y + reach });
+    }
+    return runs;
+  };
+  // Where it goes: clear of the figure of eight's own bridge, under the loop just twice, top and bottom, where its
+  // bridges can be shortest.
+  let best: {
+    x: number;
+    runs: { from: number; to: number; top: number; bottom: number }[];
+  } | null = null;
+  let shortest = Infinity;
+  for (let x = midX + water; x < Math.max(...xs) - half; x += 4) {
+    const runs = under(x);
+    if (runs.length !== 2) continue;
+    // Not onto the figure of eight's bridge, or right up to it.
+    if (
+      bridge &&
+      runs.some((r) => {
+        for (let k = 0; k <= wrap(r.to - r.from, n); k++)
+          if (onBridge(bridge, wrap((r.from + k) * step, length), length, 30)) return true;
+        return false;
+      })
+    )
+      continue;
+    const span = runs.reduce((sum, r) => sum + wrap(r.to - r.from, n) + 1, 0);
+    if (span >= shortest) continue;
+    best = { x, runs: [...runs].sort((a, b) => a.top - b.top) };
+    shortest = span;
+  }
+  if (!best) return null;
+  const { x, runs } = best;
+  const [upper, lower] = runs as [(typeof runs)[0], (typeof runs)[0]];
+  // Winding between its bridges as far as it fits, from a little past each.
+  const y0 = upper.bottom + RIVER_STRAIGHT;
+  const y1 = lower.top - RIVER_STRAIGHT;
+  const bends = y1 - y0 > 220 ? 2 : y1 - y0 > 60 ? 1 : 0;
+  const clear = (line: readonly Point[]): boolean =>
+    line.every((p, i) => {
+      const a = line[Math.max(0, i - 1)]!;
+      const b = line[Math.min(line.length - 1, i + 1)]!;
+      const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      const nx = (b.y - a.y) / l;
+      const ny = -(b.x - a.x) / l;
+      return [-1, 1].every(
+        (side) =>
+          !nearPolyline(
+            points,
+            { x: p.x + nx * water * side, y: p.y + ny * water * side },
+            half + 2,
+            true,
+          ),
+      );
+    });
+  let middle: Point[] = [];
+  for (const most of bends ? RIVER_BOWS : []) {
+    const bow = Math.min(most, (y1 - y0) * 0.35);
+    const knots: Point[] = [{ x, y: y0 }];
+    for (let j = 0; j < bends; j++)
+      knots.push({
+        x: x + bow * sign * (j % 2 === 0 ? 1 : -1),
+        y: y0 + ((y1 - y0) * (j + 1)) / (bends + 1),
+      });
+    knots.push({ x, y: y1 });
+    const curve = spline(knots, { x: 0, y: 1 }, { x: 0, y: 1 });
+    if (clear(curve)) {
+      middle = curve;
+      break;
+    }
+  }
+  return {
+    raw: [{ x, y: -RIVER_PAD }, ...middle, { x, y: frame.h + RIVER_PAD }],
+    runs: [upper, lower],
+  };
+};
+
+/** A river as short cuts for the scenery to keep clear of: lines across its width, banks and all. */
+const riverClearance = (river: River, laneW: number): Shortcut[] =>
+  [-1, -0.5, 0, 0.5, 1].map((k) => ({
+    id: -1,
+    a: 0,
+    b: 0,
+    path: river.track.points.map((p, i) => ({
+      x: p.x + river.track.normals[i]!.x * k * riverHalf(laneW),
+      y: p.y + river.track.normals[i]!.y * k * riverHalf(laneW),
+    })),
+  }));
+
+/** Whether `s` on the loop is on one of a river's bridges, or within `by` of either end of one. */
+export const onRiverBridge = (river: River | null, s: number, length: number, by = 0): boolean =>
+  !!river &&
+  river.bridges.some((b) => underCover({ s: b.over.s - by, len: b.over.len + 2 * by }, s, length));
 
 // ---------------------------------------------------------------------------------------------------------------
 // The middle of the park.
@@ -1264,6 +2120,7 @@ const makeTrees = (
       // A figure of eight's edges cross, so its road is kept clear by distance instead, and its middles are inside
       // the centre line.
       if (eight && nearPolyline(track.points, p, half + r + 3, true)) continue;
+      if (eight && shortcuts.some((c) => nearPolyline(c.path, p, r + 6))) continue;
       const middle = eight
         ? insidePolygon(track.points, tx, ty)
         : insidePolygon(inside.inner, tx, ty);
@@ -1327,12 +2184,15 @@ const makePatches = (
   shortcuts: readonly Shortcut[],
   rng: () => number,
   bridge: Bridge | null = null,
+  /** More spots to keep clear of, as a bridge is: a river's bridges. */
+  bridges: readonly number[] = [],
 ): Patch[] => {
   const out: Patch[] = [];
   const avoid = [
     ...entrances.map((e) => e.s),
     ...shortcuts.flatMap((c) => [c.a, c.b]),
     ...(bridge ? [bridge.over.s + bridge.over.len / 2, bridge.under.s + bridge.under.len / 2] : []),
+    ...bridges,
   ];
   for (let spread = track.length / 3; out.length < PATCH_COUNT && spread > 0; spread -= 40) {
     out.length = 0;
@@ -1360,6 +2220,7 @@ const makeCover = (
   rng: () => number,
   range: readonly [number, number] = COVER_LEN,
   bridge: Bridge | null = null,
+  bridges: readonly number[] = [],
 ): Covered => {
   const len = range[0] + rng() * (range[1] - range[0]);
   const avoid = [
@@ -1367,6 +2228,7 @@ const makeCover = (
     ...shortcuts.flatMap((c) => [c.a, c.b]),
     ...patches.map((p) => p.s),
     ...(bridge ? [bridge.over.s + bridge.over.len / 2, bridge.under.s + bridge.under.len / 2] : []),
+    ...bridges,
   ];
   let s = 0;
   for (let tries = 0; tries < 100; tries++) {
@@ -1516,22 +2378,32 @@ export const generatePark = (
   const inside: Interior = { inner, box };
   const entrances = makeEntrances(track, wall, half, rng, eight);
   const bridge = eight ? makeBridge(track, half, rng) : null;
+  const river = course.riverCrossing
+    ? makeRiver(track, half, course.laneW, frame, bridge, rng)
+    : null;
+  // A river's bridges, kept clear like a figure of eight's.
+  const riverBridges = river ? river.bridges.map((b) => b.over.s + b.over.len / 2) : [];
   // Footpaths and the short cuts along them, on the courses that have them; or a manor's hall.
+  // A manor's side roads; where the hall doesn't fit as a road, a path through the house as before.
+  const sideRoads =
+    course.layout === 'manor' ? makeSideRoads(track, entrances, half, course.laneW) : [];
   const shortcuts = course.paths
     ? makeShortcuts(track, entrances, half, rng)
-    : course.layout === 'manor'
+    : course.layout === 'manor' && !sideRoads.some((r) => r.kind === 'hall')
       ? makeHall(track, entrances, half)
       : [];
+  // What the scenery keeps clear of: the short cuts, and the side roads with a lane's width either side.
+  const clearOf = [...shortcuts, ...sideRoads.flatMap((r) => sideClearance(r, course.laneW))];
   // A figure of eight's middles are too small for water or fields.
-  const water = eight ? [] : makeWater(inside, shortcuts, rng);
-  const fields = eight ? [] : makeFields(inside, water, shortcuts, rng);
+  const water = eight ? [] : makeWater(inside, clearOf, rng);
+  const fields = eight ? [] : makeFields(inside, water, clearOf, rng);
   const paths = course.paths ? makePaths(track, half, inside, water, fields, rng) : [];
   const trees = makeTrees(
     track,
     half,
     inside,
     entrances,
-    shortcuts,
+    river ? [...clearOf, ...riverClearance(river, course.laneW)] : clearOf,
     water,
     fields,
     paths,
@@ -1545,17 +2417,18 @@ export const generatePark = (
     course.lanes,
     course.train ? TRAIN_LANE : -1,
     entrances,
-    shortcuts,
+    clearOf,
     rng,
     bridge,
+    riverBridges,
   );
   const cover =
     course.cover === 'none'
       ? null
-      : makeCover(track, entrances, shortcuts, patches, rng, COVER_LEN, bridge);
+      : makeCover(track, entrances, clearOf, patches, rng, COVER_LEN, bridge, riverBridges);
   // Rapids, like a covered stretch, clear of the entrances, short cuts and patches.
   const rapids = course.rapids
-    ? makeRapids(track, course.lanes, entrances, shortcuts, patches, rng)
+    ? makeRapids(track, course.lanes, entrances, clearOf, patches, rng)
     : [];
   return {
     season: chosen,
@@ -1570,6 +2443,8 @@ export const generatePark = (
     track,
     entrances,
     shortcuts,
+    sideRoads,
+    river,
     water,
     fields,
     paths,
