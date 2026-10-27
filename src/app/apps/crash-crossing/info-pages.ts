@@ -140,8 +140,9 @@ export class CrashCrossingPrivacy {
           bike or person to the exit of their own colour. Cars wait at the stop line for their line,
           then keep to the lights. Every one who gets out the right way earns a dollar; a wrong exit
           or a crash costs one, and three crashes end the game, as does traffic backing up off the
-          screen. Tapping someone stops them and tapping again sets them going, and double-tapping
-          someone on foot hails them a taxi for $3. The money you earn adds up across games, and the
+          screen. Tapping someone stops them and tapping again sets them going, double-tapping
+          someone with a line sends them on through a red light, and holding a finger on someone on
+          foot hails them a taxi for $3. The money you earn adds up across games, and the
           <em>Shop</em> on the title screen spends it on tools for a game and extras such as new
           vehicles, characters and maps. The <em>How to Play</em> button has the rules in short.
         </p>
