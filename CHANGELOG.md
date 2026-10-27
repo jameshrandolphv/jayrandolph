@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.10.3
+- The desktop has an Applications folder holding every app and game; the apps keep their own addresses
+- Flights! is off the dock, which now holds the desktop, Chaos Park and Write Stuff
+- Documents lists its files as rows: About.txt first, then Chaos Park Privacy Policy.txt, Chaos Park Support.txt and Marketing.txt (which open those pages), and DO NOT OPEN.txt last. The changelog no longer shows there
+- About.txt says who I am
+- The Chaos Park privacy, support and marketing windows now open centred and maximise to the full screen
+
 ## 1.10.1
 - A marketing contact page at `/marketing`
 - Chaos Park (rules for the apps' Dusty Canyon): the arch is now an old train bridge; from 15 laps a coyote now and then runs across it and drops TNT in one lane, which flashes for 4 seconds and blows away anyone close by in that lane, costing a life

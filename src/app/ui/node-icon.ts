@@ -67,20 +67,8 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
         </linearGradient>
         <clipPath id="ico-app-clip"><rect x="4" y="4" width="56" height="56" rx="13" /></clipPath>
         <clipPath id="ico-screen-clip"><rect x="10" y="12" width="44" height="30" rx="2" /></clipPath>
-      </defs>
-    </svg>
-  `,
-})
-export class IconDefs {}
-
-@Component({
-  selector: 'app-node-icon',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { 'aria-hidden': 'true' },
-  template: `
-    <svg viewBox="0 0 64 64" focusable="false">
-      @switch (icon()) {
-        @case ('folder') {
+        <!-- Shared by the plain and Applications folders. -->
+        <symbol id="ico-folder" viewBox="0 0 64 64">
           <path
             d="M5 14a4 4 0 0 1 4-4h15l6 6h25a4 4 0 0 1 4 4v32a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4z"
             fill="url(#ico-folder-back)"
@@ -95,6 +83,28 @@ export class IconDefs {}
           />
           <path d="M7 29a2 2 0 0 1 2-2h46a2 2 0 0 1 2 2v1H7z" fill="#fff" opacity="0.65" />
           <path d="M7 31h50v6c-17 5-33 5-50 0z" fill="url(#ico-gloss)" opacity="0.4" />
+        </symbol>
+      </defs>
+    </svg>
+  `,
+})
+export class IconDefs {}
+
+@Component({
+  selector: 'app-node-icon',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { 'aria-hidden': 'true' },
+  template: `
+    <svg viewBox="0 0 64 64" focusable="false">
+      @switch (icon()) {
+        @case ('folder') {
+          <use href="#ico-folder" />
+        }
+        @case ('apps-folder') {
+          <use href="#ico-folder" />
+          <!-- The Applications folder's embossed A. -->
+          <path d="M25 51l7-19 7 19M27.6 45h8.8" fill="none" stroke="#1d4f99" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.55" />
+          <path d="M25 50l7-19 7 19M27.6 44h8.8" fill="none" stroke="#e8f3ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" opacity="0.9" />
         }
         @case ('film') {
           <g transform="rotate(-16 32 32)">

@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { environment } from '../../environments/environment';
 import type { AppDef } from './apps';
 import { fsNodeExists } from './fs-page';
-import { buildTree, FileSystemService, resolvePath, type PhotoManifest } from './filesystem.service';
+import { buildTree, FileSystemService, findApp, resolvePath, type PhotoManifest } from './filesystem.service';
+import { hrefOf } from './node';
 
 const apps: AppDef[] = [{ id: 'film-sim', name: 'Film Sim', icon: 'film', added: '2026-10-05', load: () => Promise.reject() }];
 
@@ -24,12 +25,19 @@ const manifest: PhotoManifest = {
 describe('filesystem', () => {
   const root = buildTree(manifest, apps);
 
-  it('puts Pictures and apps on the desktop', () => {
+  it('puts Pictures, Documents and an Applications folder on the desktop', () => {
     expect(root.children.map((c) => [c.kind, c.name])).toEqual([
       ['folder', 'Pictures'],
       ['folder', 'Documents'],
-      ['app', 'Film Sim'],
+      ['folder', 'Applications'],
     ]);
+  });
+
+  it('keeps apps in Applications at their own top-level URLs', () => {
+    expect(resolvePath(root, ['applications'])).toMatchObject({ kind: 'folder', children: [{ kind: 'app', name: 'Film Sim', path: 'film-sim' }] });
+    expect(resolvePath(root, ['film-sim'])).toBeNull();
+    expect(findApp(root, 'film-sim')).toMatchObject({ kind: 'app', name: 'Film Sim' });
+    expect(findApp(root, 'nope')).toBeNull();
   });
 
   it('always has a Pictures folder, even without albums', () => {
@@ -37,12 +45,15 @@ describe('filesystem', () => {
     expect(resolvePath(empty, ['pictures'])).toMatchObject({ kind: 'folder', children: [] });
   });
 
-  it('keeps documents in a top-level Documents folder and opens them by path', () => {
+  it('keeps documents in a top-level Documents folder, listed as rows, and opens them by path', () => {
     const docs = resolvePath(root, ['documents']);
+    expect(docs).toMatchObject({ kind: 'folder', view: 'list' });
     expect(docs?.kind === 'folder' && docs.children.map((c) => c.name)).toEqual([
+      'About.txt',
+      'Chaos Park Privacy Policy.txt',
+      'Chaos Park Support.txt',
+      'Marketing.txt',
       'DO NOT OPEN.txt',
-      'about.txt',
-      'CHANGELOG.md',
     ]);
     expect(resolvePath(root, ['documents', 'do-not-open.txt'])).toMatchObject({
       kind: 'file',
@@ -50,8 +61,18 @@ describe('filesystem', () => {
     });
     expect(resolvePath(root, ['documents', 'about.txt'])).toMatchObject({
       kind: 'file',
-      content: 'I should definitely update this',
+      content: expect.stringMatching(/^I am a software engineer[\s\S]*more games to come!\n\n- Jay Randolph$/),
     });
+  });
+
+  it('opens the store pages from their documents', () => {
+    const privacy = resolvePath(root, ['documents', 'chaos-park-privacy-policy.txt']);
+    expect(privacy && hrefOf(privacy)).toBe('/chaos-park/privacy');
+    const about = resolvePath(root, ['documents', 'about.txt']);
+    expect(about && hrefOf(about)).toBe('/documents/about.txt');
+  });
+
+  it('hides the changelog from Documents but still opens it by path', () => {
     const changelog = resolvePath(root, ['documents', 'CHANGELOG.md']);
     expect(changelog?.kind === 'file' && changelog.content).toMatch(/1\.2\.0[\s\S]*1\.1\.0[\s\S]*1\.0\.0/);
   });

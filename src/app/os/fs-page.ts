@@ -1,13 +1,13 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { Title } from '@angular/platform-browser';
-import { ActivatedRoute, RouterLink, type CanMatchFn } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink, type CanMatchFn } from '@angular/router';
 import { TextEdit } from '../apps/text-edit/text-edit';
 import { WindowFrame } from '../ui/window-frame';
 import { FileSystemService } from './filesystem.service';
 import { Finder } from './finder';
 import { ImageViewer } from './image-viewer';
-import type { FileNode, FolderNode, ImageNode } from './node';
+import { hrefOf, type FileNode, type FolderNode, type ImageNode } from './node';
 
 export const fsNodeExists: CanMatchFn = (_route, segments) => {
   const fs = inject(FileSystemService);
@@ -79,7 +79,7 @@ export class FsPage {
 
   protected readonly documents = computed<FileNode[]>(() => {
     const node = this.node();
-    return node?.kind === 'file' ? [node] : [];
+    return node?.kind === 'file' && !node.href ? [node] : [];
   });
 
   protected readonly closeLink = computed(() => {
@@ -99,6 +99,13 @@ export class FsPage {
   );
 
   constructor() {
+    // Apps (in Applications) and files shown by their own pages live at other URLs; send their folder paths there.
+    const router = inject(Router);
+    effect(() => {
+      const node = this.node();
+      if (node?.kind === 'app' || (node?.kind === 'file' && node.href)) void router.navigateByUrl(hrefOf(node), { replaceUrl: true });
+    });
+
     const title = inject(Title);
     effect(() => {
       const node = this.node();

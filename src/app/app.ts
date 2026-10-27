@@ -4,7 +4,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { filter, map } from 'rxjs';
 import { SoundSettings } from './core/sound-settings';
-import { DOCK_APP_IDS } from './os/apps';
+import { APPS, DOCK_APP_IDS } from './os/apps';
 import { ContextMenu, ContextMenuService } from './os/context-menu';
 import { Desktop } from './os/desktop';
 import { FileSystemService } from './os/filesystem.service';
@@ -51,7 +51,9 @@ export class App {
   protected readonly activeRoot = computed(() => this.segments()[0] ?? '');
   private readonly activeNode = computed(() => {
     const segments = this.segments();
-    return segments.length ? this.fs.resolve(segments) : null;
+    if (!segments.length) return null;
+    // Apps sit in the Applications folder but are opened at their own top-level URLs.
+    return this.fs.resolve(segments) ?? (segments.length === 1 ? this.fs.app(segments[0]) : null);
   });
 
   /**
@@ -61,7 +63,7 @@ export class App {
   protected readonly activeName = computed(() => {
     const node = this.activeNode();
     if (node?.kind === 'app') return node.name;
-    if (node?.kind === 'file') return this.fs.resolve([TEXT_APP_ID])?.name ?? 'Finder';
+    if (node?.kind === 'file') return this.fs.app(TEXT_APP_ID)?.name ?? 'Finder';
     return 'Finder';
   });
 
@@ -75,7 +77,9 @@ export class App {
 
   protected readonly dockItems = computed(() => [
     { id: 'desktop', name: 'Desktop', path: '', icon: 'desktop' },
-    ...this.fs.root().children.filter((c) => c.kind === 'app' && DOCK_APP_IDS.has(c.id)),
+    ...APPS.filter((app) => DOCK_APP_IDS.has(app.id))
+      .map((app) => this.fs.app(app.id))
+      .filter((app) => app !== null),
   ]);
 
   /** Opens on press like a Mac menu, and a second press closes it. */

@@ -2,7 +2,7 @@ import { Injectable, signal } from '@angular/core';
 import { environment } from '../../environments/environment';
 import { APPS, type AppDef } from './apps';
 import { DOCUMENTS, type DocumentDef } from './documents';
-import { segmentsOf, type FolderNode, type FsNode } from './node';
+import { segmentsOf, type AppNode, type FolderNode, type FsNode } from './node';
 
 export interface PhotoAlbum {
   id: string;
@@ -95,28 +95,44 @@ function picturesTree(albums: readonly PhotoAlbum[]): FsNode[] {
   return toNodes(top, 'pictures');
 }
 
+/** Folder holding every app; an app's own path is still its top-level URL. */
+export const APPLICATIONS_PATH = 'applications';
+
 export function buildTree(manifest: PhotoManifest, apps: readonly AppDef[], documents: readonly DocumentDef[] = DOCUMENTS): FolderNode {
   const documentsPath = 'documents';
   const documentNodes = documents.map((doc) => ({
-    kind: 'file' as const,
-    id: doc.id,
-    name: doc.name,
-    path: `${documentsPath}/${doc.id}`,
-    icon: 'text',
-    content: doc.content,
+    doc,
+    node: {
+      kind: 'file' as const,
+      id: doc.id,
+      name: doc.name,
+      path: `${documentsPath}/${doc.id}`,
+      icon: 'text',
+      content: doc.content,
+      ...(doc.href ? { href: doc.href } : {}),
+    },
   }));
+
+  // Apps live in the Applications folder but keep their own top-level URLs, which their routes and the store links use.
+  const appNodes = apps.map((app) => ({
+    kind: 'app' as const,
+    id: app.id,
+    name: app.name,
+    path: app.id,
+    icon: app.icon,
+    dock: app.dock,
+  }));
+
+  const documentsFolder: FolderNode = {
+    ...folder(documentsPath, 'Documents', documentNodes.filter(({ doc }) => !doc.hidden).map(({ node }) => node)),
+    view: 'list',
+    hidden: documentNodes.filter(({ doc }) => doc.hidden).map(({ node }) => node),
+  };
 
   return folder('', 'Desktop', [
     folder('pictures', 'Pictures', picturesTree(manifest.albums)),
-    folder(documentsPath, 'Documents', documentNodes),
-    ...apps.map((app) => ({
-      kind: 'app' as const,
-      id: app.id,
-      name: app.name,
-      path: app.id,
-      icon: app.icon,
-      dock: app.dock,
-    })),
+    documentsFolder,
+    { ...folder(APPLICATIONS_PATH, 'Applications', appNodes), icon: 'apps-folder' },
   ]);
 }
 
@@ -124,11 +140,23 @@ export function resolvePath(root: FolderNode, segments: readonly string[]): FsNo
   let node: FsNode = root;
   for (const segment of segments) {
     if (node.kind !== 'folder') return null;
-    const next: FsNode | undefined = node.children.find((c) => c.id === segment);
+    const next: FsNode | undefined = [...node.children, ...(node.hidden ?? [])].find((c) => c.id === segment);
     if (!next) return null;
     node = next;
   }
   return node;
+}
+
+/** The app with this id, wherever it sits in the tree. */
+export function findApp(root: FolderNode, id: string): AppNode | null {
+  for (const child of root.children) {
+    if (child.kind === 'app' && child.id === id) return child;
+    if (child.kind === 'folder') {
+      const found = findApp(child, id);
+      if (found) return found;
+    }
+  }
+  return null;
 }
 
 const MIN_REFRESH_MS = 60_000;
@@ -176,6 +204,10 @@ export class FileSystemService {
 
   resolve(segments: readonly string[]): FsNode | null {
     return resolvePath(this.root(), segments);
+  }
+
+  app(id: string): AppNode | null {
+    return findApp(this.root(), id);
   }
 
   parentOf(node: FsNode): FolderNode | null {

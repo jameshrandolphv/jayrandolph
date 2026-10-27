@@ -17,6 +17,9 @@ app-worlds-longest-game,
 app-flights,
 app-chaos-park,
 app-bat-out,
+app-chaos-park-privacy,
+app-chaos-park-support,
+app-marketing,
 app-not-found {
   display: contents;
 }
@@ -363,6 +366,62 @@ app-not-found {
 
 .finder-body .fs-item {
   width: 100%;
+}
+
+/* List view: one row per item, Aqua's striped Name column. */
+.finder-body .rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: #fff;
+}
+
+.rows-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 2px 10px;
+  border-bottom: 1px solid #9a9a9a;
+  background: linear-gradient(#fdfdfd, #dcdcdc);
+  color: #222;
+  font-size: 11px;
+}
+
+.finder-body .rows li:nth-child(even) {
+  background: #edf3fe;
+}
+
+.finder-body .rows .fs-item {
+  flex-direction: row;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 0;
+}
+
+.finder-body .rows .fs-glyph {
+  width: 18px;
+  height: 18px;
+  border-radius: 0;
+}
+
+.finder-body .rows .fs-label {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  text-align: left;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.finder-body .rows .fs-item:hover {
+  background: rgb(180 215 255 / 0.35);
+  box-shadow: none;
+}
+
+.finder-body .rows .fs-item:active {
+  color: #fff;
+  background: #3875d7;
 }
 
 .finder-body .fs-item:hover {

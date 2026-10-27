@@ -34,6 +34,15 @@ import { segmentsOf, type FolderNode } from './node';
             <progress aria-label="Loading photos"></progress>
             <span>Loading photos&hellip;</span>
           </div>
+        } @else if (folder().children.length && folder().view === 'list') {
+          <div class="rows-header" aria-hidden="true">Name</div>
+          <ul class="rows" role="list" [attr.aria-label]="folder().name">
+            @for (child of folder().children; track child.id) {
+              <li>
+                <app-fs-item [node]="child" />
+              </li>
+            }
+          </ul>
         } @else if (folder().children.length) {
           <ul class="icons" role="list" [attr.aria-label]="folder().name">
             @for (child of folder().children; track child.id) {
