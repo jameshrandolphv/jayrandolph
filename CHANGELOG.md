@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.10.4
+- Crazy Crossing is now Crash Crossing (the name was taken on the App Store): its privacy policy and support pages moved to `/crash-crossing/privacy` and `/crash-crossing/support`, the old addresses lead there, and Documents lists them under the new name
+- The Crash Crossing pages cover the game's shop: the money earned and what's bought with it stay on the device, and the shop never takes real money
+
 ## 1.10.3
 - The desktop has an Applications folder holding every app and game; the apps keep their own addresses
 - Flights! is off the dock, which now holds the desktop, Chaos Park and Write Stuff

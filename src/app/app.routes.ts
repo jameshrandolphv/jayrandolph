@@ -14,15 +14,18 @@ export const routes: Routes = [
     path: 'chaos-park/support',
     loadComponent: () => import('./apps/chaos-park/info-pages').then((m) => m.ChaosParkSupport),
   },
-  // The same for Crazy Crossing, which is only in the apps.
+  // The same for Crash Crossing, which is only in the apps.
   {
-    path: 'crazy-crossing/privacy',
-    loadComponent: () => import('./apps/crazy-crossing/info-pages').then((m) => m.CrazyCrossingPrivacy),
+    path: 'crash-crossing/privacy',
+    loadComponent: () => import('./apps/crash-crossing/info-pages').then((m) => m.CrashCrossingPrivacy),
   },
   {
-    path: 'crazy-crossing/support',
-    loadComponent: () => import('./apps/crazy-crossing/info-pages').then((m) => m.CrazyCrossingSupport),
+    path: 'crash-crossing/support',
+    loadComponent: () => import('./apps/crash-crossing/info-pages').then((m) => m.CrashCrossingSupport),
   },
+  // Its addresses from before it was renamed (it was Crazy Crossing).
+  { path: 'crazy-crossing/privacy', redirectTo: 'crash-crossing/privacy' },
+  { path: 'crazy-crossing/support', redirectTo: 'crash-crossing/support' },
   // And who to contact about marketing.
   {
     path: 'marketing',
