@@ -3,7 +3,7 @@
 ## 1.10.3
 - The desktop has an Applications folder holding every app and game; the apps keep their own addresses
 - Flights! is off the dock, which now holds the desktop, Chaos Park and Write Stuff
-- Documents lists its files as rows: About.txt first, then Chaos Park Privacy Policy.txt, Chaos Park Support.txt and Marketing.txt (which open those pages), and DO NOT OPEN.txt last. The changelog no longer shows there
+- Documents lists its files as tall rows: About.txt first, then Chaos Park Privacy Policy.txt, Chaos Park Support.txt and Marketing.txt (which open those pages), and DO NOT OPEN.txt last. The changelog no longer shows there
 - About.txt says who I am
 - The Chaos Park privacy, support and marketing windows now open centred and maximise to the full screen
 
