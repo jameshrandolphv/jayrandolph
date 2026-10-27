@@ -3,9 +3,12 @@
 ## 1.10.3
 - The desktop has an Applications folder holding every app and game; the apps keep their own addresses
 - Flights! is off the dock, which now holds the desktop, Chaos Park and Write Stuff
-- Documents lists its files as tall rows: About.txt first, then Chaos Park Privacy Policy.txt, Chaos Park Support.txt and Marketing.txt (which open those pages), and DO NOT OPEN.txt last. The changelog no longer shows there
+- Documents lists its files as tall rows: About.txt first, then the Chaos Park and Crazy Crossing privacy policies and support pages and Marketing.txt (which open those pages), and DO NOT OPEN.txt last. The changelog no longer shows there
 - About.txt says who I am
-- The Chaos Park privacy, support and marketing windows now open centred and maximise to the full screen
+- The privacy, support and marketing windows now open centred and maximise to the full screen
+
+## 1.10.2
+- Privacy policy and support pages for the Crazy Crossing app at `/crazy-crossing/privacy` and `/crazy-crossing/support`
 
 ## 1.10.1
 - A marketing contact page at `/marketing`
