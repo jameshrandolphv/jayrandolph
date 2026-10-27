@@ -52,8 +52,8 @@ describe('filesystem', () => {
       'About.txt',
       'Chaos Park Privacy Policy.txt',
       'Chaos Park Support.txt',
-      'Crazy Crossing Privacy Policy.txt',
-      'Crazy Crossing Support.txt',
+      'Crash Crossing Privacy Policy.txt',
+      'Crash Crossing Support.txt',
       'Marketing.txt',
       'DO NOT OPEN.txt',
     ]);
