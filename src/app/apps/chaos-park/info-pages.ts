@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { Title } from '@angular/platform-browser';
 import { RouterLink } from '@angular/router';
+import { GAMES_CONTACT, INFO_PAGE_STYLES } from '../../ui/info-page';
 import { WindowFrame } from '../../ui/window-frame';
 
 /*
@@ -9,34 +10,11 @@ import { WindowFrame } from '../../ui/window-frame';
  * /marketing.
  */
 
-const CONTACT = 'jayrandolphgames@gmail.com';
-
-const PAGE_STYLES = `
-  .info-body {
-    flex: 1;
-    min-height: 0;
-    overflow: auto;
-    padding: 20px 28px 28px;
-    background: #fff;
-    color: #222;
-    font: 15px/1.55 'Lucida Grande', 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.3);
-  }
-  .info-body > * { max-width: 680px; }
-  h2 { margin: 0 0 4px; font-size: 24px; }
-  h3 { margin: 22px 0 6px; font-size: 17px; }
-  p, ul { margin: 0 0 10px; }
-  ul { padding-left: 22px; }
-  li { margin-bottom: 4px; }
-  .meta { color: #666; font-size: 13px; margin-bottom: 16px; }
-  a { color: #1a5fb4; }
-`;
-
 @Component({
   selector: 'app-chaos-park-privacy',
   imports: [WindowFrame, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  styles: PAGE_STYLES,
+  styles: INFO_PAGE_STYLES,
   template: `
     <app-window-frame title="Chaos Park Privacy Policy" closeLink="/" compact>
       <div class="info-body">
@@ -149,7 +127,7 @@ const PAGE_STYLES = `
   `,
 })
 export class ChaosParkPrivacy {
-  protected readonly contact = CONTACT;
+  protected readonly contact = GAMES_CONTACT;
 
   constructor() {
     inject(Title).setTitle('Chaos Park Privacy Policy - Jay Randolph');
@@ -160,7 +138,7 @@ export class ChaosParkPrivacy {
   selector: 'app-chaos-park-support',
   imports: [WindowFrame, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  styles: PAGE_STYLES,
+  styles: INFO_PAGE_STYLES,
   template: `
     <app-window-frame title="Chaos Park Support" closeLink="/" compact>
       <div class="info-body">
@@ -217,7 +195,7 @@ export class ChaosParkPrivacy {
   `,
 })
 export class ChaosParkSupport {
-  protected readonly contact = CONTACT;
+  protected readonly contact = GAMES_CONTACT;
 
   constructor() {
     inject(Title).setTitle('Chaos Park Support - Jay Randolph');
@@ -228,7 +206,7 @@ export class ChaosParkSupport {
   selector: 'app-marketing',
   imports: [WindowFrame],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  styles: PAGE_STYLES,
+  styles: INFO_PAGE_STYLES,
   template: `
     <app-window-frame title="Marketing" closeLink="/" compact>
       <div class="info-body">
@@ -243,7 +221,7 @@ export class ChaosParkSupport {
   `,
 })
 export class Marketing {
-  protected readonly contact = CONTACT;
+  protected readonly contact = GAMES_CONTACT;
 
   constructor() {
     inject(Title).setTitle('Marketing - Jay Randolph');

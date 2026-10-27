@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.10.2
+- Privacy policy and support pages for the Crazy Crossing app at `/crazy-crossing/privacy` and `/crazy-crossing/support`
+
 ## 1.10.1
 - A marketing contact page at `/marketing`
 - Chaos Park (rules for the apps' Dusty Canyon): the arch is now an old train bridge; from 15 laps a coyote now and then runs across it and drops TNT in one lane, which flashes for 4 seconds and blows away anyone close by in that lane, costing a life
