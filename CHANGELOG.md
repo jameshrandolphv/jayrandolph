@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.10.5
+- The Crash Crossing support page matches the game's new touch controls: hold someone on foot to hail a taxi, and double-tap someone with a line to send them through a red light
+
 ## 1.10.4
 - Crazy Crossing is now Crash Crossing (the name was taken on the App Store): its privacy policy and support pages moved to `/crash-crossing/privacy` and `/crash-crossing/support`, the old addresses lead there, and Documents lists them under the new name
 - The Crash Crossing pages cover the game's shop: the money earned and what's bought with it stay on the device, and the shop never takes real money
