@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.10.6
+- The Applications folder is a plain folder icon, without the A on its front
+
 ## 1.10.5
 - The Crash Crossing support page matches the game's new touch controls: hold someone on foot to hail a taxi, and double-tap someone with a line to send them through a red light
 

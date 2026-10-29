@@ -102,9 +102,6 @@ export class IconDefs {}
         }
         @case ('apps-folder') {
           <use href="#ico-folder" />
-          <!-- The Applications folder's embossed A. -->
-          <path d="M25 51l7-19 7 19M27.6 45h8.8" fill="none" stroke="#1d4f99" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" opacity="0.55" />
-          <path d="M25 50l7-19 7 19M27.6 44h8.8" fill="none" stroke="#e8f3ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" opacity="0.9" />
         }
         @case ('film') {
           <g transform="rotate(-16 32 32)">
