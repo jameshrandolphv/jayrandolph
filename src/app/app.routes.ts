@@ -26,6 +26,15 @@ export const routes: Routes = [
   // Its addresses from before it was renamed (it was Crazy Crossing).
   { path: 'crazy-crossing/privacy', redirectTo: 'crash-crossing/privacy' },
   { path: 'crazy-crossing/support', redirectTo: 'crash-crossing/support' },
+  // And for Many Mini Moon Buggies, also only in the apps.
+  {
+    path: 'many-mini-moon-buggies/privacy',
+    loadComponent: () => import('./apps/many-mini-moon-buggies/info-pages').then((m) => m.ManyMiniMoonBuggiesPrivacy),
+  },
+  {
+    path: 'many-mini-moon-buggies/support',
+    loadComponent: () => import('./apps/many-mini-moon-buggies/info-pages').then((m) => m.ManyMiniMoonBuggiesSupport),
+  },
   // And who to contact about marketing.
   {
     path: 'marketing',

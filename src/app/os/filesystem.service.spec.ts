@@ -54,6 +54,8 @@ describe('filesystem', () => {
       'Chaos Park Support.txt',
       'Crash Crossing Privacy Policy.txt',
       'Crash Crossing Support.txt',
+      'Many Mini Moon Buggies Privacy Policy.txt',
+      'Many Mini Moon Buggies Support.txt',
       'Marketing.txt',
       'DO NOT OPEN.txt',
     ]);
