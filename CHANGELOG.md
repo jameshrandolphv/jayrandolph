@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.10.7
+- Many Mini Moon Buggies has a privacy policy and a support page, for its App Store and Google Play listings
+- Both are in Documents too
+
 ## 1.10.6
 - The Applications folder is a plain folder icon, without the A on its front
 

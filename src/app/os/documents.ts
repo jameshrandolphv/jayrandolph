@@ -22,6 +22,8 @@ export const DOCUMENTS: readonly DocumentDef[] = [
   { id: 'chaos-park-support.txt', name: 'Chaos Park Support.txt', content: '', href: '/chaos-park/support' },
   { id: 'crash-crossing-privacy-policy.txt', name: 'Crash Crossing Privacy Policy.txt', content: '', href: '/crash-crossing/privacy' },
   { id: 'crash-crossing-support.txt', name: 'Crash Crossing Support.txt', content: '', href: '/crash-crossing/support' },
+  { id: 'many-mini-moon-buggies-privacy-policy.txt', name: 'Many Mini Moon Buggies Privacy Policy.txt', content: '', href: '/many-mini-moon-buggies/privacy' },
+  { id: 'many-mini-moon-buggies-support.txt', name: 'Many Mini Moon Buggies Support.txt', content: '', href: '/many-mini-moon-buggies/support' },
   { id: 'marketing.txt', name: 'Marketing.txt', content: '', href: '/marketing' },
   { id: 'do-not-open.txt', name: 'DO NOT OPEN.txt', content: 'Why would you do that...' },
   { id: 'CHANGELOG.md', name: 'CHANGELOG.md', content: changelog.trimEnd(), hidden: true },
