@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.10.8
+- A Mobile Games folder on the desktop, with a folder for each game (Chaos Park, Crash Crossing, Many Mini Moon Buggies) listing its iOS and Android store pages beside the app icon
+- Chaos Park (iOS) opens the App Store in a new tab; the other rows are greyed out until those listings are live
+
 ## 1.10.7
 - Many Mini Moon Buggies has a privacy policy and a support page, for its App Store and Google Play listings
 - Both are in Documents too

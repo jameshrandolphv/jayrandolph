@@ -4,7 +4,7 @@ import { LongPress, type LongPressEvent } from '../ui/long-press';
 import { NodeIcon } from '../ui/node-icon';
 import { ContextMenuService } from './context-menu';
 import { ImageActions } from './image-actions';
-import { hrefOf, type FsNode, type ImageNode } from './node';
+import { hrefOf, type FsNode, type ImageNode, type LinkNode } from './node';
 
 /** Icon or photo thumbnail plus label for one filesystem node. */
 @Component({
@@ -16,7 +16,12 @@ import { hrefOf, type FsNode, type ImageNode } from './node';
       class="fs-item"
       [class.selected]="selected()"
       [class.photo]="image() !== null"
-      [attr.href]="href()"
+      [class.disabled]="disabled()"
+      [attr.href]="disabled() ? null : href()"
+      [attr.target]="link() ? '_blank' : null"
+      [attr.rel]="link() ? 'noopener' : null"
+      [attr.aria-disabled]="disabled() || null"
+      [attr.title]="disabled() ? 'Coming soon' : null"
       (click)="onClick($event)"
       (dblclick)="open($event)"
       (contextmenu)="onContextMenu($event)"
@@ -27,6 +32,8 @@ import { hrefOf, type FsNode, type ImageNode } from './node';
       <span class="fs-glyph">
         @if (image(); as img) {
           <img [src]="img.thumb" [alt]="img.name" [attr.width]="img.width" [attr.height]="img.height" loading="lazy" decoding="async" />
+        } @else if (link(); as l) {
+          <img class="app-icon" [src]="l.image" alt="" width="64" height="64" decoding="async" />
         } @else {
           <app-node-icon [icon]="node().icon" />
         }
@@ -53,7 +60,20 @@ export class FsItem {
     return node.kind === 'image' ? node : null;
   });
 
+  protected readonly link = computed<LinkNode | null>(() => {
+    const node = this.node();
+    return node.kind === 'link' ? node : null;
+  });
+  /** A store row with no listing yet. */
+  protected readonly disabled = computed(() => this.link() !== null && !this.link()?.url);
+
   protected onClick(event: MouseEvent): void {
+    if (this.disabled()) {
+      event.preventDefault();
+      return;
+    }
+    // Store rows are plain links to another site, opened in a new tab by the browser.
+    if (this.link()) return;
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     // detail === 0 is a keyboard activation.
@@ -64,6 +84,8 @@ export class FsItem {
 
   protected open(event: MouseEvent): void {
     event.preventDefault();
+    // The first click already opened a store row (or did nothing for a disabled one).
+    if (this.link()) return;
     void this.router.navigateByUrl(this.href());
   }
 

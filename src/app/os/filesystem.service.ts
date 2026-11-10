@@ -2,6 +2,7 @@ import { Injectable, signal } from '@angular/core';
 import { environment } from '../../environments/environment';
 import { APPS, type AppDef } from './apps';
 import { DOCUMENTS, type DocumentDef } from './documents';
+import { MOBILE_GAMES, type MobileGameDef } from './mobile-games';
 import { segmentsOf, type AppNode, type FolderNode, type FsNode } from './node';
 
 export interface PhotoAlbum {
@@ -98,7 +99,32 @@ function picturesTree(albums: readonly PhotoAlbum[]): FsNode[] {
 /** Folder holding every app; an app's own path is still its top-level URL. */
 export const APPLICATIONS_PATH = 'applications';
 
-export function buildTree(manifest: PhotoManifest, apps: readonly AppDef[], documents: readonly DocumentDef[] = DOCUMENTS): FolderNode {
+export const MOBILE_GAMES_PATH = 'mobile-games';
+
+/** A folder per game, listing its iOS and Android store pages as rows. */
+function mobileGamesFolder(games: readonly MobileGameDef[]): FolderNode {
+  const gameFolders = games.map((game) => {
+    const path = `${MOBILE_GAMES_PATH}/${game.id}`;
+    const rows = (['ios', 'android'] as const).map((platform) => ({
+      kind: 'link' as const,
+      id: `${game.id}-${platform}`,
+      name: `${game.name} (${platform === 'ios' ? 'iOS' : 'Android'})`,
+      path: `${path}/${game.id}-${platform}`,
+      icon: 'link',
+      image: game.image,
+      ...(game[platform].url ? { url: game[platform].url } : {}),
+    }));
+    return { ...folder(path, game.name, rows), view: 'list' as const };
+  });
+  return folder(MOBILE_GAMES_PATH, 'Mobile Games', gameFolders);
+}
+
+export function buildTree(
+  manifest: PhotoManifest,
+  apps: readonly AppDef[],
+  documents: readonly DocumentDef[] = DOCUMENTS,
+  games: readonly MobileGameDef[] = MOBILE_GAMES,
+): FolderNode {
   const documentsPath = 'documents';
   const documentNodes = documents.map((doc) => ({
     doc,
@@ -132,6 +158,7 @@ export function buildTree(manifest: PhotoManifest, apps: readonly AppDef[], docu
   return folder('', 'Desktop', [
     folder('pictures', 'Pictures', picturesTree(manifest.albums)),
     documentsFolder,
+    mobileGamesFolder(games),
     { ...folder(APPLICATIONS_PATH, 'Applications', appNodes), icon: 'apps-folder' },
   ]);
 }
