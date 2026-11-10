@@ -91,7 +91,8 @@ export class FsPage {
   protected readonly folder = computed<FolderNode | null>(() => {
     const node = this.node();
     if (node?.kind === 'folder') return node;
-    return node?.kind === 'image' ? this.fs.parentOf(node) : null;
+    // A store row has no page of its own here: show the folder it sits in.
+    return node?.kind === 'image' || node?.kind === 'link' ? this.fs.parentOf(node) : null;
   });
 
   protected readonly photos = computed(() =>

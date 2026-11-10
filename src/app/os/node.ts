@@ -37,8 +37,18 @@ export interface FileNode extends NodeBase {
   href?: string;
 }
 
-export type FsNode = FolderNode | AppNode | ImageNode | FileNode;
+/** A row that opens a page on another site, such as a store listing, in a new tab. */
+export interface LinkNode extends NodeBase {
+  kind: 'link';
+  /** Absent while there is nowhere to go yet: the row shows disabled. */
+  url?: string;
+  /** Picture shown in place of a `NodeIcon`. */
+  image: string;
+}
+
+export type FsNode = FolderNode | AppNode | ImageNode | FileNode | LinkNode;
 
 export const segmentsOf = (path: string): string[] => (path ? path.split('/') : []);
 
-export const hrefOf = (node: FsNode): string => (node.kind === 'file' && node.href) || '/' + node.path;
+export const hrefOf = (node: FsNode): string =>
+  (node.kind === 'file' && node.href) || (node.kind === 'link' && node.url) || '/' + node.path;

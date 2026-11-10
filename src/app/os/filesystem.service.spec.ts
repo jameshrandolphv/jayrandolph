@@ -25,11 +25,37 @@ const manifest: PhotoManifest = {
 describe('filesystem', () => {
   const root = buildTree(manifest, apps);
 
-  it('puts Pictures, Documents and an Applications folder on the desktop', () => {
+  it('puts Pictures, Documents, Mobile Games and an Applications folder on the desktop', () => {
     expect(root.children.map((c) => [c.kind, c.name])).toEqual([
       ['folder', 'Pictures'],
       ['folder', 'Documents'],
+      ['folder', 'Mobile Games'],
       ['folder', 'Applications'],
+    ]);
+  });
+
+  it('lists each mobile game as a folder of iOS and Android store rows, disabled until listed', () => {
+    const games = resolvePath(root, ['mobile-games']);
+    expect(games?.kind === 'folder' && games.children.map((c) => [c.kind, c.name])).toEqual([
+      ['folder', 'Chaos Park'],
+      ['folder', 'Crash Crossing'],
+      ['folder', 'Many Mini Moon Buggies'],
+    ]);
+    const park = resolvePath(root, ['mobile-games', 'chaos-park']);
+    expect(park).toMatchObject({ kind: 'folder', view: 'list' });
+    expect(park?.kind === 'folder' && park.children.map((c) => c.name)).toEqual(['Chaos Park (iOS)', 'Chaos Park (Android)']);
+
+    const ios = resolvePath(root, ['mobile-games', 'chaos-park', 'chaos-park-ios']);
+    expect(ios).toMatchObject({ kind: 'link', image: '/icons/games/chaos-park.png' });
+    expect(ios && hrefOf(ios)).toBe('https://apps.apple.com/us/app/chaos-park/id6825083630');
+
+    const android = resolvePath(root, ['mobile-games', 'chaos-park', 'chaos-park-android']);
+    expect(android).toMatchObject({ kind: 'link' });
+    expect(android?.kind === 'link' && android.url).toBeUndefined();
+    const buggies = resolvePath(root, ['mobile-games', 'many-mini-moon-buggies']);
+    expect(buggies?.kind === 'folder' && buggies.children.map((c) => c.name)).toEqual([
+      'Many Mini Moon Buggies (iOS)',
+      'Many Mini Moon Buggies (Android)',
     ]);
   });
 

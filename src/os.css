@@ -427,6 +427,32 @@ app-not-found {
   background: #3875d7;
 }
 
+/* Store rows: the game's app icon, rounded like a home screen. */
+.fs-glyph .app-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 22%;
+  box-shadow: 0 1px 2px rgb(0 20 60 / 0.35), inset 0 0 0 1px rgb(0 0 0 / 0.1);
+}
+
+/* No store listing yet: greyed out and inert. */
+.finder-body .fs-item.disabled {
+  cursor: default;
+  color: #8a8a8a;
+}
+
+.finder-body .fs-item.disabled .app-icon {
+  filter: grayscale(1);
+  opacity: 0.45;
+}
+
+.finder-body .rows .fs-item.disabled:hover,
+.finder-body .rows .fs-item.disabled:active {
+  color: #8a8a8a;
+  background: none;
+}
+
 .finder-body .fs-item:hover {
   background: linear-gradient(rgb(255 255 255 / 0.8), rgb(180 215 255 / 0.35));
   box-shadow: inset 0 0 0 1px rgb(31 111 214 / 0.25);
