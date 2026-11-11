@@ -4,8 +4,21 @@
  * same rules; everything it changes is here, so the sim and the drawing read it rather than checking which course
  * this is.
  */
-export type CourseId = 'park' | 'waters' | 'canyon' | 'jungle' | 'mansion';
+export type CourseId =
+  | 'park'
+  | 'waters'
+  | 'canyon'
+  | 'jungle'
+  | 'mansion'
+  | 'pole'
+  | 'wonderland'
+  | 'parade'
+  | 'village'
+  | 'ski';
+/** The original five, each unlocked by a score on the one before. */
 export const COURSE_IDS: readonly CourseId[] = ['park', 'waters', 'canyon', 'jungle', 'mansion'];
+/** The apps' Holiday Pack: five more, bought together and all open at once (see `unlocked`). */
+export const HOLIDAY_IDS: readonly CourseId[] = ['pole', 'wonderland', 'parade', 'village', 'ski'];
 
 /**
  * What the two patches (at `PATCH_SCORES` laps) are: slippery ground that slides whoever crosses it a lane, an
@@ -110,6 +123,11 @@ export interface CourseSpec {
    * `BRONZE_SCORE`, `SILVER_SCORE` and `GOLD_SCORE`.
    */
   unlock: number;
+  /**
+   * On a course with a river crossing, whether it runs straight across the loop (see `straightRiver`) rather than
+   * winding into it: the Thanksgiving Parade's cross street.
+   */
+  straightCrossing?: boolean;
 }
 
 export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
@@ -243,6 +261,144 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     bikerPace: 1,
     unlock: 25,
   },
+  // The Holiday Pack. Each is made of the same parts as the five above, in its own mix: the North Pole's loop
+  // round Santa's workshop, with ice to slip on and a polar bear;
+  pole: {
+    id: 'pole',
+    name: 'North Pole',
+    lanes: 4,
+    laneW: 30,
+    layout: 'loop',
+    bend: 1.5,
+    river: false,
+    levelOffset: 1,
+    levelRate: 0.36,
+    slow: 0.05,
+    slowPair: 0.03,
+    predator: true,
+    obstacle: 'slip',
+    event: 'none',
+    cover: 'none',
+    paths: false,
+    rapids: false,
+    waves: false,
+    train: false,
+    slowCars: false,
+    wild: false,
+    riverCrossing: false,
+    bikerPace: 1,
+    unlock: 25,
+  },
+  // a winding path of ice, with stretches polished fast and gusts that push skaters a lane across;
+  wonderland: {
+    id: 'wonderland',
+    name: 'Winter Wonderland',
+    lanes: 4,
+    laneW: 30,
+    layout: 'loop',
+    bend: 3,
+    river: true,
+    levelOffset: 2,
+    levelRate: 0.34,
+    slow: 0.05,
+    slowPair: 0.03,
+    predator: true,
+    obstacle: 'slip',
+    event: 'none',
+    cover: 'none',
+    paths: false,
+    rapids: true,
+    waves: true,
+    train: false,
+    slowCars: false,
+    wild: false,
+    riverCrossing: false,
+    bikerPace: 1,
+    unlock: 25,
+  },
+  // the parade's avenues round the block, a cross street running straight through with traffic of its own, and a
+  // balloon that gets loose now and then;
+  parade: {
+    id: 'parade',
+    name: 'Thanksgiving Parade',
+    lanes: 5,
+    laneW: 24,
+    layout: 'loop',
+    bend: 0.6,
+    river: false,
+    levelOffset: 3,
+    levelRate: 0.3,
+    slow: 0.06,
+    slowPair: 0.03,
+    predator: false,
+    obstacle: 'steer',
+    event: 'tumbleweed',
+    cover: 'none',
+    paths: false,
+    rapids: false,
+    waves: false,
+    train: false,
+    slowCars: false,
+    wild: false,
+    riverCrossing: true,
+    bikerPace: 1,
+    unlock: 25,
+    straightCrossing: true,
+  },
+  // a Christmas market round a square that people cut across;
+  village: {
+    id: 'village',
+    name: 'Winter Village',
+    lanes: 4,
+    laneW: 30,
+    layout: 'loop',
+    bend: 1,
+    river: false,
+    levelOffset: 3,
+    levelRate: 0.3,
+    slow: 0.07,
+    slowPair: 0.04,
+    predator: false,
+    obstacle: 'steer',
+    event: 'sting',
+    cover: 'none',
+    paths: true,
+    rapids: false,
+    waves: false,
+    train: false,
+    slowCars: true,
+    wild: false,
+    riverCrossing: false,
+    bikerPace: 1,
+    unlock: 25,
+  },
+  // and two ski runs, down one and up the other, with snowmobiles, a rolling snowball and a yeti.
+  ski: {
+    id: 'ski',
+    name: 'Ski Lodge',
+    lanes: 4,
+    laneW: 30,
+    layout: 'switchback',
+    bend: 1.5,
+    river: false,
+    levelOffset: 5,
+    levelRate: 0.26,
+    slow: 0.05,
+    slowPair: 0,
+    predator: true,
+    obstacle: 'steer',
+    event: 'tumbleweed',
+    cover: 'none',
+    paths: false,
+    rapids: false,
+    waves: false,
+    train: false,
+    slowCars: true,
+    wild: false,
+    riverCrossing: false,
+    bikerPace: 1.1,
+    unlock: 25,
+  },
 };
 
 /** How much faster anyone in the rapids goes, and how long the rapids are. They span `RAPIDS_LANES` lanes side by side. */
@@ -363,8 +519,13 @@ export const previousCourse = (id: CourseId): CourseSpec | null => {
   return i > 0 ? COURSES[COURSE_IDS[i - 1]!] : null;
 };
 
-/** Whether a course is open, given the best score on each. */
-export const unlocked = (id: CourseId, best: (id: CourseId) => number): boolean => {
+/** Whether a course is open, given the best score on each and whether the Holiday Pack is owned. */
+export const unlocked = (
+  id: CourseId,
+  best: (id: CourseId) => number,
+  holidayPack = false,
+): boolean => {
+  if (HOLIDAY_IDS.includes(id)) return holidayPack;
   const before = previousCourse(id);
   return !before || best(before.id) >= before.unlock;
 };
