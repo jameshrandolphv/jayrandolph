@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.10.9
+- The games' privacy policies are rewritten as formal notices, with numbered sections, and now also cover emails sent to support, privacy rights by region, how US state laws treat ad personalization, data retention and third-party services; none of what the apps do has changed
+- The games' support pages have a friendlier voice and new answers: turning the sound on, playing offline and refunds
+- Crash Crossing's privacy policy and support page cover the Android app as well as iPhone and iPad
+- The three games share one privacy policy and one support page layout, so a change is made to all of them at once
+- The first visit downloads a little less code (about 30 kB): Film Sim's image decoders and film engine load when a photo is first opened in it, not with the desktop
+- The wallpaper starts loading straight away instead of waiting for the stylesheet
+- Film Sim: opening a second photo while a large one is still decoding no longer ends with the first one on screen
+- Film Sim: if the film engine or a film's data fails to download (a dropped connection, say), the next change tries again instead of failing until the page is reloaded
+- Chaos Park and Flights load their fonts once per visit, however many times they are opened
+- The site has a description for search results and link previews
+- About.txt says Chaos Park is on the App Store
+
 ## 1.10.8
 - A Mobile Games folder on the desktop, with a folder for each game (Chaos Park, Crash Crossing, Many Mini Moon Buggies) listing its iOS and Android store pages beside the app icon
 - Chaos Park (iOS) opens the App Store in a new tab; the other rows are greyed out until those listings are live

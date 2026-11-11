@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, inject } from '@angular/core';
 import { SoundSettings } from '../../core/sound-settings';
+import { loadGameFonts } from '../../games/fonts';
 import { GameCanvas, type GameSurface } from '../../games/game-canvas';
 import { ScoreService } from '../../games/score.service';
 import { Sfx } from '../../games/sfx';
@@ -11,28 +12,6 @@ import { FlightsView } from './view';
 const PRIMARY_KEYS = new Set(['Space', 'Enter']);
 const PAUSE_KEYS = new Set(['Escape', 'KeyP']);
 const FAST_KEYS = new Set(['KeyF']);
-
-/** Self-hosted so the game works offline; both are under the SIL Open Font License (see NOTICE). */
-const FONTS: readonly [family: string, url: string][] = [
-  ['Bangers', 'fonts/bangers.woff2'],
-  ['Pacifico', 'fonts/pacifico.woff2'],
-];
-const FONT_TIMEOUT_MS = 4000;
-
-/** Text is rasterised when it is created, so the fonts have to be ready before the view is built. */
-const loadFonts = async (): Promise<void> => {
-  if (typeof FontFace === 'undefined' || typeof document === 'undefined') return;
-  const load = Promise.all(
-    FONTS.map(async ([family, url]) => {
-      const face = new FontFace(family, `url(${url})`);
-      document.fonts.add(await face.load());
-    }),
-  );
-  // A missing font falls back to the system ones rather than holding up the game.
-  await Promise.race([load, new Promise((resolve) => setTimeout(resolve, FONT_TIMEOUT_MS))]).catch(
-    () => undefined,
-  );
-};
 
 @Component({
   selector: 'app-flights',
@@ -79,7 +58,7 @@ export class Flights {
   }
 
   protected async onReady(surface: GameSurface): Promise<void> {
-    await loadFonts();
+    await loadGameFonts();
     if (this.destroyed) return;
     const { app, root } = surface;
     const game = new FlightsGame(this.scores, new Sfx(this.sound));
