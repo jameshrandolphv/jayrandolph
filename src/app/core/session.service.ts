@@ -426,13 +426,15 @@ export class SessionService {
   }
 
   async open(file: File): Promise<void> {
-    this.loadId++;
+    const id = ++this.loadId;
     this.abort?.abort();
     this.state.set('decoding');
     this.fileName.set(file.name);
     this.message.set(`Decoding ${file.name}…`);
     try {
       const decoded = await this.decoder.decode(file);
+      // Another file was opened while this one decoded (a large RAW can take seconds): the newer one wins.
+      if (id !== this.loadId) return;
       this.full = decoded.image;
       this.baselineEv.set(decoded.baselineEv);
       this.dimensions.set({ width: decoded.image.width, height: decoded.image.height });
@@ -450,6 +452,7 @@ export class SessionService {
       const iso = decoded.iso > 0 ? ` · ISO ${decoded.iso}` : '';
       this.message.set(`${decoded.camera || file.name} · ${mp} MP${iso}`);
     } catch (err) {
+      if (id !== this.loadId) return;
       this.state.set('error');
       this.message.set(err instanceof Error ? err.message : 'Could not decode this file.');
     }
