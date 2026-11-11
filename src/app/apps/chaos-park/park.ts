@@ -1784,6 +1784,7 @@ const makeRiver = (
   frame: ParkFrame,
   bridge: Bridge | null,
   rng: () => number,
+  straight = false,
 ): River | null => {
   const { points, step, length } = track;
   const n = points.length;
@@ -1792,8 +1793,8 @@ const makeRiver = (
   // Half the river's water, inside its banks.
   const water = riverHalf(laneW) - RIVER_BANK;
   const found =
-    curvedRiver(track, half, water, frame, bridge) ??
-    straightRiver(track, half, water, frame, bridge, sign);
+    (straight ? null : curvedRiver(track, half, water, frame, bridge)) ??
+    straightRiver(track, half, water, frame, bridge, sign, !straight);
   if (!found) return null;
   const raw = down ? found.raw : [...found.raw].reverse();
   const river = openTrack(raw, 1);
@@ -1812,7 +1813,8 @@ const makeRiver = (
       };
     })
     .sort((a, b) => a.at - b.at);
-  bridges[0]!.planks = true;
+  // A cross street's bridges are whole: nobody falls through onto it.
+  bridges[0]!.planks = !straight;
   // A plank gone from one lane, and later one more, always leaving room for a two-lane visitor.
   const lanes = Math.round((2 * half) / laneW);
   const first = Math.floor(rng() * lanes);
@@ -1838,6 +1840,7 @@ const straightRiver = (
   frame: ParkFrame,
   bridge: Bridge | null,
   sign: number,
+  wind = true,
 ): { raw: Point[]; runs: RiverRun[] } | null => {
   const { points, normals, step, length } = track;
   const n = points.length;
@@ -1896,7 +1899,8 @@ const straightRiver = (
   // Winding between its bridges as far as it fits, from a little past each.
   const y0 = upper.bottom + RIVER_STRAIGHT;
   const y1 = lower.top - RIVER_STRAIGHT;
-  const bends = y1 - y0 > 220 ? 2 : y1 - y0 > 60 ? 1 : 0;
+  // A cross street doesn't wind at all.
+  const bends = !wind ? 0 : y1 - y0 > 220 ? 2 : y1 - y0 > 60 ? 1 : 0;
   const clear = (line: readonly Point[]): boolean =>
     line.every((p, i) => {
       const a = line[Math.max(0, i - 1)]!;
@@ -2379,7 +2383,7 @@ export const generatePark = (
   const entrances = makeEntrances(track, wall, half, rng, eight);
   const bridge = eight ? makeBridge(track, half, rng) : null;
   const river = course.riverCrossing
-    ? makeRiver(track, half, course.laneW, frame, bridge, rng)
+    ? makeRiver(track, half, course.laneW, frame, bridge, rng, course.straightCrossing ?? false)
     : null;
   // A river's bridges, kept clear like a figure of eight's.
   const riverBridges = river ? river.bridges.map((b) => b.over.s + b.over.len / 2) : [];
