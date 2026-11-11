@@ -1794,7 +1794,7 @@ const makeRiver = (
   const water = riverHalf(laneW) - RIVER_BANK;
   const found =
     (straight ? null : curvedRiver(track, half, water, frame, bridge)) ??
-    straightRiver(track, half, water, frame, bridge, sign);
+    straightRiver(track, half, water, frame, bridge, sign, !straight);
   if (!found) return null;
   const raw = down ? found.raw : [...found.raw].reverse();
   const river = openTrack(raw, 1);
@@ -1840,6 +1840,7 @@ const straightRiver = (
   frame: ParkFrame,
   bridge: Bridge | null,
   sign: number,
+  wind = true,
 ): { raw: Point[]; runs: RiverRun[] } | null => {
   const { points, normals, step, length } = track;
   const n = points.length;
@@ -1898,7 +1899,8 @@ const straightRiver = (
   // Winding between its bridges as far as it fits, from a little past each.
   const y0 = upper.bottom + RIVER_STRAIGHT;
   const y1 = lower.top - RIVER_STRAIGHT;
-  const bends = y1 - y0 > 220 ? 2 : y1 - y0 > 60 ? 1 : 0;
+  // A cross street doesn't wind at all.
+  const bends = !wind ? 0 : y1 - y0 > 220 ? 2 : y1 - y0 > 60 ? 1 : 0;
   const clear = (line: readonly Point[]): boolean =>
     line.every((p, i) => {
       const a = line[Math.max(0, i - 1)]!;
