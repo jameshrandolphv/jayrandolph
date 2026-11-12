@@ -88,6 +88,7 @@ import {
   SPEED_SPREAD,
   STEER_AHEAD,
   SWERVE_EVERY,
+  DRIFT_EVERY,
   SWERVE_TICKS,
   TUMBLE_LEN,
   TUMBLE_RATE,
@@ -291,6 +292,8 @@ export interface Mover {
   plainSpeed: number;
   /** Ticks left swerving from lane to lane after a bee sting or a haunting, and whether it was a haunting. */
   swerve: number;
+  /** Which way a drifting child slides next: 1 outward, -1 inward. */
+  drift: number;
   haunted: boolean;
   /** Ticks left stuck in slime (it stands still for as long, as if dazed). */
   slime: number;
@@ -799,6 +802,7 @@ export class ChaosParkSim {
       return;
     }
     if (m.swerve > 0) this.swerveStep(m);
+    if (this.course.drift && m.kind === 'slow' && (this.clock + m.id * 37) % DRIFT_EVERY === 0) this.driftStep(m);
     const from = m.s;
     // Faster through the rapids.
     const pace = inRapids(this.park.rapids, m.s, m.p, m.width, track.length)
@@ -2192,6 +2196,7 @@ export class ChaosParkSim {
       wearOff: Infinity,
       plainSpeed: speed,
       swerve: 0,
+      drift: 1,
       haunted: false,
       slime: 0,
       side: -1,
@@ -2306,6 +2311,13 @@ export class ChaosParkSim {
    * A sting or a haunting has its victim swerve a lane at random every `SWERVE_EVERY` ticks; a haunted one also
    * speeds up and slows down by turns. Back to its usual self when it wears off.
    */
+  private driftStep(m: Mover): void {
+    const open = (lane: number): boolean =>
+      lane >= 0 && lane <= this.lanesOf(m) - m.width && this.canChange(m, lane);
+    if (!open(m.target + m.drift)) m.drift = -m.drift;
+    if (open(m.target + m.drift)) m.target += m.drift;
+  }
+
   private swerveStep(m: Mover): void {
     m.swerve--;
     if (m.swerve === 0) {

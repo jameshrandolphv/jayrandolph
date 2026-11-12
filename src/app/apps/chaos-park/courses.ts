@@ -145,6 +145,11 @@ export interface CourseSpec {
   straightCrossing?: boolean;
   /** How many streets cross, on a course with a straight crossing: two are one street out and back (see `crossStreets`). */
   crossStreets?: number;
+  /**
+   * Whether the slow walkers can't hold a line: a ski school's children, who slide a lane across every `DRIFT_EVERY`
+   * ticks, one way until they can go no further and then back.
+   */
+  drift?: boolean;
 }
 
 export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
@@ -401,7 +406,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     river: false,
     levelOffset: 5,
     levelRate: 0.26,
-    slow: 0.05,
+    slow: 0.14,
     slowPair: 0,
     predator: true,
     obstacle: 'steer',
@@ -416,6 +421,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     riverCrossing: false,
     bikerPace: 1.1,
     unlock: 25,
+    drift: true,
   },
 };
 

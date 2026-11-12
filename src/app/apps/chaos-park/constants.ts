@@ -191,6 +191,8 @@ export const TUMBLE_LEN = 16 * ART;
 /** A bee sting or a haunting has its victim swerve a lane every `SWERVE_EVERY` ticks for `SWERVE_TICKS`. */
 export const SWERVE_TICKS = 300;
 export const SWERVE_EVERY = 45;
+/** How often a ski school's child slides a lane across (see `CourseSpec.drift`). */
+export const DRIFT_EVERY = 100;
 /** A haunted visitor's speed swings between these, times its usual speed. */
 export const HAUNT_SPEEDS: readonly [number, number] = [1.5, 0.6];
 /** Slime holds whoever steps in it for this long. */
