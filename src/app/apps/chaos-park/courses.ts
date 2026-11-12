@@ -41,7 +41,7 @@ export type CourseEvent = 'none' | 'hook' | 'tumbleweed' | 'sting' | 'haunt';
  * A stretch of the loop drawn under cover: an old train bridge across the canyon (where a coyote now and then drops
  * TNT, see `TNT_FROM_SCORE`), or a big vine across the road.
  */
-export type Cover = 'none' | 'trestle' | 'vine';
+export type Cover = 'none' | 'trestle' | 'vine' | 'ice';
 
 /**
  * The shape of a course's road:
@@ -52,7 +52,22 @@ export type Cover = 'none' | 'trestle' | 'vine';
  *   through the house that people on the inner lanes now and then take, and a winding graveyard road that everyone
  *   on the inside lane takes, coming back on behind where they left (see `SideRoad`).
  */
-export type Layout = 'loop' | 'switchback' | 'eight' | 'manor';
+/**
+ * The holiday courses have shapes of their own: `oval` a plain oval right round the edge of the screen; `rect` a
+ * rectangle round the edge; `winding` a switchback with every corner eased; `wedge` two avenues that draw together,
+ * like a triangle with its point cut off (a road can't turn in less); `zigzag` three runs side by side, off one end
+ * of the screen and back on at the other (see `zigzagTrack`).
+ */
+export type Layout =
+  | 'loop'
+  | 'switchback'
+  | 'eight'
+  | 'manor'
+  | 'oval'
+  | 'rect'
+  | 'winding'
+  | 'wedge'
+  | 'zigzag';
 
 export interface CourseSpec {
   id: CourseId;
@@ -128,6 +143,8 @@ export interface CourseSpec {
    * winding into it: the Thanksgiving Parade's cross street.
    */
   straightCrossing?: boolean;
+  /** How many streets cross, on a course with a straight crossing: two are one street out and back (see `crossStreets`). */
+  crossStreets?: number;
 }
 
 export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
@@ -268,7 +285,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     name: 'North Pole',
     lanes: 4,
     laneW: 30,
-    layout: 'loop',
+    layout: 'oval',
     bend: 1.5,
     river: false,
     levelOffset: 1,
@@ -295,9 +312,9 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     name: 'Winter Wonderland',
     lanes: 4,
     laneW: 30,
-    layout: 'loop',
+    layout: 'winding',
     bend: 3,
-    river: true,
+    river: false,
     levelOffset: 2,
     levelRate: 0.34,
     slow: 0.05,
@@ -305,7 +322,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     predator: true,
     obstacle: 'slip',
     event: 'none',
-    cover: 'none',
+    cover: 'ice',
     paths: false,
     rapids: true,
     waves: true,
@@ -323,7 +340,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     name: 'Thanksgiving Parade',
     lanes: 5,
     laneW: 24,
-    layout: 'loop',
+    layout: 'wedge',
     bend: 0.6,
     river: false,
     levelOffset: 3,
@@ -344,6 +361,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     bikerPace: 1,
     unlock: 25,
     straightCrossing: true,
+    crossStreets: 2,
   },
   // a Christmas market round a square that people cut across;
   village: {
@@ -351,7 +369,7 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     name: 'Winter Village',
     lanes: 4,
     laneW: 30,
-    layout: 'loop',
+    layout: 'rect',
     bend: 1,
     river: false,
     levelOffset: 3,
@@ -376,9 +394,9 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
   ski: {
     id: 'ski',
     name: 'Ski Lodge',
-    lanes: 4,
-    laneW: 30,
-    layout: 'switchback',
+    lanes: 5,
+    laneW: 24,
+    layout: 'zigzag',
     bend: 1.5,
     river: false,
     levelOffset: 5,

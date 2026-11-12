@@ -72,6 +72,11 @@ export interface Track {
   length: number;
   /** Distance between samples. */
   step: number;
+  /**
+   * Whether the loop isn't joined up on screen: its last sample is off one edge of the screen and its first off
+   * another (a ski run: off the bottom and back on at the top), so nothing is drawn or measured between the two.
+   */
+  seam?: boolean;
 }
 
 export interface Pose {
@@ -283,8 +288,18 @@ export const pose = (track: Track, s: number, d = 0): Pose => {
   const n = points.length;
   const f = wrap(s, track.length) / step;
   const i = Math.floor(f) % n;
-  const j = (i + 1) % n;
   const t = f - Math.floor(f);
+  // Past the last sample of a run that starts again elsewhere: straight on, not across the screen to the start.
+  if (track.seam && i === n - 1) {
+    const p = points[i]!;
+    const tg = tangents[i]!;
+    return {
+      x: p.x + tg.x * step * t + normals[i]!.x * d,
+      y: p.y + tg.y * step * t + normals[i]!.y * d,
+      angle: Math.atan2(tg.y, tg.x),
+    };
+  }
+  const j = (i + 1) % n;
   const nx = normals[i]!.x + (normals[j]!.x - normals[i]!.x) * t;
   const ny = normals[i]!.y + (normals[j]!.y - normals[i]!.y) * t;
   const nl = Math.hypot(nx, ny) || 1;
@@ -730,6 +745,7 @@ const softened = (raw: readonly Point[], reach: number): Point[] => {
  * shares of its length: the most first, then less where that tightens a bend too far.
  */
 const SOFTEN_REACH = [0.022, 0.014, 0.007];
+const WINDING_REACH = [0.04, 0.033, 0.027, 0.022, 0.014, 0.007];
 
 /** Resamples a closed outline to evenly spaced points and works out its directions. */
 export const buildTrack = (raw: readonly Point[], samples = TRACK_SAMPLES): Track => {
@@ -767,6 +783,72 @@ export const buildTrack = (raw: readonly Point[], samples = TRACK_SAMPLES): Trac
   const flip = tangents[right]!.y * (points[right]!.x - centre.x) < 0 ? -1 : 1;
   const normals = tangents.map((t) => ({ x: t.y * flip, y: -t.x * flip }));
   return { points, tangents, normals, length, step };
+};
+
+/** How far off the screen a ski run starts and ends: further than anyone is long. */
+export const SEAM_PAD = 90;
+
+/**
+ * Three ski runs side by side along the frame, joined by two hairpins: on at the left of the bottom edge, along,
+ * back, along again and off at the right of the top edge (on a phone held upright the frame is turned a quarter, so
+ * that is in at the top left, down, up, and down again). The loop's two ends are off the screen (`Track.seam`):
+ * whoever goes off the end comes on again at the start. None where the screen is too narrow for three runs.
+ */
+const zigzagTrack = (frame: ParkFrame, half: number, samples = TRACK_SAMPLES): Track | null => {
+  const m = frameMargins(frame);
+  const yA = frame.h - m.bottom - half;
+  const yC = m.top + half;
+  const yB = (yA + yC) / 2;
+  const r = (yA - yB) / 2;
+  if (r < half + MIDDLE_GAP / 2) return null;
+  const cxR = frame.w - m.right - half - r;
+  const cxL = m.left + half + r;
+  if (cxR - cxL < 2 * r) return null;
+  const raw: Point[] = [];
+  const line = (x0: number, x1: number, y: number): void => {
+    const steps = Math.max(1, Math.ceil(Math.abs(x1 - x0) / 2));
+    for (let j = 0; j < steps; j++) raw.push({ x: x0 + ((x1 - x0) * j) / steps, y });
+  };
+  // Half a turn about (`cx`, `cy`) from its bottom to its top, bulging to `side`.
+  const turn = (cx: number, cy: number, side: number): void => {
+    const steps = Math.max(8, Math.ceil((Math.PI * r) / 2));
+    for (let j = 0; j < steps; j++) {
+      const th = Math.PI / 2 - (Math.PI * j) / steps;
+      raw.push({ x: cx + Math.cos(th) * r * side, y: cy + Math.sin(th) * r });
+    }
+  };
+  line(-SEAM_PAD, cxR, yA);
+  turn(cxR, (yA + yB) / 2, 1);
+  line(cxR, cxL, yB);
+  turn(cxL, (yB + yC) / 2, -1);
+  line(cxL, frame.w + SEAM_PAD, yC);
+  raw.push({ x: frame.w + SEAM_PAD, y: yC });
+  const lengths = new Array<number>(raw.length).fill(0);
+  for (let i = 1; i < raw.length; i++)
+    lengths[i] = lengths[i - 1]! + Math.hypot(raw[i]!.x - raw[i - 1]!.x, raw[i]!.y - raw[i - 1]!.y);
+  const length = lengths[raw.length - 1]!;
+  const step = length / samples;
+  const points: Point[] = [];
+  let k = 0;
+  for (let i = 0; i < samples; i++) {
+    const at = i * step;
+    while (k + 2 < raw.length && lengths[k + 1]! < at) k++;
+    const span = lengths[k + 1]! - lengths[k]! || 1;
+    const t = (at - lengths[k]!) / span;
+    points.push({
+      x: raw[k]!.x + (raw[k + 1]!.x - raw[k]!.x) * t,
+      y: raw[k]!.y + (raw[k + 1]!.y - raw[k]!.y) * t,
+    });
+  }
+  const tangents = points.map((_, i) => {
+    const a = points[Math.max(0, i - 1)]!;
+    const b = points[Math.min(samples - 1, i + 1)]!;
+    const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    return { x: (b.x - a.x) / l, y: (b.y - a.y) / l };
+  });
+  // The first run's outside is the bottom edge of the frame.
+  const normals = tangents.map((t) => ({ x: -t.y, y: t.x }));
+  return { points, tangents, normals, length, step, seam: true };
 };
 
 /** Largest curvature anywhere on the loop, so the lanes can be checked for kinks. */
@@ -893,26 +975,44 @@ const loopTrack = (
   course: CourseSpec,
 ): Track => {
   const { bend, river, layout } = course;
+  if (layout === 'zigzag') {
+    const runs = zigzagTrack(frame, half);
+    if (runs) return runs;
+  }
   for (let tries = 0; tries < 80; tries++) {
     // A river winds as much as it can: when its bends don't fit, they ease off a little each try rather than giving up.
     const amount = river ? bend * Math.max(0.3, 1 - tries / 50) : bend;
     const raw =
-      layout === 'switchback'
+      layout === 'switchback' || layout === 'winding'
         ? switchbackOutline(rng, frame, half, Math.max(0, 1 - tries / 50))
         : layout === 'manor'
           ? manorOutline(rng, frame, half, tries < 40)
           : layout === 'eight'
             ? eightOutline(rng, frame, half, Math.max(0.5, 1.1 - tries / 80))
-            : loopOutline(rng, frame, half, amount);
-    const radius = layout === 'loop' ? minRadius(half) : cornerRadius(half);
+            : layout === 'oval'
+              ? ovalOutline(frame, half, 2.0 + tries * 0.1)
+              : layout === 'rect' || layout === 'zigzag'
+                ? // (A zigzag only where three runs don't fit.)
+                  rectOutline(frame, half)
+                : layout === 'wedge'
+                  ? wedgeOutline(rng, frame, half, tries)
+                  : loopOutline(rng, frame, half, amount);
+    const plain = layout === 'loop' || layout === 'oval';
+    const radius = plain ? minRadius(half) : cornerRadius(half);
     // Softened where that still fits: averaging tightens a bend that is already as tight as it can go.
     const track = buildTrack(raw);
-    if (layout !== 'loop')
-      for (const share of SOFTEN_REACH) {
-        const soft = buildTrack(softened(raw, track.length * share));
-        if (fits(soft, frame, half, radius) && (layout === 'eight' || clearOfItself(soft, half)))
-          return soft;
-      }
+    const soften =
+      layout === 'switchback' || layout === 'eight' || layout === 'manor'
+        ? SOFTEN_REACH
+        : // Every corner eased as far as it will go, so the road winds rather than turns.
+          layout === 'winding'
+          ? WINDING_REACH
+          : [];
+    for (const share of soften) {
+      const soft = buildTrack(softened(raw, track.length * share));
+      if (fits(soft, frame, half, radius) && (layout === 'eight' || clearOfItself(soft, half)))
+        return soft;
+    }
     if (fits(track, frame, half, radius)) return track;
   }
 
@@ -920,9 +1020,15 @@ const loopTrack = (
   const { cx, cy, ax, by } = loopSpace(frame, half);
   const a = ax * 0.95;
   const b = by * 0.95;
-  const r = Math.min(a, b, Math.max(minRadius(half) * 1.05, Math.min(a, b) * 0.8));
+  return buildTrack(
+    roundedRect(cx, cy, a, b, Math.min(a, b, Math.max(minRadius(half) * 1.05, Math.min(a, b) * 0.8))),
+  );
+};
+
+/** A rectangle `2a` by `2b` about a centre with corners of radius `r`, counterclockwise on screen from the top right. */
+const roundedRect = (cx: number, cy: number, a: number, b: number, r: number): Point[] => {
   const raw: Point[] = [];
-  // Corners counterclockwise on screen from the top right, each turning a further quarter (angles decrease, y down).
+  // Each corner turns a further quarter (angles decrease, y down).
   const corners = [
     { x: cx + a - r, y: cy - b + r },
     { x: cx - a + r, y: cy - b + r },
@@ -947,7 +1053,57 @@ const loopTrack = (
       });
     }
   });
-  return buildTrack(raw);
+  return raw;
+};
+
+/**
+ * A plain oval reaching the edges of the screen: an ellipse when `n` is 2, its ends a little squarer as `n` rises, for
+ * a screen too long and narrow for an ellipse's ends to be driven round.
+ */
+const ovalOutline = (frame: ParkFrame, half: number, n: number): Point[] => {
+  const { cx, cy, ax, by } = loopSpace(frame, half);
+  const m = 2400;
+  return Array.from({ length: m }, (_, j) => {
+    const th = (-j / m) * Math.PI * 2;
+    const c = Math.cos(th);
+    const s = Math.sin(th);
+    return {
+      x: cx + Math.sign(c) * Math.pow(Math.abs(c), 2 / n) * ax * 0.985,
+      y: cy + Math.sign(s) * Math.pow(Math.abs(s), 2 / n) * by * 0.985,
+    };
+  });
+};
+
+/** A rectangle right round the edge of the screen, its corners as tight as the lanes turn comfortably. */
+const rectOutline = (frame: ParkFrame, half: number): Point[] => {
+  const { cx, cy, ax, by } = loopSpace(frame, half);
+  const a = ax * 0.985;
+  const b = by * 0.985;
+  return roundedRect(cx, cy, a, b, Math.min(Math.min(a, b), cornerRadius(half) * CORNER_SOFTEN));
+};
+
+/**
+ * Two avenues that meet: one straight along the frame, the other leaning in to it, joined across the right end and by
+ * as tight a turn as the lanes allow at the left (the top, on a phone held upright). Which is the straight one is
+ * chosen at random; counterclockwise on screen.
+ */
+const wedgeOutline = (rng: () => number, frame: ParkFrame, half: number, tries: number): Point[] => {
+  const { by } = loopSpace(frame, half);
+  const flip = rng() < 0.5 ? 1 : -1;
+  const r = cornerRadius(half) * (1.04 + tries * 0.01);
+  // How far apart the avenues are at the narrow end, as a share of the wide end: room for the turn and no more.
+  const t = Math.min(1, (r * 1.04) / (by * 0.985) + tries * 0.01);
+  let unit: [number, number][] = (
+    [
+      [1, -1],
+      [-1, 1 - 2 * t],
+      [-1, 1],
+      [1, 1],
+    ] as [number, number][]
+  ).map(([u, v]) => [u, v * flip]);
+  if (flip < 0) unit = unit.reverse();
+  const corners = placeCorners(unit, frame, half, 0.985, 0.985);
+  return roundedPolygon(corners, () => r);
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -979,6 +1135,13 @@ const makeEntrances = (
     const vertical = Math.abs(nrm.y) > Math.abs(nrm.x);
     const along = vertical ? t.x : t.y;
     const [lo, hi] = vertical ? [wall.x, wall.x + wall.w] : [wall.y, wall.y + wall.h];
+    if (track.seam) {
+      // A run in the middle faces no wall; and no gate where the run is off the screen.
+      const to = vertical
+        ? Math.min(Math.abs(t.y - wall.y), Math.abs(t.y - wall.y - wall.h))
+        : Math.min(Math.abs(t.x - wall.x), Math.abs(t.x - wall.x - wall.w));
+      if (to > half) return;
+    }
     if (along > lo + corner && along < hi - corner) candidates.push(i);
   });
   let best: number[] = [];
@@ -1785,6 +1948,7 @@ const makeRiver = (
   bridge: Bridge | null,
   rng: () => number,
   straight = false,
+  streets = 1,
 ): River | null => {
   const { points, step, length } = track;
   const n = points.length;
@@ -1793,6 +1957,7 @@ const makeRiver = (
   // Half the river's water, inside its banks.
   const water = riverHalf(laneW) - RIVER_BANK;
   const found =
+    (streets > 1 ? crossStreets(track, half, water, frame) : null) ??
     (straight ? null : curvedRiver(track, half, water, frame, bridge)) ??
     straightRiver(track, half, water, frame, bridge, sign, !straight);
   if (!found) return null;
@@ -1938,6 +2103,32 @@ const straightRiver = (
     raw: [{ x, y: -RIVER_PAD }, ...middle, { x, y: frame.h + RIVER_PAD }],
     runs: [upper, lower],
   };
+};
+
+/**
+ * Two cross streets, as one: straight across the loop a little left of the middle, round off the screen below it and
+ * back across further right, so the second street's traffic is the first's coming back the other way. Four bridges.
+ * None where the loop isn't crossed cleanly four times.
+ */
+const crossStreets = (track: Track, half: number, water: number, frame: ParkFrame): { raw: Point[]; runs: RiverRun[] } | null => {
+  const xs = track.points.map((p) => p.x);
+  const lo = Math.min(...xs);
+  const wide = Math.max(...xs) - lo;
+  const xa = lo + wide * 0.4;
+  const xb = lo + wide * 0.7;
+  const r = (xb - xa) / 2;
+  if (r < water * 2 + 20) return null;
+  const raw: Point[] = [];
+  const bottom = frame.h + RIVER_PAD;
+  raw.push({ x: xa, y: -RIVER_PAD });
+  const turn = Math.max(8, Math.ceil((Math.PI * r) / 4));
+  for (let j = 0; j <= turn; j++) {
+    const th = Math.PI - (Math.PI * j) / turn;
+    raw.push({ x: xa + r + Math.cos(th) * r, y: bottom + Math.sin(th) * r });
+  }
+  raw.push({ x: xb, y: -RIVER_PAD });
+  const runs = riverRuns(track, half, water, openTrack(raw, 1));
+  return runs.length === 4 ? { raw, runs } : null;
 };
 
 /** A river as short cuts for the scenery to keep clear of: lines across its width, banks and all. */
@@ -2123,7 +2314,7 @@ const makeTrees = (
       const p = { x: tx, y: ty };
       // A figure of eight's edges cross, so its road is kept clear by distance instead, and its middles are inside
       // the centre line.
-      if (eight && nearPolyline(track.points, p, half + r + 3, true)) continue;
+      if (eight && nearPolyline(track.points, p, half + r + 3, !track.seam)) continue;
       if (eight && shortcuts.some((c) => nearPolyline(c.path, p, r + 6))) continue;
       const middle = eight
         ? insidePolygon(track.points, tx, ty)
@@ -2369,7 +2560,8 @@ export const generatePark = (
   const wall = wallFor(frame);
   const half = roadHalf(course);
   const track = makeTrack(rng, frame, half, course);
-  const eight = course.layout === 'eight';
+  // Like a figure of eight, a ski run has no one outside: its gates are on whichever side the wall is.
+  const eight = course.layout === 'eight' || !!track.seam;
   const inner = edge(track, -half - 6);
   const xs = inner.map((p) => p.x);
   const ys = inner.map((p) => p.y);
@@ -2381,9 +2573,18 @@ export const generatePark = (
   };
   const inside: Interior = { inner, box };
   const entrances = makeEntrances(track, wall, half, rng, eight);
-  const bridge = eight ? makeBridge(track, half, rng) : null;
+  const bridge = course.layout === 'eight' ? makeBridge(track, half, rng) : null;
   const river = course.riverCrossing
-    ? makeRiver(track, half, course.laneW, frame, bridge, rng, course.straightCrossing ?? false)
+    ? makeRiver(
+        track,
+        half,
+        course.laneW,
+        frame,
+        bridge,
+        rng,
+        course.straightCrossing ?? false,
+        course.crossStreets ?? 1,
+      )
     : null;
   // A river's bridges, kept clear like a figure of eight's.
   const riverBridges = river ? river.bridges.map((b) => b.over.s + b.over.len / 2) : [];
