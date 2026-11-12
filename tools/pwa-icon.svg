@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f4f7fc" />
+      <stop offset="1" stop-color="#b9c9e2" />
+    </linearGradient>
+    <linearGradient id="left" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6b7fd0" />
+      <stop offset="0.5" stop-color="#4a5fba" />
+      <stop offset="1" stop-color="#3a4ba0" />
+    </linearGradient>
+    <linearGradient id="right" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b3c0f2" />
+      <stop offset="0.5" stop-color="#8e9fe6" />
+      <stop offset="1" stop-color="#7a8ddc" />
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.55" />
+      <stop offset="1" stop-color="#fff" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+  <!-- Full-bleed: iOS applies its own rounded mask, so the artwork must reach every edge. -->
+  <rect width="256" height="512" fill="url(#left)" />
+  <rect x="256" width="256" height="512" fill="url(#right)" />
+  <rect width="512" height="200" fill="url(#gloss)" />
+  <g fill="none" stroke="#0b0b0f" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M160 150v84" />
+    <path d="M352 150v84" />
+    <path d="M100 322C150 436 362 436 412 322" />
+  </g>
+</svg>
