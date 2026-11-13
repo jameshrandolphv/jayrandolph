@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  PAINT_RANGE,
+  RECKLESS_EVERY,
+  RECKLESS_FROM_SCORE,
   ART,
   BOOST,
   DOUBLE_GAP,
@@ -1544,6 +1547,60 @@ describe('course events', () => {
       expect(speeds.size > 2).toBe(id === 'mansion');
       expect(m.speed).toBeCloseTo(m.baseSpeed);
     }
+  });
+
+  it('on Miami Nights a biker fires a paintball at the nearest person, who swerves, and the ball is gone', () => {
+    const sim = onCourse('miami');
+    const length = sim.park.track.length;
+    const biker = put(sim, 'biker', 100, 0, { speed: 0.001 });
+    const near = put(sim, 'walker', wrap(100 + 40 * ART, length), 3, { speed: 0.001 });
+    put(sim, 'walker', wrap(100 + 100 * ART, length), 3, { speed: 0.001 });
+    expect(start(sim)).toBe(true);
+    expect(sim.drainEvents()).toEqual(['shoot']);
+    const ball = sim.rats[0]!;
+    expect(ball.kind).toBe('paint');
+    expect(ball.target).toBe(near.id);
+    expect(start(sim)).toBe(false);
+    for (let t = 0; t < 60 && near.swerve === 0; t++) sim.step();
+    expect(near.swerve).toBeGreaterThan(0);
+    expect(near.haunted).toBe(false);
+    expect(sim.rats).toHaveLength(0);
+    expect(biker.swerve).toBe(0);
+    expect(sim.lives).toBe(LIVES);
+  });
+
+  it('nobody to fire at, or nobody in a car or on a bike, and no paintball flies', () => {
+    const sim = onCourse('miami');
+    put(sim, 'walker', 100, 0, { speed: 0.001 });
+    expect(start(sim)).toBe(false);
+    put(sim, 'biker', wrap(100 + PAINT_RANGE + 60, sim.park.track.length), 0, { speed: 0.001 });
+    expect(start(sim)).toBe(false);
+  });
+
+  it("Miami Nights' drivers and bikers swerve toward whoever is nearest ahead in a lane beside them", () => {
+    const sim = onCourse('miami');
+    sim.laps = RECKLESS_FROM_SCORE;
+    const length = sim.park.track.length;
+    const biker = put(sim, 'biker', 100, 1, { speed: 0.001 });
+    put(sim, 'walker', wrap(100 + 40 * ART, length), 2, { speed: 0.001 });
+    // Someone further ahead on the other side doesn't draw it.
+    put(sim, 'walker', wrap(100 + 70 * ART, length), 0, { speed: 0.001 });
+    let swerved = false;
+    for (let t = 0; t <= RECKLESS_EVERY && !swerved; t++) {
+      sim.step();
+      swerved = biker.target !== 1;
+    }
+    expect(swerved).toBe(true);
+    expect(biker.target).toBe(2);
+  });
+
+  it("other courses' drivers keep to their lanes", () => {
+    const sim = onCourse('pole');
+    sim.laps = RECKLESS_FROM_SCORE;
+    const biker = put(sim, 'biker', 100, 1, { speed: 0.001 });
+    put(sim, 'walker', wrap(100 + 40 * ART, sim.park.track.length), 2, { speed: 0.001 });
+    ticks(sim, RECKLESS_EVERY + 1);
+    expect(biker.target).toBe(1);
   });
 });
 

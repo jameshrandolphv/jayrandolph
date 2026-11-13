@@ -193,6 +193,22 @@ export const SWERVE_TICKS = 300;
 export const SWERVE_EVERY = 45;
 /** How often a ski school's child slides a lane across (see `CourseSpec.drift`). */
 export const DRIFT_EVERY = 100;
+/**
+ * On a course whose drivers are reckless (see `CourseSpec.reckless`): from `RECKLESS_FROM_SCORE` laps, every
+ * `RECKLESS_EVERY` ticks each car and biker swerves a lane toward whoever is nearest ahead within `RECKLESS_SIGHT`
+ * (at the design lane width) in a lane beside its own.
+ */
+export const RECKLESS_FROM_SCORE = 4;
+export const RECKLESS_EVERY = 240;
+export const RECKLESS_SIGHT = 90 * ART;
+/**
+ * A paintball (see the `paintball` event) flies at `PAINT_SPEED` at the nearest person within `PAINT_RANGE` of the
+ * shooter, along the road (both at the design lane width), and drops if it hasn't hit them in `RAT_GIVE_UP` ticks.
+ */
+export const PAINT_SPEED = 5 * ART * PACE;
+/** Paintballs are fired every `PAINT_INTERVAL` ticks, more often than other courses' events (`EVENT_INTERVAL`). */
+export const PAINT_INTERVAL: readonly [number, number] = [12 * 60, 25 * 60];
+export const PAINT_RANGE = 120 * ART;
 /** A haunted visitor's speed swings between these, times its usual speed. */
 export const HAUNT_SPEEDS: readonly [number, number] = [1.5, 0.6];
 /** Slime holds whoever steps in it for this long. */

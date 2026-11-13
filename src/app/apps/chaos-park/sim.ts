@@ -89,6 +89,12 @@ import {
   STEER_AHEAD,
   SWERVE_EVERY,
   DRIFT_EVERY,
+  PAINT_INTERVAL,
+  PAINT_RANGE,
+  PAINT_SPEED,
+  RECKLESS_EVERY,
+  RECKLESS_FROM_SCORE,
+  RECKLESS_SIGHT,
   SWERVE_TICKS,
   TUMBLE_LEN,
   TUMBLE_RATE,
@@ -204,7 +210,8 @@ export type SimEvent =
   | 'slime'
   | 'wave'
   | 'drop'
-  | 'boom';
+  | 'boom'
+  | 'shoot';
 
 /**
  * Where a mover is: walking in from the street, on the loop, cutting across the park, on one of a manor's side roads,
@@ -315,11 +322,13 @@ export interface Mover {
 
 /**
  * A rat: it waits at the kerb ahead of the person it is after, darts out to bite them, then runs back off the road.
+ * A paintball is one too, with no waiting or running back: it flies from where it was fired (`home`) straight at
+ * the person it is after, and is gone once it splats them or misses.
  */
 export interface Rat {
   id: number;
-  /** A biter (the rat, or whatever bites on this course), a bee or a ghost. */
-  kind: 'bite' | 'sting' | 'haunt';
+  /** A biter (the rat, or whatever bites on this course), a bee, a ghost or a paintball. */
+  kind: 'bite' | 'sting' | 'haunt' | 'paint';
   state: 'lurk' | 'dash' | 'flee';
   /** The mover it is after. */
   target: number;
@@ -802,7 +811,15 @@ export class ChaosParkSim {
       return;
     }
     if (m.swerve > 0) this.swerveStep(m);
-    if (this.course.drift && m.kind === 'slow' && (this.clock + m.id * 37) % DRIFT_EVERY === 0) this.driftStep(m);
+    if (this.course.drift && m.kind === 'slow' && (this.clock + m.id * 37) % DRIFT_EVERY === 0)
+      this.driftStep(m);
+    if (
+      this.course.reckless &&
+      (m.kind === 'car' || m.kind === 'biker') &&
+      this.laps >= RECKLESS_FROM_SCORE &&
+      (this.clock + m.id * 53) % RECKLESS_EVERY === 0
+    )
+      this.swerveAt(m);
     const from = m.s;
     // Faster through the rapids.
     const pace = inRapids(this.park.rapids, m.s, m.p, m.width, track.length)
@@ -901,7 +918,8 @@ export class ChaosParkSim {
     }
     m.state = 'track';
     m.side = -1;
-    m.s = m.dir < 0 ? wrap(r.a + m.s, track.length) : wrap(r.b + (m.s - r.track.length), track.length);
+    m.s =
+      m.dir < 0 ? wrap(r.a + m.s, track.length) : wrap(r.b + (m.s - r.track.length), track.length);
     m.p = m.target;
     // Either way round, what it has to do again is the stretch from the end it came out at to the one it went in by.
     m.progress -= wrap(r.a - r.b, track.length);
@@ -1544,9 +1562,11 @@ export class ChaosParkSim {
     }
     const { event } = this.course;
     if (event !== 'none' && this.laps >= EVENT_FROM_SCORE) {
-      if (this.eventTimer <= 0) this.eventTimer = between(EVENT_INTERVAL) / 2;
+      // Paintballs fly more often than the other courses' events.
+      const interval = event === 'paintball' ? PAINT_INTERVAL : EVENT_INTERVAL;
+      if (this.eventTimer <= 0) this.eventTimer = between(interval) / 2;
       else if (--this.eventTimer <= 0)
-        this.eventTimer = this.startEvent() ? between(EVENT_INTERVAL) : 120;
+        this.eventTimer = this.startEvent() ? between(interval) : 120;
     }
     // Waves, one at a time, on their own timer.
     if (this.course.waves && this.laps >= WAVE_FROM_SCORE && !this.waves.length) {
@@ -1555,7 +1575,12 @@ export class ChaosParkSim {
     }
     if (this.park.river) this.spawnRiver(between);
     // Now and then on Dusty Canyon, a coyote drops TNT from the old train bridge, one stick at a time.
-    if (this.course.cover === 'trestle' && this.park.cover && this.laps >= TNT_FROM_SCORE && !this.tnts.length) {
+    if (
+      this.course.cover === 'trestle' &&
+      this.park.cover &&
+      this.laps >= TNT_FROM_SCORE &&
+      !this.tnts.length
+    ) {
       if (this.tntTimer <= 0) this.tntTimer = between(TNT_INTERVAL);
       else if (--this.tntTimer <= 0) this.dropTnt();
     }
@@ -2001,8 +2026,11 @@ export class ChaosParkSim {
 
   private pickKind(): Kind {
     const kinds: Kind[] = ['walker', 'dog', 'runner', 'biker', 'car', 'slow', 'pair'];
-    // One car in the park at a time, from the moment it turns in at the gate until it has driven out.
-    const carIn = this.movers.some((m) => m.kind === 'car' && !m.river);
+    // One car in the park at a time (or the course's `carsAtOnce`), from the moment it turns in at the gate until it
+    // has driven out.
+    const carIn =
+      this.movers.filter((m) => m.kind === 'car' && !m.river).length >=
+      (this.course.carsAtOnce ?? 1);
     const weight = (k: Kind): number =>
       k === 'slow'
         ? this.course.slow
@@ -2012,7 +2040,8 @@ export class ChaosParkSim {
             ? KIND_SPECS[k].weight
             : this.laps < CARS_FROM_SCORE || carIn
               ? 0
-              : KIND_SPECS.car.weight + Math.min(0.05, (this.level - CARS_FROM_SCORE) * 0.002);
+              : (KIND_SPECS.car.weight + Math.min(0.05, (this.level - CARS_FROM_SCORE) * 0.002)) *
+                (this.course.carWeight ?? 1);
     const total = kinds.reduce((sum, k) => sum + weight(k), 0);
     let r = this.rng() * total;
     for (const k of kinds) {
@@ -2222,7 +2251,7 @@ export class ChaosParkSim {
    * Sets a rat (or a bee or a ghost) waiting at the kerb ahead of someone to go for; returns false if nobody suitable
    * is about. One of each kind at a time.
    */
-  private sendRat(kind: Rat['kind']): boolean {
+  private sendRat(kind: Exclude<Rat['kind'], 'paint'>): boolean {
     if (this.rats.some((r) => r.kind === kind)) return false;
     const { track } = this.park;
     const lead = RAT_LURK + 30;
@@ -2265,10 +2294,19 @@ export class ChaosParkSim {
       }
       if (r.state === 'dash') {
         if (gone || target.daze > 0 || r.ticks > RAT_GIVE_UP) {
-          this.ratState(r, 'flee');
+          // A paintball that misses just drops.
+          if (r.kind === 'paint') r.ticks = -1;
+          else this.ratState(r, 'flee');
           continue;
         }
-        if (this.ratRun(r, target, (target.width * 5 + 3) * ART)) {
+        if (
+          this.ratRun(
+            r,
+            target,
+            (target.width * 5 + 3) * ART,
+            r.kind === 'paint' ? PAINT_SPEED : RAT_SPEED,
+          )
+        ) {
           if (r.kind === 'bite') {
             target.daze = DAZE_TICKS;
             // A bitten person loses any boost.
@@ -2280,7 +2318,8 @@ export class ChaosParkSim {
             target.haunted = r.kind === 'haunt';
             this.events.push('hit');
           }
-          this.ratState(r, 'flee');
+          if (r.kind === 'paint') r.ticks = -1;
+          else this.ratState(r, 'flee');
         }
         continue;
       }
@@ -2294,13 +2333,13 @@ export class ChaosParkSim {
     r.ticks = 0;
   }
 
-  /** Runs a rat toward a point; returns true once it is within `reach`. */
-  private ratRun(r: Rat, to: Point, reach: number): boolean {
+  /** Runs a rat (or flies a paintball, at `speed`) toward a point; returns true once it is within `reach`. */
+  private ratRun(r: Rat, to: Point, reach: number, speed = RAT_SPEED): boolean {
     const dx = to.x - r.x;
     const dy = to.y - r.y;
     const d = Math.hypot(dx, dy);
     if (d <= reach) return true;
-    const step = Math.min(RAT_SPEED, d - reach + 0.01);
+    const step = Math.min(speed, d - reach + 0.01);
     r.heading = Math.atan2(dy, dx);
     r.x += (dx / d) * step;
     r.y += (dy / d) * step;
@@ -2311,6 +2350,31 @@ export class ChaosParkSim {
    * A sting or a haunting has its victim swerve a lane at random every `SWERVE_EVERY` ticks; a haunted one also
    * speeds up and slows down by turns. Back to its usual self when it wears off.
    */
+  /**
+   * A reckless driver or biker swerves a lane toward whoever is nearest ahead of it, within `RECKLESS_SIGHT`, in a
+   * lane beside its own: not while it is already changing lane, swerving, on autopilot or a train.
+   */
+  private swerveAt(m: Mover): void {
+    if (m.p !== m.target || m.swerve > 0 || m.autopilot > 0 || this.isTrain(m)) return;
+    const length = this.park.track.length;
+    let mark: Mover | null = null;
+    let nearest = RECKLESS_SIGHT;
+    for (const o of this.movers) {
+      if (o === m || o.state !== 'track' || o.ghost > 0) continue;
+      // Beside its own lanes, not in them.
+      if (laneOverlap(m.p, m.width, o.p, o.width) > 0) continue;
+      if (laneOverlap(m.p - 1, m.width + 2, o.p, o.width) <= 0) continue;
+      const ahead = wrap((o.s - m.s) * m.dir, length);
+      if (ahead < nearest) {
+        nearest = ahead;
+        mark = o;
+      }
+    }
+    if (!mark) return;
+    const lane = m.target + (mark.p < m.p ? -1 : 1);
+    if (lane >= 0 && lane <= this.lanesOf(m) - m.width) m.target = lane;
+  }
+
   private driftStep(m: Mover): void {
     const open = (lane: number): boolean =>
       lane >= 0 && lane <= this.lanesOf(m) - m.width && this.canChange(m, lane);
@@ -2350,9 +2414,56 @@ export class ChaosParkSim {
         return this.sendRat('sting');
       case 'haunt':
         return this.sendRat('haunt');
+      case 'paintball':
+        return this.firePaint();
       case 'none':
         return false;
     }
+  }
+
+  /**
+   * Someone in a car or on a bike, picked at random, fires a paintball at the nearest person (or anything else but a
+   * carriage or a predator) within `PAINT_RANGE` of it along the road, who isn't already swerving or seeing stars.
+   */
+  private firePaint(): boolean {
+    if (this.rats.some((r) => r.kind === 'paint')) return false;
+    const shooters = this.movers.filter(
+      (m) =>
+        m.state === 'track' && (m.kind === 'car' || m.kind === 'biker') && m.daze === 0 && !m.done,
+    );
+    if (!shooters.length) return false;
+    const m = shooters[Math.floor(this.rng() * shooters.length)]!;
+    const length = this.park.track.length;
+    let mark: Mover | null = null;
+    let nearest = PAINT_RANGE;
+    for (const o of this.movers) {
+      if (o === m || o.state !== 'track' || o.kind === 'carriage' || o.kind === 'predator')
+        continue;
+      if (o.daze > 0 || o.swerve > 0 || o.ghost > 0) continue;
+      const d = Math.abs(loopDelta(m.s, o.s, length));
+      if (d < nearest) {
+        nearest = d;
+        mark = o;
+      }
+    }
+    if (!mark) return false;
+    const heading = Math.atan2(mark.y - m.y, mark.x - m.x);
+    this.rats.push({
+      id: this.nextId++,
+      kind: 'paint',
+      state: 'dash',
+      target: mark.id,
+      home: { x: m.x, y: m.y },
+      x: m.x,
+      y: m.y,
+      heading,
+      prevX: m.x,
+      prevY: m.y,
+      prevHeading: heading,
+      ticks: 0,
+    });
+    this.events.push('shoot');
+    return true;
   }
 
   /** The fisherman casts into a lane, somewhere nobody is just about to be. */
@@ -2501,7 +2612,13 @@ export class ChaosParkSim {
       if (!hit.length) continue;
       this.movers = this.movers.filter((m) => !hit.includes(m));
       for (const m of hit) this.impacts.push({ id: this.nextId++, x: m.x, y: m.y, ticks: 0 });
-      if (this.loseLife({ x: at.x, y: at.y }, hit.map((m) => m.id))) break;
+      if (
+        this.loseLife(
+          { x: at.x, y: at.y },
+          hit.map((m) => m.id),
+        )
+      )
+        break;
     }
     this.tnts = this.tnts.filter((t) => t.fuse !== -2 && (t.run > 0 || t.fuse >= 0));
   }
@@ -2515,7 +2632,8 @@ export class ChaosParkSim {
         if (m.state !== 'track' || laneOverlap(m.p, m.width, t.lane, 1) <= 0) continue;
         const reach = TNT_BLAST * ART + m.len / 2;
         const ahead = wrap((t.s - m.s) * m.dir, length);
-        if (Math.abs(loopDelta(t.s, m.s, length)) < reach || ahead < pace(m) * TNT_WARN + reach) m.warning = true;
+        if (Math.abs(loopDelta(t.s, m.s, length)) < reach || ahead < pace(m) * TNT_WARN + reach)
+          m.warning = true;
       }
     }
   }

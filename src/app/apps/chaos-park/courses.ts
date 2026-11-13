@@ -14,11 +14,19 @@ export type CourseId =
   | 'wonderland'
   | 'parade'
   | 'village'
-  | 'ski';
+  | 'ski'
+  | 'miami';
 /** The original five, each unlocked by a score on the one before. */
 export const COURSE_IDS: readonly CourseId[] = ['park', 'waters', 'canyon', 'jungle', 'mansion'];
-/** The apps' Holiday Pack: five more, bought together and all open at once (see `unlocked`). */
-export const HOLIDAY_IDS: readonly CourseId[] = ['pole', 'wonderland', 'parade', 'village', 'ski'];
+/** The apps' Holiday Pack: six more, bought together and all open at once (see `unlocked`). */
+export const HOLIDAY_IDS: readonly CourseId[] = [
+  'pole',
+  'wonderland',
+  'parade',
+  'village',
+  'ski',
+  'miami',
+];
 
 /**
  * What the two patches (at `PATCH_SCORES` laps) are: slippery ground that slides whoever crosses it a lane, an
@@ -33,9 +41,11 @@ export type Obstacle = 'slip' | 'steer' | 'slime';
  *   but no life;
  * - tumbleweed: rolls across every lane at one spot, and whoever it touches is stunned (no life lost);
  * - sting / haunt: like the rat, a bee or a ghost goes for someone, who then swerves from lane to lane for
- *   `SWERVE_TICKS` (and a ghost speeds them up and slows them down too).
+ *   `SWERVE_TICKS` (and a ghost speeds them up and slows them down too);
+ * - paintball: someone in a car or on a bike fires a paintball at the nearest person within `PAINT_RANGE`, and
+ *   whoever it splats can't see where they're going, so swerves from lane to lane like a bee sting.
  */
-export type CourseEvent = 'none' | 'hook' | 'tumbleweed' | 'sting' | 'haunt';
+export type CourseEvent = 'none' | 'hook' | 'tumbleweed' | 'sting' | 'haunt' | 'paintball';
 
 /**
  * A stretch of the loop drawn under cover: an old train bridge across the canyon (where a coyote now and then drops
@@ -59,15 +69,7 @@ export type Cover = 'none' | 'trestle' | 'vine' | 'ice';
  * of the screen and back on at the other (see `zigzagTrack`).
  */
 export type Layout =
-  | 'loop'
-  | 'switchback'
-  | 'eight'
-  | 'manor'
-  | 'oval'
-  | 'rect'
-  | 'winding'
-  | 'wedge'
-  | 'zigzag';
+  'loop' | 'switchback' | 'eight' | 'manor' | 'oval' | 'rect' | 'winding' | 'wedge' | 'zigzag';
 
 export interface CourseSpec {
   id: CourseId;
@@ -150,6 +152,14 @@ export interface CourseSpec {
    * ticks, one way until they can go no further and then back.
    */
   drift?: boolean;
+  /**
+   * Whether drivers and bikers drive like maniacs: every `RECKLESS_EVERY` ticks from `RECKLESS_FROM_SCORE` laps, each
+   * one swerves a lane toward whoever is nearest ahead of it, within `RECKLESS_SIGHT`, in a lane beside its own.
+   */
+  reckless?: boolean;
+  /** How many cars may be in at once (one on every other course), and their arrival weight, times Chaos Park's. */
+  carsAtOnce?: number;
+  carWeight?: number;
 }
 
 export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
@@ -422,6 +432,37 @@ export const COURSES: Readonly<Record<CourseId, CourseSpec>> = {
     bikerPace: 1.1,
     unlock: 25,
     drift: true,
+  },
+  // And Miami Nights: a neon boulevard round an art-deco hotel, with sports cars and bikes driving like maniacs and
+  // firing paintballs at each other, neon speed strips, oil slicks and an alligator out of the canals.
+  miami: {
+    id: 'miami',
+    name: 'Miami Nights',
+    lanes: 5,
+    laneW: 24,
+    layout: 'oval',
+    bend: 1,
+    river: false,
+    levelOffset: 4,
+    levelRate: 0.28,
+    slow: 0.03,
+    slowPair: 0.02,
+    predator: true,
+    obstacle: 'slip',
+    event: 'paintball',
+    cover: 'none',
+    paths: false,
+    rapids: true,
+    waves: false,
+    train: false,
+    slowCars: false,
+    wild: false,
+    riverCrossing: false,
+    bikerPace: 1.15,
+    unlock: 25,
+    reckless: true,
+    carsAtOnce: 2,
+    carWeight: 2,
   },
 };
 

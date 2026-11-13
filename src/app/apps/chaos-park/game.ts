@@ -62,6 +62,7 @@ const SOUNDS: Readonly<Record<SimEvent, SfxName>> = {
   wave: 'swish',
   drop: 'swish',
   boom: 'crash',
+  shoot: 'crack',
 };
 
 /**
