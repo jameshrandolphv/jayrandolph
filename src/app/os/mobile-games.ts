@@ -20,9 +20,15 @@ export const MOBILE_GAMES: readonly MobileGameDef[] = [
     name: 'Chaos Park',
     image: '/icons/games/chaos-park.png',
     ios: { url: 'https://apps.apple.com/us/app/chaos-park/id6825083630' },
-    android: {},
+    android: { url: 'https://play.google.com/store/apps/details?id=com.jayrandolph.chaospark' },
   },
-  { id: 'crash-crossing', name: 'Crash Crossing', image: '/icons/games/crash-crossing.png', ios: {}, android: {} },
+  {
+    id: 'crash-crossing',
+    name: 'Crash Crossing',
+    image: '/icons/games/crash-crossing.png',
+    ios: { url: 'https://apps.apple.com/us/app/crash-crossing/id6827704923' },
+    android: { url: 'https://play.google.com/store/apps/details?id=com.jayrandolph.crashcrossing' },
+  },
   {
     id: 'many-mini-moon-buggies',
     name: 'Many Mini Moon Buggies',

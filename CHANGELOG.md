@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.10.9
+- Mobile Games links Chaos Park on Google Play and Crash Crossing on the App Store and Google Play; only Many Mini Moon Buggies is still greyed out
+
 ## 1.10.8
 - A Mobile Games folder on the desktop, with a folder for each game (Chaos Park, Crash Crossing, Many Mini Moon Buggies) listing its iOS and Android store pages beside the app icon
 - Chaos Park (iOS) opens the App Store in a new tab; the other rows are greyed out until those listings are live
