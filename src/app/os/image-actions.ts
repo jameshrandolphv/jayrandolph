@@ -1,6 +1,5 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, Injector, inject } from '@angular/core';
 import { Router } from '@angular/router';
-import { SessionService } from '../core/session.service';
 import type { ContextMenuItem } from './context-menu';
 import type { ImageNode } from './node';
 import { WallpaperService } from './wallpaper.service';
@@ -9,12 +8,12 @@ import { WallpaperService } from './wallpaper.service';
 @Injectable({ providedIn: 'root' })
 export class ImageActions {
   private readonly router = inject(Router);
-  private readonly session = inject(SessionService);
+  private readonly injector = inject(Injector);
   private readonly wallpaper = inject(WallpaperService);
 
   menuItems(img: ImageNode): ContextMenuItem[] {
     const items: ContextMenuItem[] = [
-      { label: 'Open in Film Sim', action: () => this.openInFilmSim(img) },
+      { label: 'Open in Film Sim', action: () => void this.openInFilmSim(img) },
       {
         label: 'Use as Wallpaper',
         action: () => void this.wallpaper.setFromUrl(img.src, img.name, { width: img.width, height: img.height }),
@@ -24,8 +23,13 @@ export class ImageActions {
     return items;
   }
 
-  private openInFilmSim(img: ImageNode): void {
-    void this.session.openUrl(img.src, img.name);
+  /**
+   * The session (and with it the decoders, encoders and film engine) is loaded here rather than imported at the top:
+   * this service is part of the desktop shell, and a static import put all of Film Sim's code in the first download.
+   */
+  private async openInFilmSim(img: ImageNode): Promise<void> {
     void this.router.navigateByUrl('/film-sim');
+    const { SessionService } = await import('../core/session.service');
+    void this.injector.get(SessionService).openUrl(img.src, img.name);
   }
 }

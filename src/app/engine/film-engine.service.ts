@@ -125,7 +125,11 @@ export class FilmEngineService {
   // --- setup ---
 
   private ensureReady(): Promise<void> {
-    this.setup ??= this.start();
+    // A failed start (offline, say) is forgotten, so the next render tries again instead of failing until a reload.
+    this.setup ??= this.start().catch((error: unknown) => {
+      this.setup = null;
+      throw error;
+    });
     return this.setup;
   }
 
@@ -153,6 +157,16 @@ export class FilmEngineService {
     const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
     const n = Math.max(1, Math.min(coarse ? 2 : 8, (navigator.hardwareConcurrency || 4) - 1));
     const pool: Worker1[] = [];
+    try {
+      await this.startWorkers(pool, n);
+    } catch (error) {
+      for (const { worker } of pool) worker.terminate();
+      throw error;
+    }
+    this.pool = pool;
+  }
+
+  private async startWorkers(pool: Worker1[], n: number): Promise<void> {
     await Promise.all(
       Array.from({ length: n }, () => {
         const worker = new Worker(new URL('./engine.worker', import.meta.url), {
@@ -172,7 +186,6 @@ export class FilmEngineService {
         });
       }),
     );
-    this.pool = pool;
   }
 
   private loadMeta(stock: string): Promise<FilmMeta> {
@@ -183,6 +196,7 @@ export class FilmEngineService {
         return r.json() as Promise<FilmMeta>;
       });
       this.filmMeta.set(stock, p);
+      p.catch(() => this.filmMeta.delete(stock));
     }
     return p;
   }

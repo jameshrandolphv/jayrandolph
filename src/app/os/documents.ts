@@ -11,7 +11,7 @@ export interface DocumentDef {
   hidden?: boolean;
 }
 
-const ABOUT = `I am a software engineer by day and aspire to be decent at too many hobbies. Check out some of my photography, music, and games here on this site, or try out my mobile games on your iOS/Android device. Chaos Park is currently in the submission process for the App Store/Google Play, and there will be more games to come!
+const ABOUT = `I am a software engineer by day and aspire to be decent at too many hobbies. Check out some of my photography, music, and games here on this site, or try out my mobile games on your iOS/Android device. Chaos Park is out now on the App Store and on its way to Google Play, and there will be more games to come!
 
 - Jay Randolph`;
 
