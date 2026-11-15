@@ -50,8 +50,16 @@ describe('filesystem', () => {
     expect(ios && hrefOf(ios)).toBe('https://apps.apple.com/us/app/chaos-park/id6825083630');
 
     const android = resolvePath(root, ['mobile-games', 'chaos-park', 'chaos-park-android']);
-    expect(android).toMatchObject({ kind: 'link' });
-    expect(android?.kind === 'link' && android.url).toBeUndefined();
+    expect(android && hrefOf(android)).toBe('https://play.google.com/store/apps/details?id=com.jayrandolph.chaospark');
+
+    const crashIos = resolvePath(root, ['mobile-games', 'crash-crossing', 'crash-crossing-ios']);
+    expect(crashIos && hrefOf(crashIos)).toBe('https://apps.apple.com/us/app/crash-crossing/id6827704923');
+    const crashAndroid = resolvePath(root, ['mobile-games', 'crash-crossing', 'crash-crossing-android']);
+    expect(crashAndroid && hrefOf(crashAndroid)).toBe('https://play.google.com/store/apps/details?id=com.jayrandolph.crashcrossing');
+
+    const buggiesIos = resolvePath(root, ['mobile-games', 'many-mini-moon-buggies', 'many-mini-moon-buggies-ios']);
+    expect(buggiesIos).toMatchObject({ kind: 'link' });
+    expect(buggiesIos?.kind === 'link' && buggiesIos.url).toBeUndefined();
     const buggies = resolvePath(root, ['mobile-games', 'many-mini-moon-buggies']);
     expect(buggies?.kind === 'folder' && buggies.children.map((c) => c.name)).toEqual([
       'Many Mini Moon Buggies (iOS)',
