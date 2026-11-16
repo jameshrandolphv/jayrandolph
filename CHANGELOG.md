@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.10.13
+- Planet F's version folders come straight from its GitHub releases: a new release shows up in Desktop Apps > Planet F by itself, newest first, with its .exe as the Windows download and its .zip (or .dmg) as the Mac one
+- If GitHub can't be reached, the folder still lists the versions the site was built with
+
 ## 1.10.12
 - Planet F's downloads work: they pointed at file names the GitHub release doesn't use (it serves Planet.F.exe and Planet.F.zip)
 - Planet F's download rows show the game's icon, with a small Windows or Apple logo after each file name

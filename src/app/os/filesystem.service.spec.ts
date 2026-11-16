@@ -3,6 +3,7 @@ import type { Route, UrlSegment } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { environment } from '../../environments/environment';
 import type { AppDef } from './apps';
+import { versionsFromReleases, type GitHubRelease } from './desktop-apps';
 import { fsNodeExists } from './fs-page';
 import { buildTree, FileSystemService, findApp, resolvePath, type PhotoManifest } from './filesystem.service';
 import { hrefOf } from './node';
@@ -355,5 +356,77 @@ describe('FileSystemService.load', () => {
     const fs = new FileSystemService();
     await fs.load();
     expect(albumsOf(fs)).toEqual([]);
+  });
+});
+
+describe('desktop app releases', () => {
+  const asset = (name: string) => ({
+    name,
+    browser_download_url: `https://github.com/jameshrandolphv/planet-f-release/releases/download/x/${name}`,
+  });
+  const releases: GitHubRelease[] = [
+    { tag_name: 'alpha-1.1.0', assets: [asset('Planet.F.exe'), asset('Planet.F.zip')] },
+    { tag_name: 'alpha-1.0.5', draft: true, assets: [asset('Planet.F.exe')] },
+    { tag_name: 'alpha-1.0.2', assets: [asset('Planet.F.dmg')] },
+    { tag_name: 'notes-only', assets: [asset('notes.txt')] },
+    { tag_name: 'alpha-1.0.0', assets: [asset('Planet.F.EXE'), asset('Planet.F.zip')] },
+  ];
+  const versionNames = (fs: FileSystemService) => {
+    const app = fs.resolve(['desktop-apps', 'planet-f']);
+    return app?.kind === 'folder' ? app.children.map((c) => c.name) : [];
+  };
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('turns published releases with downloads into versions, newest first', () => {
+    const versions = versionsFromReleases(releases);
+    expect(versions.map((v) => v.id)).toEqual(['alpha-1.1.0', 'alpha-1.0.2', 'alpha-1.0.0']);
+    expect(versions[0].windows.url).toMatch(/Planet\.F\.exe$/);
+    expect(versions[0].mac.url).toMatch(/Planet\.F\.zip$/);
+    expect(versions[1]).toMatchObject({ windows: { url: undefined }, mac: { url: expect.stringMatching(/\.dmg$/) } });
+    expect(versions[2].windows.url).toMatch(/Planet\.F\.EXE$/);
+  });
+
+  it('lists the releases once the Desktop Apps folder is opened, fetching only once', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(releases) });
+    vi.stubGlobal('fetch', fetchMock);
+    const fs = TestBed.inject(FileSystemService);
+    const matches = (...path: string[]) =>
+      TestBed.runInInjectionContext(() =>
+        fsNodeExists({} as Route, path.map((p) => ({ path: p }) as UrlSegment), undefined as never),
+      );
+
+    expect(versionNames(fs)).toEqual(['alpha-1.0.0']);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // A deep link to a version not written in the code waits for the listing instead of failing.
+    expect(matches('desktop-apps', 'planet-f', 'alpha-1.1.0')).toBe(true);
+    expect(fs.releasesLoading()).toBe(true);
+    await fs.loadReleases();
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.github.com/repos/jameshrandolphv/planet-f-release/releases?per_page=100',
+      expect.anything(),
+    );
+    expect(versionNames(fs)).toEqual(['alpha-1.1.0', 'alpha-1.0.2', 'alpha-1.0.0']);
+    const exe = fs.resolve(['desktop-apps', 'planet-f', 'alpha-1.1.0', 'planet-f-windows']);
+    expect(exe && hrefOf(exe)).toMatch(/Planet\.F\.exe$/);
+    expect(matches('desktop-apps', 'planet-f', 'nope')).toBe(false);
+
+    matches('desktop-apps');
+    await fs.loadReleases();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the written-in versions when GitHub fails or has no releases', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: () => Promise.resolve({}) }));
+    const fs = new FileSystemService();
+    await fs.loadReleases();
+    expect(versionNames(fs)).toEqual(['alpha-1.0.0']);
+    expect(fs.releasesLoading()).toBe(false);
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) }));
+    const empty = new FileSystemService();
+    await empty.loadReleases();
+    expect(versionNames(empty)).toEqual(['alpha-1.0.0']);
   });
 });
