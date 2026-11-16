@@ -1,6 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import { environment } from '../../environments/environment';
 import { APPS, type AppDef } from './apps';
+import { DESKTOP_APPS, type DesktopAppDef } from './desktop-apps';
 import { DOCUMENTS, type DocumentDef } from './documents';
 import { MOBILE_GAMES, type MobileGameDef } from './mobile-games';
 import { segmentsOf, type AppNode, type FolderNode, type FsNode } from './node';
@@ -96,8 +97,8 @@ function picturesTree(albums: readonly PhotoAlbum[]): FsNode[] {
   return toNodes(top, 'pictures');
 }
 
-/** Folder holding every app; an app's own path is still its top-level URL. */
-export const APPLICATIONS_PATH = 'applications';
+/** Folder holding every web app; an app's own path is still its top-level URL. */
+export const WEB_APPS_PATH = 'web-apps';
 
 export const MOBILE_GAMES_PATH = 'mobile-games';
 
@@ -119,11 +120,36 @@ function mobileGamesFolder(games: readonly MobileGameDef[]): FolderNode {
   return folder(MOBILE_GAMES_PATH, 'Mobile Games', gameFolders);
 }
 
+export const DESKTOP_APPS_PATH = 'desktop-apps';
+
+/** A folder per app, a folder per version inside it, and in each version its Windows and Mac downloads as rows. */
+function desktopAppsFolder(desktopApps: readonly DesktopAppDef[]): FolderNode {
+  const appFolders = desktopApps.map((app) => {
+    const appPath = `${DESKTOP_APPS_PATH}/${app.id}`;
+    const versions = app.versions.map((version) => {
+      const path = `${appPath}/${version.id}`;
+      const rows = (['windows', 'mac'] as const).map((platform) => ({
+        kind: 'link' as const,
+        id: `${app.id}-${platform}`,
+        name: `${app.name}.${platform === 'windows' ? 'exe' : 'app'}`,
+        path: `${path}/${app.id}-${platform}`,
+        icon: platform,
+        download: true,
+        ...(version[platform].url ? { url: version[platform].url } : {}),
+      }));
+      return { ...folder(path, version.id, rows), view: 'list' as const };
+    });
+    return folder(appPath, app.name, versions);
+  });
+  return folder(DESKTOP_APPS_PATH, 'Desktop Apps', appFolders);
+}
+
 export function buildTree(
   manifest: PhotoManifest,
   apps: readonly AppDef[],
   documents: readonly DocumentDef[] = DOCUMENTS,
   games: readonly MobileGameDef[] = MOBILE_GAMES,
+  desktopApps: readonly DesktopAppDef[] = DESKTOP_APPS,
 ): FolderNode {
   const documentsPath = 'documents';
   const documentNodes = documents.map((doc) => ({
@@ -139,7 +165,7 @@ export function buildTree(
     },
   }));
 
-  // Apps live in the Applications folder but keep their own top-level URLs, which their routes and the store links use.
+  // Apps live in the Web Apps folder but keep their own top-level URLs, which their routes and the store links use.
   const appNodes = apps.map((app) => ({
     kind: 'app' as const,
     id: app.id,
@@ -159,7 +185,8 @@ export function buildTree(
     folder('pictures', 'Pictures', picturesTree(manifest.albums)),
     documentsFolder,
     mobileGamesFolder(games),
-    { ...folder(APPLICATIONS_PATH, 'Applications', appNodes), icon: 'apps-folder' },
+    desktopAppsFolder(desktopApps),
+    { ...folder(WEB_APPS_PATH, 'Web Apps', appNodes), icon: 'apps-folder' },
   ]);
 }
 

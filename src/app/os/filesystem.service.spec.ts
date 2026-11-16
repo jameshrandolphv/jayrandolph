@@ -25,13 +25,44 @@ const manifest: PhotoManifest = {
 describe('filesystem', () => {
   const root = buildTree(manifest, apps);
 
-  it('puts Pictures, Documents, Mobile Games and an Applications folder on the desktop', () => {
+  it('puts Pictures, Documents, Mobile Games, Desktop Apps and a Web Apps folder on the desktop', () => {
     expect(root.children.map((c) => [c.kind, c.name])).toEqual([
       ['folder', 'Pictures'],
       ['folder', 'Documents'],
       ['folder', 'Mobile Games'],
-      ['folder', 'Applications'],
+      ['folder', 'Desktop Apps'],
+      ['folder', 'Web Apps'],
     ]);
+  });
+
+  it('lists each desktop app as version folders of Windows and Mac download rows', () => {
+    const desktopApps = resolvePath(root, ['desktop-apps']);
+    expect(desktopApps?.kind === 'folder' && desktopApps.children.map((c) => [c.kind, c.name])).toEqual([['folder', 'Planet F']]);
+    const planetF = resolvePath(root, ['desktop-apps', 'planet-f']);
+    expect(planetF?.kind === 'folder' && planetF.children.map((c) => [c.kind, c.name])).toEqual([['folder', 'alpha-1.0.0']]);
+    const alpha = resolvePath(root, ['desktop-apps', 'planet-f', 'alpha-1.0.0']);
+    expect(alpha).toMatchObject({ kind: 'folder', view: 'list' });
+    expect(alpha?.kind === 'folder' && alpha.children.map((c) => [c.name, c.icon])).toEqual([
+      ['Planet F.exe', 'windows'],
+      ['Planet F.app', 'mac'],
+    ]);
+    const exe = resolvePath(root, ['desktop-apps', 'planet-f', 'alpha-1.0.0', 'planet-f-windows']);
+    expect(exe).toMatchObject({ kind: 'link', download: true });
+    expect(exe && hrefOf(exe)).toBe('https://github.com/jameshrandolphv/planet-f-release/releases/download/alpha-1.0.0/Planet-F.exe');
+    const app = resolvePath(root, ['desktop-apps', 'planet-f', 'alpha-1.0.0', 'planet-f-mac']);
+    expect(app && hrefOf(app)).toBe('https://github.com/jameshrandolphv/planet-f-release/releases/download/alpha-1.0.0/Planet-F-mac.zip');
+
+    const tree = buildTree(manifest, apps, undefined, undefined, [
+      {
+        id: 'planet-f',
+        name: 'Planet F',
+        versions: [{ id: 'alpha-1.0.0', windows: { url: 'https://dl.example/Planet F.exe' }, mac: {} }],
+      },
+    ]);
+    const linked = resolvePath(tree, ['desktop-apps', 'planet-f', 'alpha-1.0.0', 'planet-f-windows']);
+    expect(linked && hrefOf(linked)).toBe('https://dl.example/Planet F.exe');
+    const mac = resolvePath(tree, ['desktop-apps', 'planet-f', 'alpha-1.0.0', 'planet-f-mac']);
+    expect(mac?.kind === 'link' && mac.url).toBeUndefined();
   });
 
   it('lists each mobile game as a folder of iOS and Android store rows, disabled until listed', () => {
@@ -69,8 +100,8 @@ describe('filesystem', () => {
     ]);
   });
 
-  it('keeps apps in Applications at their own top-level URLs', () => {
-    expect(resolvePath(root, ['applications'])).toMatchObject({ kind: 'folder', children: [{ kind: 'app', name: 'Film Sim', path: 'film-sim' }] });
+  it('keeps apps in Web Apps at their own top-level URLs', () => {
+    expect(resolvePath(root, ['web-apps'])).toMatchObject({ kind: 'folder', children: [{ kind: 'app', name: 'Film Sim', path: 'film-sim' }] });
     expect(resolvePath(root, ['film-sim'])).toBeNull();
     expect(findApp(root, 'film-sim')).toMatchObject({ kind: 'app', name: 'Film Sim' });
     expect(findApp(root, 'nope')).toBeNull();

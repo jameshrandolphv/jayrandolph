@@ -5,7 +5,7 @@ export interface AppDef {
   id: string;
   name: string;
   icon: string;
-  /** Set to false to keep the item in Applications but out of the dock. */
+  /** Set to false to keep the item in Web Apps but out of the dock. */
   dock?: boolean;
   /** When it was added (YYYY-MM-DD); the dock shows only the newest few. */
   added: string;
@@ -66,7 +66,7 @@ export const APPS: readonly AppDef[] = [
   },
 ];
 
-/** The dock holds the desktop and this many apps, the newest first added; the rest are in Applications. */
+/** The dock holds the desktop and this many apps, the newest first added; the rest are in Web Apps. */
 export const DOCK_APP_COUNT = 2;
 
 /** The apps the dock shows, in the order they are listed. */

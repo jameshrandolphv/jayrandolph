@@ -37,13 +37,15 @@ export interface FileNode extends NodeBase {
   href?: string;
 }
 
-/** A row that opens a page on another site, such as a store listing, in a new tab. */
+/** A row that opens a page on another site, such as a store listing, in a new tab, or downloads a file. */
 export interface LinkNode extends NodeBase {
   kind: 'link';
   /** Absent while there is nowhere to go yet: the row shows disabled. */
   url?: string;
-  /** Picture shown in place of a `NodeIcon`. */
-  image: string;
+  /** Picture shown in place of a `NodeIcon`; without one the row shows its `icon`. */
+  image?: string;
+  /** The URL is a file to save rather than a page to open. */
+  download?: boolean;
 }
 
 export type FsNode = FolderNode | AppNode | ImageNode | FileNode | LinkNode;

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.10.11
+- Applications is renamed Web Apps (the old /applications address still opens it)
+- A Desktop Apps folder on the desktop, with a Planet F folder holding a folder per version; alpha-1.0.0 lists Planet F.exe (Windows) and Planet F.app (Mac) as downloads, served from the planet-f-release repo's GitHub release
+
 ## 1.10.10
 - Mobile Games links Many Mini Moon Buggies on the App Store; its Android row stays greyed out until the Google Play listing is live
 

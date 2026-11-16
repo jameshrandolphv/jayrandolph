@@ -18,8 +18,9 @@ import { hrefOf, type FsNode, type ImageNode, type LinkNode } from './node';
       [class.photo]="image() !== null"
       [class.disabled]="disabled()"
       [attr.href]="disabled() ? null : href()"
-      [attr.target]="link() ? '_blank' : null"
+      [attr.target]="link() && !link()?.download ? '_blank' : null"
       [attr.rel]="link() ? 'noopener' : null"
+      [attr.download]="link()?.download && !disabled() ? '' : null"
       [attr.aria-disabled]="disabled() || null"
       [attr.title]="disabled() ? 'Coming soon' : null"
       (click)="onClick($event)"
@@ -32,8 +33,8 @@ import { hrefOf, type FsNode, type ImageNode, type LinkNode } from './node';
       <span class="fs-glyph">
         @if (image(); as img) {
           <img [src]="img.thumb" [alt]="img.name" [attr.width]="img.width" [attr.height]="img.height" loading="lazy" decoding="async" />
-        } @else if (link(); as l) {
-          <img class="app-icon" [src]="l.image" alt="" width="64" height="64" decoding="async" />
+        } @else if (link()?.image; as src) {
+          <img class="app-icon" [src]="src" alt="" width="64" height="64" decoding="async" />
         } @else {
           <app-node-icon [icon]="node().icon" />
         }
@@ -64,7 +65,7 @@ export class FsItem {
     const node = this.node();
     return node.kind === 'link' ? node : null;
   });
-  /** A store row with no listing yet. */
+  /** A store row with no listing yet, or a download not uploaded yet. */
   protected readonly disabled = computed(() => this.link() !== null && !this.link()?.url);
 
   protected onClick(event: MouseEvent): void {
@@ -72,7 +73,7 @@ export class FsItem {
       event.preventDefault();
       return;
     }
-    // Store rows are plain links to another site, opened in a new tab by the browser.
+    // Store and download rows are plain links, opened in a new tab or saved by the browser.
     if (this.link()) return;
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
