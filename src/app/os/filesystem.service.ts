@@ -1,7 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import { environment } from '../../environments/environment';
 import { APPS, type AppDef } from './apps';
-import { DESKTOP_APPS, type DesktopAppDef } from './desktop-apps';
+import { DESKTOP_APPS, fetchReleaseVersions, type DesktopAppDef } from './desktop-apps';
 import { DOCUMENTS, type DocumentDef } from './documents';
 import { MOBILE_GAMES, type MobileGameDef } from './mobile-games';
 import { segmentsOf, type AppNode, type FolderNode, type FsNode } from './node';
@@ -120,6 +120,7 @@ function mobileGamesFolder(games: readonly MobileGameDef[]): FolderNode {
   return folder(MOBILE_GAMES_PATH, 'Mobile Games', gameFolders);
 }
 
+/** Desktop app versions come from GitHub releases, fetched the first time the folder is opened. */
 export const DESKTOP_APPS_PATH = 'desktop-apps';
 
 /** A folder per app, a folder per version inside it, and in each version its Windows and Mac downloads as rows. */
@@ -237,15 +238,47 @@ async function fetchManifest(): Promise<PhotoManifest | null> {
 
 @Injectable({ providedIn: 'root' })
 export class FileSystemService {
-  readonly root = signal<FolderNode>(buildTree({ albums: [] }, APPS));
+  private manifest: PhotoManifest = { albums: [] };
+  private desktopApps: readonly DesktopAppDef[] = DESKTOP_APPS;
+
+  readonly root = signal<FolderNode>(buildTree(this.manifest, APPS, undefined, undefined, this.desktopApps));
   /** True until the first photo listing request settles (success or failure). */
   readonly loading = signal(!!environment.photosApiUrl);
+  /** True while desktop app releases are being fetched from GitHub. */
+  readonly releasesLoading = signal(false);
+  private releasesRequest: Promise<void> | null = null;
+
+  private rebuild(): void {
+    this.root.set(buildTree(this.manifest, APPS, undefined, undefined, this.desktopApps));
+  }
+
+  /** Lists the desktop apps' GitHub releases. Runs once per visit; until then the written-in versions show. */
+  loadReleases(): Promise<void> {
+    return (this.releasesRequest ??= this.fetchReleases());
+  }
+
+  private async fetchReleases(): Promise<void> {
+    const apps = this.desktopApps.filter((app) => app.releasesRepo);
+    if (!apps.length) return;
+    this.releasesLoading.set(true);
+    const fetched = await Promise.all(apps.map((app) => fetchReleaseVersions(app.releasesRepo!)));
+    const byId = new Map(apps.map((app, i) => [app.id, fetched[i]]));
+    this.desktopApps = this.desktopApps.map((app) => {
+      const versions = byId.get(app.id);
+      return versions ? { ...app, versions } : app;
+    });
+    this.rebuild();
+    this.releasesLoading.set(false);
+  }
 
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
   async load(): Promise<void> {
     const manifest = await fetchManifest();
-    if (manifest) this.root.set(buildTree(manifest, APPS));
+    if (manifest) {
+      this.manifest = manifest;
+      this.rebuild();
+    }
     this.loading.set(false);
     this.scheduleRefresh(manifest);
   }

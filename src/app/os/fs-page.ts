@@ -4,7 +4,7 @@ import { Title } from '@angular/platform-browser';
 import { ActivatedRoute, Router, RouterLink, type CanMatchFn } from '@angular/router';
 import { TextEdit } from '../apps/text-edit/text-edit';
 import { WindowFrame } from '../ui/window-frame';
-import { FileSystemService } from './filesystem.service';
+import { DESKTOP_APPS_PATH, FileSystemService } from './filesystem.service';
 import { Finder } from './finder';
 import { ImageViewer } from './image-viewer';
 import { hrefOf, type FileNode, type FolderNode, type ImageNode } from './node';
@@ -12,8 +12,13 @@ import { hrefOf, type FileNode, type FolderNode, type ImageNode } from './node';
 export const fsNodeExists: CanMatchFn = (_route, segments) => {
   const fs = inject(FileSystemService);
   const path = segments.map((s) => s.path);
-  // Photo paths are unknown until the listing arrives; FsPage shows a loader meanwhile.
-  return fs.resolve(path) !== null || (fs.loading() && path[0] === 'pictures');
+  if (path[0] === DESKTOP_APPS_PATH) void fs.loadReleases();
+  // Photo paths and new app versions are unknown until their listings arrive; FsPage shows a loader meanwhile.
+  return (
+    fs.resolve(path) !== null ||
+    (fs.loading() && path[0] === 'pictures') ||
+    (fs.releasesLoading() && path[0] === DESKTOP_APPS_PATH)
+  );
 };
 
 @Component({
@@ -44,12 +49,12 @@ export class NotFound {
     @if (folder(); as f) {
       <app-finder [folder]="f" />
     } @else if (!node()) {
-      @if (fs.loading()) {
-        <app-window-frame title="Pictures" closeLink="/" compact>
+      @if (loadingWhat(); as what) {
+        <app-window-frame [title]="what.title" closeLink="/" compact>
           <div class="finder-body">
             <div class="loading" role="status">
-              <progress aria-label="Loading photos"></progress>
-              <span>Loading photos&hellip;</span>
+              <progress [attr.aria-label]="'Loading ' + what.items"></progress>
+              <span>Loading {{ what.items }}&hellip;</span>
             </div>
           </div>
         </app-window-frame>
@@ -71,6 +76,14 @@ export class FsPage {
   private readonly segments = toSignal(inject(ActivatedRoute).url, { requireSync: true });
 
   protected readonly node = computed(() => this.fs.resolve(this.segments().map((s) => s.path)));
+
+  /** What a not-yet-known path may be waiting for. */
+  protected readonly loadingWhat = computed(() => {
+    const top = this.segments()[0]?.path;
+    if (top === DESKTOP_APPS_PATH && this.fs.releasesLoading()) return { title: 'Desktop Apps', items: 'versions' };
+    if (this.fs.loading()) return { title: 'Pictures', items: 'photos' };
+    return null;
+  });
 
   protected readonly image = computed<ImageNode | null>(() => {
     const node = this.node();
@@ -111,7 +124,7 @@ export class FsPage {
     effect(() => {
       const node = this.node();
       if (node) title.setTitle(`${node.name} - Jay Randolph`);
-      else if (this.fs.loading()) title.setTitle('Pictures - Jay Randolph');
+      else if (this.loadingWhat()) title.setTitle(`${this.loadingWhat()!.title} - Jay Randolph`);
     });
   }
 }
