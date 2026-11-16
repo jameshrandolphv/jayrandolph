@@ -33,7 +33,7 @@ export const MOBILE_GAMES: readonly MobileGameDef[] = [
     id: 'many-mini-moon-buggies',
     name: 'Many Mini Moon Buggies',
     image: '/icons/games/many-mini-moon-buggies.png',
-    ios: {},
+    ios: { url: 'https://apps.apple.com/us/app/many-mini-moon-buggies/id6829101751' },
     android: {},
   },
 ];

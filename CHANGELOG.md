@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.10.10
+- Mobile Games links Many Mini Moon Buggies on the App Store; its Android row stays greyed out until the Google Play listing is live
+
 ## 1.10.9
 - Mobile Games links Chaos Park on Google Play and Crash Crossing on the App Store and Google Play; only Many Mini Moon Buggies is still greyed out
 - The games' privacy policies are rewritten as formal notices, with numbered sections, and now also cover emails sent to support, privacy rights by region, how US state laws treat ad personalization, data retention and third-party services; none of what the apps do has changed

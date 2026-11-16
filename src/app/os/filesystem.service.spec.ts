@@ -58,8 +58,10 @@ describe('filesystem', () => {
     expect(crashAndroid && hrefOf(crashAndroid)).toBe('https://play.google.com/store/apps/details?id=com.jayrandolph.crashcrossing');
 
     const buggiesIos = resolvePath(root, ['mobile-games', 'many-mini-moon-buggies', 'many-mini-moon-buggies-ios']);
-    expect(buggiesIos).toMatchObject({ kind: 'link' });
-    expect(buggiesIos?.kind === 'link' && buggiesIos.url).toBeUndefined();
+    expect(buggiesIos && hrefOf(buggiesIos)).toBe('https://apps.apple.com/us/app/many-mini-moon-buggies/id6829101751');
+    const buggiesAndroid = resolvePath(root, ['mobile-games', 'many-mini-moon-buggies', 'many-mini-moon-buggies-android']);
+    expect(buggiesAndroid).toMatchObject({ kind: 'link' });
+    expect(buggiesAndroid?.kind === 'link' && buggiesAndroid.url).toBeUndefined();
     const buggies = resolvePath(root, ['mobile-games', 'many-mini-moon-buggies']);
     expect(buggies?.kind === 'folder' && buggies.children.map((c) => c.name)).toEqual([
       'Many Mini Moon Buggies (iOS)',
