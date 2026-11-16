@@ -133,7 +133,10 @@ function desktopAppsFolder(desktopApps: readonly DesktopAppDef[]): FolderNode {
         id: `${app.id}-${platform}`,
         name: `${app.name}.${platform === 'windows' ? 'exe' : 'app'}`,
         path: `${path}/${app.id}-${platform}`,
-        icon: platform,
+        icon: 'link',
+        image: app.image,
+        shapedImage: true,
+        badge: platform,
         download: true,
         ...(version[platform].url ? { url: version[platform].url } : {}),
       }));

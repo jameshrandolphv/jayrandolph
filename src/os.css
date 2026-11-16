@@ -436,6 +436,25 @@ app-not-found {
   box-shadow: 0 1px 2px rgb(0 20 60 / 0.35), inset 0 0 0 1px rgb(0 0 0 / 0.1);
 }
 
+/* A macOS app icon already has its own rounded shape and shadow. */
+.fs-glyph .app-icon.shaped {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* Platform logo after a download's name. */
+app-node-icon.fs-badge {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  margin-left: 8px;
+  vertical-align: -3px;
+}
+
+.finder-body .fs-badge svg {
+  filter: none;
+}
+
 /* No store listing or upload yet: greyed out and inert. */
 .finder-body .fs-item.disabled {
   cursor: default;

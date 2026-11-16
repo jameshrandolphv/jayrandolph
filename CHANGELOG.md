@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.10.12
+- Planet F's downloads work: they pointed at file names the GitHub release doesn't use (it serves Planet.F.exe and Planet.F.zip)
+- Planet F's download rows show the game's icon, with a small Windows or Apple logo after each file name
+
 ## 1.10.11
 - Applications is renamed Web Apps (the old /applications address still opens it)
 - A Desktop Apps folder on the desktop, with a Planet F folder holding a folder per version; alpha-1.0.0 lists Planet F.exe (Windows) and Planet F.app (Mac) as downloads, served from the planet-f-release repo's GitHub release

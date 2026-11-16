@@ -15,11 +15,16 @@ export interface DesktopAppDef {
   /** Folder URL segment. */
   id: string;
   name: string;
+  /** App icon shown at the start of each download row. It keeps its own shape, like a macOS icon. */
+  image: string;
   /** One folder each, shown in this order (put the newest first). */
   versions: readonly DesktopAppVersion[];
 }
 
-/** Planet F's builds are assets on GitHub releases tagged with the version, e.g. alpha-1.0.0. */
+/**
+ * Planet F's builds are assets on GitHub releases tagged with the version, e.g. alpha-1.0.0. GitHub turns
+ * spaces in uploaded file names into dots, so "Planet F.exe" is served as "Planet.F.exe".
+ */
 const PLANET_F_RELEASES = 'https://github.com/jameshrandolphv/planet-f-release/releases/download';
 
 /**
@@ -31,11 +36,12 @@ export const DESKTOP_APPS: readonly DesktopAppDef[] = [
   {
     id: 'planet-f',
     name: 'Planet F',
+    image: '/icons/desktop-apps/planet-f.png',
     versions: [
       {
         id: 'alpha-1.0.0',
-        windows: { url: `${PLANET_F_RELEASES}/alpha-1.0.0/Planet-F.exe` },
-        mac: { url: `${PLANET_F_RELEASES}/alpha-1.0.0/Planet-F-mac.zip` },
+        windows: { url: `${PLANET_F_RELEASES}/alpha-1.0.0/Planet.F.exe` },
+        mac: { url: `${PLANET_F_RELEASES}/alpha-1.0.0/Planet.F.zip` },
       },
     ],
   },

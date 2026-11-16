@@ -34,12 +34,17 @@ import { hrefOf, type FsNode, type ImageNode, type LinkNode } from './node';
         @if (image(); as img) {
           <img [src]="img.thumb" [alt]="img.name" [attr.width]="img.width" [attr.height]="img.height" loading="lazy" decoding="async" />
         } @else if (link()?.image; as src) {
-          <img class="app-icon" [src]="src" alt="" width="64" height="64" decoding="async" />
+          <img class="app-icon" [class.shaped]="link()?.shapedImage" [src]="src" alt="" width="64" height="64" decoding="async" />
         } @else {
           <app-node-icon [icon]="node().icon" />
         }
       </span>
-      <span class="fs-label">{{ node().name }}</span>
+      <span class="fs-label"
+        >{{ node().name }}
+        @if (link()?.badge; as badge) {
+          <app-node-icon class="fs-badge" [icon]="badge" />
+        }
+      </span>
     </a>
   `,
 })
