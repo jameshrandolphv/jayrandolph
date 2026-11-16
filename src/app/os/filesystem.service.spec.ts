@@ -35,7 +35,7 @@ describe('filesystem', () => {
     ]);
   });
 
-  it('lists each desktop app as version folders of Windows and Mac download rows, disabled until uploaded', () => {
+  it('lists each desktop app as version folders of Windows and Mac download rows', () => {
     const desktopApps = resolvePath(root, ['desktop-apps']);
     expect(desktopApps?.kind === 'folder' && desktopApps.children.map((c) => [c.kind, c.name])).toEqual([['folder', 'Planet F']]);
     const planetF = resolvePath(root, ['desktop-apps', 'planet-f']);
@@ -48,6 +48,9 @@ describe('filesystem', () => {
     ]);
     const exe = resolvePath(root, ['desktop-apps', 'planet-f', 'alpha-1.0.0', 'planet-f-windows']);
     expect(exe).toMatchObject({ kind: 'link', download: true });
+    expect(exe && hrefOf(exe)).toBe('https://github.com/jameshrandolphv/planet-f-release/releases/download/alpha-1.0.0/Planet-F.exe');
+    const app = resolvePath(root, ['desktop-apps', 'planet-f', 'alpha-1.0.0', 'planet-f-mac']);
+    expect(app && hrefOf(app)).toBe('https://github.com/jameshrandolphv/planet-f-release/releases/download/alpha-1.0.0/Planet-F-mac.zip');
 
     const tree = buildTree(manifest, apps, undefined, undefined, [
       {

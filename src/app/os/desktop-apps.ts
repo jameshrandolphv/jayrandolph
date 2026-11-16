@@ -19,6 +19,9 @@ export interface DesktopAppDef {
   versions: readonly DesktopAppVersion[];
 }
 
+/** Planet F's builds are assets on GitHub releases tagged with the version, e.g. alpha-1.0.0. */
+const PLANET_F_RELEASES = 'https://github.com/jameshrandolphv/planet-f-release/releases/download';
+
 /**
  * The Desktop Apps folder: one subfolder per app, a folder per version inside it, and in each version a
  * Windows row ("<name>.exe") and a Mac row ("<name>.app"). To release a version, add it to the top of
@@ -28,6 +31,12 @@ export const DESKTOP_APPS: readonly DesktopAppDef[] = [
   {
     id: 'planet-f',
     name: 'Planet F',
-    versions: [{ id: 'alpha-1.0.0', windows: {}, mac: {} }],
+    versions: [
+      {
+        id: 'alpha-1.0.0',
+        windows: { url: `${PLANET_F_RELEASES}/alpha-1.0.0/Planet-F.exe` },
+        mac: { url: `${PLANET_F_RELEASES}/alpha-1.0.0/Planet-F-mac.zip` },
+      },
+    ],
   },
 ];
