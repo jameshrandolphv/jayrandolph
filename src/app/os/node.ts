@@ -44,6 +44,10 @@ export interface LinkNode extends NodeBase {
   url?: string;
   /** Picture shown in place of a `NodeIcon`; without one the row shows its `icon`. */
   image?: string;
+  /** The picture has its own shape (a macOS app icon), so it is shown as is rather than rounded. */
+  shapedImage?: boolean;
+  /** `NodeIcon` key shown small after the name, e.g. the platform of a download. */
+  badge?: string;
   /** The URL is a file to save rather than a page to open. */
   download?: boolean;
 }

@@ -42,20 +42,21 @@ describe('filesystem', () => {
     expect(planetF?.kind === 'folder' && planetF.children.map((c) => [c.kind, c.name])).toEqual([['folder', 'alpha-1.0.0']]);
     const alpha = resolvePath(root, ['desktop-apps', 'planet-f', 'alpha-1.0.0']);
     expect(alpha).toMatchObject({ kind: 'folder', view: 'list' });
-    expect(alpha?.kind === 'folder' && alpha.children.map((c) => [c.name, c.icon])).toEqual([
+    expect(alpha?.kind === 'folder' && alpha.children.map((c) => [c.name, c.kind === 'link' && c.badge])).toEqual([
       ['Planet F.exe', 'windows'],
       ['Planet F.app', 'mac'],
     ]);
     const exe = resolvePath(root, ['desktop-apps', 'planet-f', 'alpha-1.0.0', 'planet-f-windows']);
-    expect(exe).toMatchObject({ kind: 'link', download: true });
-    expect(exe && hrefOf(exe)).toBe('https://github.com/jameshrandolphv/planet-f-release/releases/download/alpha-1.0.0/Planet-F.exe');
+    expect(exe).toMatchObject({ kind: 'link', download: true, image: '/icons/desktop-apps/planet-f.png' });
+    expect(exe && hrefOf(exe)).toBe('https://github.com/jameshrandolphv/planet-f-release/releases/download/alpha-1.0.0/Planet.F.exe');
     const app = resolvePath(root, ['desktop-apps', 'planet-f', 'alpha-1.0.0', 'planet-f-mac']);
-    expect(app && hrefOf(app)).toBe('https://github.com/jameshrandolphv/planet-f-release/releases/download/alpha-1.0.0/Planet-F-mac.zip');
+    expect(app && hrefOf(app)).toBe('https://github.com/jameshrandolphv/planet-f-release/releases/download/alpha-1.0.0/Planet.F.zip');
 
     const tree = buildTree(manifest, apps, undefined, undefined, [
       {
         id: 'planet-f',
         name: 'Planet F',
+        image: '/icons/desktop-apps/planet-f.png',
         versions: [{ id: 'alpha-1.0.0', windows: { url: 'https://dl.example/Planet F.exe' }, mac: {} }],
       },
     ]);
