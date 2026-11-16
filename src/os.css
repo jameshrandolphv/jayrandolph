@@ -436,7 +436,7 @@ app-not-found {
   box-shadow: 0 1px 2px rgb(0 20 60 / 0.35), inset 0 0 0 1px rgb(0 0 0 / 0.1);
 }
 
-/* No store listing yet: greyed out and inert. */
+/* No store listing or upload yet: greyed out and inert. */
 .finder-body .fs-item.disabled {
   cursor: default;
   color: #8a8a8a;
@@ -444,6 +444,10 @@ app-not-found {
 
 .finder-body .fs-item.disabled .app-icon {
   filter: grayscale(1);
+  opacity: 0.45;
+}
+
+.finder-body .fs-item.disabled app-node-icon {
   opacity: 0.45;
 }
 

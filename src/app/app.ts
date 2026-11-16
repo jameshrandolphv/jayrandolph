@@ -52,7 +52,7 @@ export class App {
   private readonly activeNode = computed(() => {
     const segments = this.segments();
     if (!segments.length) return null;
-    // Apps sit in the Applications folder but are opened at their own top-level URLs.
+    // Apps sit in the Web Apps folder but are opened at their own top-level URLs.
     return this.fs.resolve(segments) ?? (segments.length === 1 ? this.fs.app(segments[0]) : null);
   });
 

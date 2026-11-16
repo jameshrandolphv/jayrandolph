@@ -45,6 +45,8 @@ export const routes: Routes = [
     loadComponent: app.load,
     title: `${app.name} - Jay Randolph`,
   })),
+  // The Web Apps folder's address from when it was called Applications.
+  { path: 'applications', pathMatch: 'full', redirectTo: 'web-apps' },
   { path: '**', component: FsPage, canMatch: [fsNodeExists] },
   { path: '**', component: NotFound },
 ];

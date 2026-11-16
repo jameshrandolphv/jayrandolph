@@ -100,7 +100,7 @@ export class FsPage {
   );
 
   constructor() {
-    // Apps (in Applications) and files shown by their own pages live at other URLs; send their folder paths there.
+    // Apps (in Web Apps) and files shown by their own pages live at other URLs; send their folder paths there.
     const router = inject(Router);
     effect(() => {
       const node = this.node();
