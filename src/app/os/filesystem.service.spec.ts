@@ -26,14 +26,25 @@ const manifest: PhotoManifest = {
 describe('filesystem', () => {
   const root = buildTree(manifest, apps);
 
-  it('puts Pictures, Documents, Mobile Games, Desktop Apps and a Web Apps folder on the desktop', () => {
+  it('puts Pictures, Documents, Mobile Games, Gameboy Games, Desktop Apps and a Web Apps folder on the desktop', () => {
     expect(root.children.map((c) => [c.kind, c.name])).toEqual([
       ['folder', 'Pictures'],
       ['folder', 'Documents'],
       ['folder', 'Mobile Games'],
+      ['folder', 'Gameboy Games'],
       ['folder', 'Desktop Apps'],
       ['folder', 'Web Apps'],
     ]);
+  });
+
+  it('links each Game Boy game to its web version', () => {
+    const row = resolvePath(root, ['gameboy-games', 'lost-screens']);
+    expect(row).toMatchObject({
+      kind: 'link',
+      name: 'LOST SCREENS.gba',
+      url: 'https://lostscreens.com/',
+      image: '/icons/gameboy-games/lost-screens.png',
+    });
   });
 
   it('lists each desktop app as version folders of Windows and Mac download rows', () => {

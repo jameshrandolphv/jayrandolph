@@ -3,6 +3,7 @@ import { environment } from '../../environments/environment';
 import { APPS, type AppDef } from './apps';
 import { DESKTOP_APPS, fetchReleaseVersions, type DesktopAppDef } from './desktop-apps';
 import { DOCUMENTS, type DocumentDef } from './documents';
+import { GAMEBOY_GAMES, type GameboyGameDef } from './gameboy-games';
 import { MOBILE_GAMES, type MobileGameDef } from './mobile-games';
 import { segmentsOf, type AppNode, type FolderNode, type FsNode } from './node';
 
@@ -120,6 +121,22 @@ function mobileGamesFolder(games: readonly MobileGameDef[]): FolderNode {
   return folder(MOBILE_GAMES_PATH, 'Mobile Games', gameFolders);
 }
 
+export const GAMEBOY_GAMES_PATH = 'gameboy-games';
+
+/** One row per Game Boy Advance game, opening its web version in a new tab. */
+function gameboyGamesFolder(games: readonly GameboyGameDef[]): FolderNode {
+  const rows = games.map((game) => ({
+    kind: 'link' as const,
+    id: game.id,
+    name: game.name,
+    path: `${GAMEBOY_GAMES_PATH}/${game.id}`,
+    icon: 'link',
+    image: game.image,
+    url: game.url,
+  }));
+  return { ...folder(GAMEBOY_GAMES_PATH, 'Gameboy Games', rows), view: 'list' as const };
+}
+
 /** Desktop app versions come from GitHub releases, fetched the first time the folder is opened. */
 export const DESKTOP_APPS_PATH = 'desktop-apps';
 
@@ -154,6 +171,7 @@ export function buildTree(
   documents: readonly DocumentDef[] = DOCUMENTS,
   games: readonly MobileGameDef[] = MOBILE_GAMES,
   desktopApps: readonly DesktopAppDef[] = DESKTOP_APPS,
+  gameboyGames: readonly GameboyGameDef[] = GAMEBOY_GAMES,
 ): FolderNode {
   const documentsPath = 'documents';
   const documentNodes = documents.map((doc) => ({
@@ -189,6 +207,7 @@ export function buildTree(
     folder('pictures', 'Pictures', picturesTree(manifest.albums)),
     documentsFolder,
     mobileGamesFolder(games),
+    gameboyGamesFolder(gameboyGames),
     desktopAppsFolder(desktopApps),
     { ...folder(WEB_APPS_PATH, 'Web Apps', appNodes), icon: 'apps-folder' },
   ]);
