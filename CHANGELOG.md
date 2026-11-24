@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.10.14
+- A Gameboy Games folder on the desktop, with LOST SCREENS.gba: it opens lostscreens.com, where the Game Boy Advance game plays in the browser
+
 ## 1.10.13
 - Planet F's version folders come straight from its GitHub releases: a new release shows up in Desktop Apps > Planet F by itself, newest first, with its .exe as the Windows download and its .zip (or .dmg) as the Mac one
 - If GitHub can't be reached, the folder still lists the versions the site was built with
